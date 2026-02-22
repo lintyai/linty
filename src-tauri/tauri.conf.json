@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/nicholasrice/tauri-schema/main/tauri.conf.json",
   "productName": "VoiceInk",
   "version": "0.1.0",
-  "identifier": "com.voiceink.app",
+  "identifier": "com.voiceink.desktop",
   "build": {
     "beforeDevCommand": "yarn dev",
     "devUrl": "http://localhost:1420",

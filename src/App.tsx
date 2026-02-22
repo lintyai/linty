@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Settings, X, Mic } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings.hook";
+import { useGlobalHotkey } from "@/hooks/useGlobalHotkey.hook";
 import { RecorderView } from "@/components/RecorderView.component";
 import { SettingsView } from "@/components/SettingsView.component";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,9 @@ type View = "recorder" | "settings";
 export default function App() {
   const [view, setView] = useState<View>("recorder");
   const { groqApiKey } = useSettings();
+
+  // Register global hotkey (Cmd+Shift+Space) for push-to-talk
+  useGlobalHotkey();
 
   // Auto-show settings if no API key
   useEffect(() => {
