@@ -1,19 +1,19 @@
 [package]
-name = "voiceink"
+name = "linty"
 version = "0.1.0"
 description = "Voice-to-text with global hotkey"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "voiceink_lib"
+name = "linty_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-shell = "2"
@@ -25,11 +25,22 @@ enigo = "0.2"
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2" }
 
 # Local STT (behind feature flag — long compile with Metal)
 whisper-rs = { version = "0.15", features = ["metal"], optional = true }
 hound = { version = "3.5", optional = true }
 
+# macOS-only dependencies
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5"          # NSEvent monitoring for fn/globe key
+block2 = "0.5"
+cocoa = "0.26"          # Activation policy (Dock/menu bar)
+objc = "0.2"
+
 [features]
 custom-protocol = ["tauri/custom-protocol"]
 local-stt = ["whisper-rs", "hound"]
+
+[lints.rust]
+unexpected_cfgs = "allow"

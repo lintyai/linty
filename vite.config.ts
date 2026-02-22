@@ -12,6 +12,14 @@ export default defineConfig(async () => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        capsule: path.resolve(__dirname, "capsule.html"),
+      },
+    },
+  },
   clearScreen: false,
   server: {
     port: 1420,

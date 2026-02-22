@@ -1,76 +1,87 @@
-import { useState, useEffect } from "react";
-import { Settings, X, Mic } from "lucide-react";
+import { useEffect, useCallback } from "react";
 import { useSettings } from "@/hooks/useSettings.hook";
 import { useGlobalHotkey } from "@/hooks/useGlobalHotkey.hook";
-import { RecorderView } from "@/components/RecorderView.component";
-import { SettingsView } from "@/components/SettingsView.component";
-import { cn } from "@/lib/utils";
+import { useModelAutoLoad } from "@/hooks/useModelAutoLoad.hook";
+import { useHistory } from "@/hooks/useHistory.hook";
+import { useTheme } from "@/hooks/useTheme.hook";
+import { useAppStore } from "@/store/app.store";
+import { Sidebar } from "@/components/layout/Sidebar.component";
+import { StatusBar } from "@/components/layout/StatusBar.component";
 
-type View = "recorder" | "settings";
+import { ToastContainer } from "@/components/shared/ToastContainer.component";
+import { HistoryPage } from "@/pages/History.page";
+import { SettingsPage } from "@/pages/Settings.page";
+import { DashboardPage } from "@/pages/Dashboard.page";
+import { SystemCheckPage } from "@/pages/SystemCheck.page";
+import { ShortcutsPage } from "@/pages/Shortcuts.page";
+import { OnboardingPage } from "@/pages/Onboarding.page";
 
 export default function App() {
-  const [view, setView] = useState<View>("recorder");
-  const { groqApiKey } = useSettings();
+  const currentView = useAppStore((s) => s.currentView);
+  const setCurrentView = useAppStore((s) => s.setCurrentView);
+  const { groqApiKey, sttMode, onboardingComplete, saveOnboardingComplete } = useSettings();
 
-  // Register global hotkey (Cmd+Shift+Space) for push-to-talk
+  useTheme();
   useGlobalHotkey();
+  useModelAutoLoad();
+  useHistory();
 
-  // Auto-show settings if no API key
+  const handleOnboardingComplete = useCallback(async () => {
+    await saveOnboardingComplete(true);
+  }, [saveOnboardingComplete]);
+
+  // Auto-show settings if no API key and cloud mode selected (only after onboarding)
   useEffect(() => {
-    if (!groqApiKey) {
-      const timer = setTimeout(() => setView("settings"), 600);
+    if (!onboardingComplete) return;
+    if (!groqApiKey && sttMode === "cloud") {
+      const timer = setTimeout(() => setCurrentView("settings"), 500);
       return () => clearTimeout(timer);
     }
-  }, [groqApiKey]);
+  }, [groqApiKey, sttMode, setCurrentView, onboardingComplete]);
 
-  const isSettings = view === "settings";
+  // Keyboard shortcuts
+  useEffect(() => {
+    if (!onboardingComplete) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key === ",") {
+        e.preventDefault();
+        setCurrentView("settings");
+      }
+      if (e.key === "Escape" && currentView !== "dashboard") {
+        e.preventDefault();
+        setCurrentView("dashboard");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentView, setCurrentView, onboardingComplete]);
+
+  // Show onboarding on first launch
+  if (!onboardingComplete) {
+    return <OnboardingPage onComplete={handleOnboardingComplete} />;
+  }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-bg">
-      {/* ── Title Bar (drag region) ── */}
-      <div
-        data-tauri-drag-region
-        className="flex h-10 shrink-0 items-center justify-between px-3"
-      >
-        {/* Left: App identity */}
-        <div className="flex items-center gap-1.5" data-tauri-drag-region>
-          <div
-            className="flex h-5 w-5 items-center justify-center rounded-md bg-accent/10"
-            data-tauri-drag-region
-          >
-            <Mic size={10} className="text-accent" />
-          </div>
-          <span
-            className="text-[11px] font-medium tracking-wide text-text-muted"
-            data-tauri-drag-region
-          >
-            VoiceInk
-          </span>
+    <div className="flex h-full overflow-hidden">
+      <Sidebar />
+
+      <div className="flex flex-1 flex-col min-w-0">
+        {/* Drag region for title bar area */}
+        <div data-tauri-drag-region className="absolute right-0 top-0 left-[var(--sidebar-width)] z-20 h-[52px] pointer-events-none" />
+
+        {/* Page content */}
+        <div key={currentView} className="flex-1 min-h-0 animate-page-enter">
+          {currentView === "history" && <HistoryPage />}
+          {currentView === "settings" && <SettingsPage />}
+          {currentView === "dashboard" && <DashboardPage />}
+          {currentView === "system-check" && <SystemCheckPage />}
+          {currentView === "shortcuts" && <ShortcutsPage />}
         </div>
 
-        {/* Right: Settings toggle */}
-        <button
-          onClick={() => setView(isSettings ? "recorder" : "settings")}
-          className={cn(
-            "flex h-6 w-6 items-center justify-center rounded-md transition-all duration-150",
-            "hover:bg-bg-hover active:scale-90",
-            isSettings
-              ? "text-text-primary"
-              : "text-text-muted hover:text-text-secondary",
-          )}
-          title={isSettings ? "Close settings" : "Settings"}
-        >
-          {isSettings ? <X size={13} /> : <Settings size={13} />}
-        </button>
+        <StatusBar />
       </div>
 
-      {/* ── Divider ── */}
-      <div className="h-px bg-border-subtle" />
-
-      {/* ── Content ── */}
-      <div className="flex-1 overflow-y-auto">
-        {isSettings ? <SettingsView /> : <RecorderView />}
-      </div>
+      <ToastContainer />
     </div>
   );
 }

@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicholasrice/tauri-schema/main/tauri.conf.json",
-  "productName": "VoiceInk",
+  "productName": "Linty",
   "version": "0.1.0",
-  "identifier": "com.voiceink.desktop",
+  "identifier": "ai.linty.desktop",
   "build": {
     "beforeDevCommand": "yarn dev",
     "devUrl": "http://localhost:1420",
@@ -10,23 +10,44 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "VoiceInk",
-        "width": 420,
-        "height": 340,
+        "title": "Linty",
+        "width": 800,
+        "height": 600,
+        "minWidth": 640,
+        "minHeight": 480,
+        "resizable": true,
+        "decorations": true,
+        "transparent": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "alwaysOnTop": false,
+        "visible": false,
+        "center": true,
+        "shadow": true
+      },
+      {
+        "title": "",
+        "label": "capsule",
+        "url": "/capsule.html",
+        "width": 280,
+        "height": 52,
         "resizable": false,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
         "visible": false,
-        "center": true
+        "shadow": false,
+        "skipTaskbar": true,
+        "focus": false
       }
     ],
     "trayIcon": {
       "iconPath": "icons/icon.png",
       "iconAsTemplate": true,
-      "tooltip": "VoiceInk"
+      "tooltip": "Linty — Hold fn to record"
     },
     "security": {
       "csp": null
@@ -43,7 +64,10 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": null,
+      "hardenedRuntime": true,
+      "entitlements": "../src-tauri/Entitlements.plist"
     }
   }
 }

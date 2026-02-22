@@ -1,0 +1,6 @@
+<svg width="140" height="32" viewBox="0 0 140 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="10" cy="16" r="5" fill="#e23535">
+    <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite"/>
+  </circle>
+  <text x="22" y="22" font-family="system-ui, -apple-system, sans-serif" font-weight="800" font-size="20" fill="#f0f0f2" letter-spacing="-0.5">VoiceInk</text>
+</svg>

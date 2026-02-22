@@ -8,6 +8,7 @@ interface ModelInfo {
   filename: string;
   url: string;
   size_mb: number;
+  description: string;
 }
 
 interface DownloadProgress {
@@ -27,6 +28,7 @@ export function useModelDownload() {
     null,
   );
   const [isLocalAvailable, setIsLocalAvailable] = useState(false);
+  const [loadedModel, setLoadedModel] = useState<string | null>(null);
 
   const { setIsLocalModelDownloaded, setLocalModelPath } = useAppStore();
 
@@ -62,10 +64,27 @@ export function useModelDownload() {
 
       if (downloaded.size > 0) {
         setIsLocalModelDownloaded(true);
+
+        // Auto-load the first downloaded model if none is loaded yet
+        if (!loadedModel) {
+          const firstDownloaded = models.find((m) => downloaded.has(m.filename));
+          if (firstDownloaded) {
+            try {
+              console.log("[model] Auto-loading:", firstDownloaded.filename);
+              await invoke("load_whisper_model", {
+                filename: firstDownloaded.filename,
+              });
+              setLoadedModel(firstDownloaded.filename);
+              console.log("[model] Auto-loaded:", firstDownloaded.filename);
+            } catch (err) {
+              console.error("[model] Auto-load failed:", err);
+            }
+          }
+        }
       }
     };
     if (models.length) checkModels();
-  }, [models, setIsLocalModelDownloaded]);
+  }, [models, setIsLocalModelDownloaded, loadedModel]);
 
   // Listen for download progress
   useEffect(() => {
@@ -105,6 +124,15 @@ export function useModelDownload() {
         setLocalModelPath(path);
         setDownloadedModels((prev) => new Set([...prev, model.filename]));
         setIsLocalModelDownloaded(true);
+
+        // Auto-load the model after download
+        try {
+          await invoke("load_whisper_model", { filename: model.filename });
+          setLoadedModel(model.filename);
+          console.log("[model] Auto-loaded after download:", model.filename);
+        } catch (loadErr) {
+          console.error("[model] Auto-load after download failed:", loadErr);
+        }
       } catch (err) {
         console.error("Download failed:", err);
       } finally {
@@ -118,6 +146,8 @@ export function useModelDownload() {
   const loadModel = useCallback(async (filename: string) => {
     try {
       await invoke("load_whisper_model", { filename });
+      setLoadedModel(filename);
+      console.log("[model] Loaded:", filename);
     } catch (err) {
       console.error("Failed to load model:", err);
       throw err;
@@ -131,6 +161,7 @@ export function useModelDownload() {
     downloadProgress,
     downloadingFilename,
     isLocalAvailable,
+    loadedModel,
     downloadModel,
     loadModel,
   };

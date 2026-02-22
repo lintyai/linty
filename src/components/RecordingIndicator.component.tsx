@@ -23,57 +23,50 @@ export function RecordingIndicator({
   className,
 }: RecordingIndicatorProps) {
   return (
-    <div className={cn("flex flex-col items-center gap-3", className)}>
-      {/* Mic button with pulse rings */}
+    <div className={cn("flex flex-col items-center gap-2.5", className)}>
       <div className="relative flex items-center justify-center">
-        {/* Outer pulse rings — only when recording */}
         {isRecording && (
           <>
             <div
               className="animate-pulse-ring-slow absolute rounded-full"
               style={{
-                width: 72,
-                height: 72,
+                width: 56,
+                height: 56,
                 border: "1px solid var(--color-accent)",
-                opacity: 0.15,
+                opacity: 0.12,
               }}
             />
             <div
               className="animate-pulse-ring absolute rounded-full"
               style={{
-                width: 72,
-                height: 72,
+                width: 56,
+                height: 56,
                 border: "1.5px solid var(--color-accent)",
-                opacity: 0.25,
+                opacity: 0.2,
+              }}
+            />
+            <div
+              className="animate-breathe absolute rounded-full"
+              style={{
+                width: 48,
+                height: 48,
+                background:
+                  "radial-gradient(circle, var(--color-accent-glow-strong) 0%, transparent 70%)",
               }}
             />
           </>
         )}
 
-        {/* Glow backdrop */}
-        {isRecording && (
-          <div
-            className="animate-breathe absolute rounded-full"
-            style={{
-              width: 64,
-              height: 64,
-              background:
-                "radial-gradient(circle, var(--color-accent-glow-strong) 0%, transparent 70%)",
-            }}
-          />
-        )}
-
-        {/* Mic circle */}
         <div
           className={cn(
             "relative z-10 flex items-center justify-center rounded-full transition-all duration-200",
             isRecording
-              ? "h-14 w-14 bg-accent shadow-[0_0_24px_var(--color-accent-glow-strong)]"
-              : "h-12 w-12 bg-bg-elevated border border-border",
+              ? "h-10 w-10 bg-accent shadow-[0_0_16px_var(--color-accent-glow-strong)]"
+              : "h-10 w-10 bg-bg-elevated border border-border",
           )}
         >
           <Mic
-            size={isRecording ? 22 : 20}
+            size={isRecording ? 18 : 16}
             strokeWidth={1.8}
             className={cn(
               "transition-colors duration-200",
@@ -83,16 +76,10 @@ export function RecordingIndicator({
         </div>
       </div>
 
-      {/* Duration counter */}
       {isRecording && (
-        <div className="animate-fade-in flex items-center gap-2">
-          <div
-            className="h-1.5 w-1.5 rounded-full bg-accent animate-breathe"
-          />
-          <span
-            className="text-sm tracking-wide text-text-secondary tabular-nums"
-            style={{ fontVariantNumeric: "tabular-nums", letterSpacing: "0.04em" }}
-          >
+        <div className="animate-fade-in flex items-center gap-1.5">
+          <div className="h-1.5 w-1.5 rounded-full bg-accent animate-breathe" />
+          <span className="text-[13px] font-medium text-text-secondary tabular-nums">
             {formatDuration(duration)}
           </span>
         </div>

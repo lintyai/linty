@@ -14,7 +14,6 @@ pub fn spawn_audio_thread(
     let (tx, rx) = mpsc::channel::<AudioCommand>();
 
     std::thread::spawn(move || {
-        let host = cpal::default_host();
         let mut active_stream: Option<cpal::Stream> = None;
 
         loop {
@@ -22,6 +21,9 @@ pub fn spawn_audio_thread(
                 Ok(AudioCommand::Start) => {
                     // Drop any existing stream
                     active_stream.take();
+
+                    // Fresh host per recording — stale CoreAudio handles die after sleep
+                    let host = cpal::default_host();
 
                     // Clear buffer
                     if let Ok(mut buf) = buffer.lock() {
@@ -36,11 +38,28 @@ pub fn spawn_audio_thread(
                         }
                     };
 
+                    // Use device's default config, then downsample to 16kHz mono
+                    let default_config = match device.default_input_config() {
+                        Ok(c) => c,
+                        Err(e) => {
+                            eprintln!("No default input config: {}", e);
+                            continue;
+                        }
+                    };
+
+                    let device_sample_rate = default_config.sample_rate().0;
+                    let device_channels = default_config.channels();
+
                     let config = cpal::StreamConfig {
-                        channels: 1,
-                        sample_rate: cpal::SampleRate(16000),
+                        channels: device_channels,
+                        sample_rate: cpal::SampleRate(device_sample_rate),
                         buffer_size: cpal::BufferSize::Default,
                     };
+
+                    eprintln!(
+                        "[audio] Using device config: {}Hz, {} ch (will resample to 16kHz mono)",
+                        device_sample_rate, device_channels
+                    );
 
                     let buf_clone = buffer.clone();
                     let app_clone = app.clone();
@@ -48,14 +67,48 @@ pub fn spawn_audio_thread(
                     let stream = match device.build_input_stream(
                         &config,
                         move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                            // Downmix to mono if needed
+                            let mono: Vec<f32> = if device_channels > 1 {
+                                data.chunks(device_channels as usize)
+                                    .map(|frame| {
+                                        frame.iter().sum::<f32>() / device_channels as f32
+                                    })
+                                    .collect()
+                            } else {
+                                data.to_vec()
+                            };
+
+                            // Resample to 16kHz using linear interpolation
+                            let resampled = if device_sample_rate != 16000 {
+                                let ratio = device_sample_rate as f64 / 16000.0;
+                                let output_len =
+                                    (mono.len() as f64 / ratio).ceil() as usize;
+                                let mut out = Vec::with_capacity(output_len);
+                                for i in 0..output_len {
+                                    let src_idx = i as f64 * ratio;
+                                    let idx = src_idx as usize;
+                                    let frac = (src_idx - idx as f64) as f32;
+                                    let s0 = mono.get(idx).copied().unwrap_or(0.0);
+                                    let s1 = mono.get(idx + 1).copied().unwrap_or(s0);
+                                    out.push(s0 + frac * (s1 - s0));
+                                }
+                                out
+                            } else {
+                                mono
+                            };
+
                             if let Ok(mut buf) = buf_clone.lock() {
-                                buf.extend_from_slice(data);
+                                buf.extend_from_slice(&resampled);
                             }
-                            if !data.is_empty() {
-                                let rms: f32 = (data.iter().map(|s| s * s).sum::<f32>()
-                                    / data.len() as f32)
+                            if !resampled.is_empty() {
+                                let rms: f32 = (resampled
+                                    .iter()
+                                    .map(|s| s * s)
+                                    .sum::<f32>()
+                                    / resampled.len() as f32)
                                     .sqrt();
                                 let _ = app_clone.emit("audio-amplitude", rms);
+                                let _ = app_clone.emit_to("capsule", "capsule-amplitude", rms);
                             }
                         },
                         |err| eprintln!("Audio stream error: {}", err),

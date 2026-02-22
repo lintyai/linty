@@ -1,5 +1,5 @@
 {
-  "name": "voiceink",
+  "name": "linty",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:mac": "tauri build --bundles dmg app -- --features local-stt && mkdir -p release && cp -f src-tauri/target/release/bundle/dmg/*.dmg release/",
+    "build:mac:universal": "tauri build --target universal-apple-darwin --bundles dmg app -- --features local-stt && mkdir -p release && cp -f src-tauri/target/release/bundle/dmg/*.dmg release/"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",

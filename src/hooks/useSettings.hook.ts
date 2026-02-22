@@ -1,9 +1,9 @@
 import { useEffect, useCallback } from "react";
 import { load } from "@tauri-apps/plugin-store";
 import { useAppStore } from "@/store/app.store";
-import type { SttMode } from "@/store/slices/settings.slice";
+import type { SttMode, ThemePreference } from "@/store/slices/settings.slice";
 
-const STORE_PATH = "voiceink-settings.json";
+const STORE_PATH = "linty-settings.json";
 
 let storeInstance: Awaited<ReturnType<typeof load>> | null = null;
 
@@ -14,6 +14,11 @@ async function getStore() {
         groqApiKey: "",
         sttMode: "cloud",
         correctionEnabled: true,
+        theme: "system",
+        whisperPrompt: "",
+        correctionPrompt: "",
+        transcriptionLanguage: "auto",
+        translateToEnglish: false,
       },
       autoSave: true,
     });
@@ -26,9 +31,21 @@ export function useSettings() {
     groqApiKey,
     sttMode,
     correctionEnabled,
+    theme,
+    whisperPrompt,
+    correctionPrompt,
+    onboardingComplete,
+    transcriptionLanguage,
+    translateToEnglish,
     setGroqApiKey,
     setSttMode,
     setCorrectionEnabled,
+    setTheme,
+    setWhisperPrompt,
+    setCorrectionPrompt,
+    setOnboardingComplete,
+    setTranscriptionLanguage,
+    setTranslateToEnglish,
   } = useAppStore();
 
   // Load settings on mount
@@ -39,16 +56,29 @@ export function useSettings() {
         const key = await store.get<string>("groqApiKey");
         const mode = await store.get<SttMode>("sttMode");
         const correction = await store.get<boolean>("correctionEnabled");
+        const savedTheme = await store.get<ThemePreference>("theme");
+        const savedWhisperPrompt = await store.get<string>("whisperPrompt");
+        const savedCorrectionPrompt = await store.get<string>("correctionPrompt");
+        const savedOnboarding = await store.get<boolean>("onboardingComplete");
+        const savedLanguage = await store.get<string>("transcriptionLanguage");
+        const savedTranslate = await store.get<boolean>("translateToEnglish");
 
         if (key) setGroqApiKey(key);
         if (mode) setSttMode(mode);
         if (correction !== null && correction !== undefined)
           setCorrectionEnabled(correction);
+        if (savedTheme) setTheme(savedTheme);
+        if (savedWhisperPrompt) setWhisperPrompt(savedWhisperPrompt);
+        if (savedCorrectionPrompt) setCorrectionPrompt(savedCorrectionPrompt);
+        if (savedOnboarding) setOnboardingComplete(savedOnboarding);
+        if (savedLanguage) setTranscriptionLanguage(savedLanguage);
+        if (savedTranslate !== null && savedTranslate !== undefined)
+          setTranslateToEnglish(savedTranslate);
       } catch (err) {
         console.error("Failed to load settings:", err);
       }
     })();
-  }, [setGroqApiKey, setSttMode, setCorrectionEnabled]);
+  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setTranslateToEnglish]);
 
   const saveGroqApiKey = useCallback(
     async (key: string) => {
@@ -77,12 +107,78 @@ export function useSettings() {
     [setCorrectionEnabled],
   );
 
+  const saveTheme = useCallback(
+    async (newTheme: ThemePreference) => {
+      setTheme(newTheme);
+      const store = await getStore();
+      await store.set("theme", newTheme);
+    },
+    [setTheme],
+  );
+
+  const saveWhisperPrompt = useCallback(
+    async (prompt: string) => {
+      setWhisperPrompt(prompt);
+      const store = await getStore();
+      await store.set("whisperPrompt", prompt);
+    },
+    [setWhisperPrompt],
+  );
+
+  const saveCorrectionPrompt = useCallback(
+    async (prompt: string) => {
+      setCorrectionPrompt(prompt);
+      const store = await getStore();
+      await store.set("correctionPrompt", prompt);
+    },
+    [setCorrectionPrompt],
+  );
+
+  const saveOnboardingComplete = useCallback(
+    async (complete: boolean) => {
+      setOnboardingComplete(complete);
+      const store = await getStore();
+      await store.set("onboardingComplete", complete);
+    },
+    [setOnboardingComplete],
+  );
+
+  const saveTranscriptionLanguage = useCallback(
+    async (language: string) => {
+      setTranscriptionLanguage(language);
+      const store = await getStore();
+      await store.set("transcriptionLanguage", language);
+    },
+    [setTranscriptionLanguage],
+  );
+
+  const saveTranslateToEnglish = useCallback(
+    async (translate: boolean) => {
+      setTranslateToEnglish(translate);
+      const store = await getStore();
+      await store.set("translateToEnglish", translate);
+    },
+    [setTranslateToEnglish],
+  );
+
   return {
     groqApiKey,
     sttMode,
     correctionEnabled,
+    theme,
+    whisperPrompt,
+    correctionPrompt,
     saveGroqApiKey,
     saveSttMode,
     saveCorrectionEnabled,
+    saveTheme,
+    saveWhisperPrompt,
+    saveCorrectionPrompt,
+    onboardingComplete,
+    saveOnboardingComplete,
+    transcriptionLanguage,
+    translateToEnglish,
+    saveTranscriptionLanguage,
+    saveTranslateToEnglish,
   };
 }

@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+release/
 src-tauri/target/
 
 # IDE
@@ -18,6 +19,16 @@ Thumbs.db
 # Env
 .env
 .env.local
+
+# Signing artifacts
+*.certSigningRequest
+*.cer
+*.key
+*.p12
+
+# Logs
+firebase-debug.log
+*-fnkey.log
 
 # Tauri
 src-tauri/gen/

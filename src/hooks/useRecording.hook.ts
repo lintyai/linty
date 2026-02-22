@@ -55,6 +55,10 @@ export function useRecording() {
     }
   }, [setIsRecording, setAudioSamples, setStatus]);
 
+  const getRecordingStartTime = useCallback(() => {
+    return startTimeRef.current;
+  }, []);
+
   // Listen for audio amplitude events from Rust
   useEffect(() => {
     const unlisten = listen<number>("audio-amplitude", (event) => {
@@ -81,5 +85,6 @@ export function useRecording() {
     amplitude,
     startRecording,
     stopRecording,
+    getRecordingStartTime,
   };
 }

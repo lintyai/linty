@@ -5,6 +5,8 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>VoiceInk needs microphone access to transcribe your speech.</string>
+    <string>Linty needs microphone access to transcribe your speech.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>Linty needs accessibility access for the fn key shortcut and auto-paste.</string>
 </dict>
 </plist>
