@@ -1,6 +1,8 @@
-import { useState } from "react";
-import { Eye, EyeOff, Cloud, Cpu, Sparkles } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Eye, EyeOff, Cloud, Cpu, Sparkles, Keyboard } from "lucide-react";
 import { useSettings } from "@/hooks/useSettings.hook";
+import { useModelDownload } from "@/hooks/useModelDownload.hook";
+import { ModelDownload } from "./ModelDownload.component";
 import { cn } from "@/lib/utils";
 
 export function SettingsView() {
@@ -13,12 +15,26 @@ export function SettingsView() {
     saveCorrectionEnabled,
   } = useSettings();
 
+  const { isLocalAvailable, downloadedModels } = useModelDownload();
+  const hasLocalModel = downloadedModels.size > 0;
+
   const [showKey, setShowKey] = useState(false);
   const [keyInput, setKeyInput] = useState(groqApiKey);
+
+  // Sync input when external key changes
+  useEffect(() => {
+    setKeyInput(groqApiKey);
+  }, [groqApiKey]);
 
   const handleKeyBlur = () => {
     if (keyInput !== groqApiKey) {
       saveGroqApiKey(keyInput);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      (e.target as HTMLInputElement).blur();
     }
   };
 
@@ -35,6 +51,7 @@ export function SettingsView() {
             value={keyInput}
             onChange={(e) => setKeyInput(e.target.value)}
             onBlur={handleKeyBlur}
+            onKeyDown={handleKeyDown}
             placeholder="gsk_..."
             spellCheck={false}
             autoComplete="off"
@@ -85,10 +102,13 @@ export function SettingsView() {
             icon={<Cpu size={13} />}
             label="Local"
             sublabel="whisper.cpp"
-            disabled
+            disabled={!isLocalAvailable || !hasLocalModel}
           />
         </div>
       </div>
+
+      {/* ── Local Models (when local engine selected or available) ── */}
+      {isLocalAvailable && sttMode === "local" && <ModelDownload />}
 
       {/* ── Correction Toggle ── */}
       <div className="flex items-center justify-between rounded-lg border border-border-subtle bg-bg-elevated px-3 py-2.5">
@@ -120,6 +140,28 @@ export function SettingsView() {
             )}
           />
         </button>
+      </div>
+
+      {/* ── Hotkey Info ── */}
+      <div className="flex items-center gap-2 rounded-lg border border-border-subtle bg-bg-elevated px-3 py-2.5">
+        <Keyboard size={13} className="text-text-muted" />
+        <div className="flex flex-col">
+          <span className="text-[12px] text-text-primary">
+            Push-to-Talk Hotkey
+          </span>
+          <span className="text-[10px] text-text-muted">
+            <kbd className="rounded bg-bg-hover px-1 py-0.5 text-[9px] font-medium">
+              &#8984;
+            </kbd>{" "}
+            <kbd className="rounded bg-bg-hover px-1 py-0.5 text-[9px] font-medium">
+              &#8679;
+            </kbd>{" "}
+            <kbd className="rounded bg-bg-hover px-1 py-0.5 text-[9px] font-medium">
+              Space
+            </kbd>{" "}
+            — hold to record, release to transcribe
+          </span>
+        </div>
       </div>
     </div>
   );

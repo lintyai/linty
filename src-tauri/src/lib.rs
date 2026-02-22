@@ -16,14 +16,12 @@ fn start_recording(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    // Mark recording state
     {
         let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
         rec.samples.clear();
         rec.is_recording = true;
     }
 
-    // Initialize audio thread if first time
     {
         let mut tx_guard = state.audio_tx.lock().map_err(|e| e.to_string())?;
         if tx_guard.is_none() {
@@ -32,7 +30,6 @@ fn start_recording(
         }
     }
 
-    // Send start command
     let tx_guard = state.audio_tx.lock().map_err(|e| e.to_string())?;
     if let Some(tx) = tx_guard.as_ref() {
         tx.send(AudioCommand::Start).map_err(|e| e.to_string())?;
@@ -46,7 +43,6 @@ fn stop_recording(
     _app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<f32>, String> {
-    // Send stop command
     {
         let tx_guard = state.audio_tx.lock().map_err(|e| e.to_string())?;
         if let Some(tx) = tx_guard.as_ref() {
@@ -54,10 +50,8 @@ fn stop_recording(
         }
     }
 
-    // Small delay to ensure stream is fully stopped
     std::thread::sleep(std::time::Duration::from_millis(50));
 
-    // Drain the buffer
     let samples = {
         let mut buf = state.audio_buffer.lock().map_err(|e| e.to_string())?;
         let s = buf.clone();
@@ -89,6 +83,104 @@ fn check_accessibility() -> bool {
     paste::check_accessibility_permission()
 }
 
+// ── Local STT commands ──
+
+#[tauri::command]
+fn get_available_models() -> Vec<transcribe::ModelInfo> {
+    transcribe::available_models()
+}
+
+#[tauri::command]
+fn get_models_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("No app data dir: {}", e))?;
+    let models_dir = data_dir.join("models");
+    std::fs::create_dir_all(&models_dir).map_err(|e| e.to_string())?;
+    Ok(models_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn check_model_exists(app: tauri::AppHandle, filename: String) -> Result<bool, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("No app data dir: {}", e))?;
+    let model_path = data_dir.join("models").join(&filename);
+    Ok(model_path.exists())
+}
+
+#[tauri::command]
+async fn download_model_file(
+    app: tauri::AppHandle,
+    url: String,
+    filename: String,
+) -> Result<String, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("No app data dir: {}", e))?;
+    let dest = data_dir.join("models").join(&filename);
+    transcribe::download_model(&app, &url, &dest).await?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn load_whisper_model(
+    #[allow(unused_variables)] app: tauri::AppHandle,
+    #[allow(unused_variables)] state: tauri::State<'_, AppState>,
+    #[allow(unused_variables)] filename: String,
+) -> Result<(), String> {
+    #[cfg(feature = "local-stt")]
+    {
+        use whisper_rs::{WhisperContext, WhisperContextParameters};
+
+        let data_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("No app data dir: {}", e))?;
+        let model_path = data_dir.join("models").join(&filename);
+
+        if !model_path.exists() {
+            return Err(format!("Model not found: {}", model_path.display()));
+        }
+
+        let ctx = WhisperContext::new_with_params(
+            model_path.to_str().ok_or("Invalid path")?,
+            WhisperContextParameters::default(),
+        )
+        .map_err(|e| format!("Failed to load model: {}", e))?;
+
+        let mut guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
+        *guard = Some(ctx);
+
+        Ok(())
+    }
+    #[cfg(not(feature = "local-stt"))]
+    Err("Local STT not available — rebuild with `local-stt` feature".into())
+}
+
+#[tauri::command]
+fn transcribe_local_audio(
+    #[allow(unused_variables)] state: tauri::State<'_, AppState>,
+    #[allow(unused_variables)] samples: Vec<f32>,
+) -> Result<String, String> {
+    #[cfg(feature = "local-stt")]
+    {
+        let guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
+        let ctx = guard.as_ref().ok_or("Whisper model not loaded")?;
+        transcribe::transcribe_local(ctx, &samples)
+    }
+    #[cfg(not(feature = "local-stt"))]
+    Err("Local STT not available — rebuild with `local-stt` feature".into())
+}
+
+#[tauri::command]
+fn is_local_stt_available() -> bool {
+    cfg!(feature = "local-stt")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -98,12 +190,10 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(AppState::new())
         .setup(|app| {
-            // Build tray menu
             let show = MenuItem::with_id(app, "show", "Show VoiceInk", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
 
-            // Build tray icon
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
@@ -137,7 +227,6 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Show window on startup for initial setup
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.center();
@@ -151,6 +240,13 @@ pub fn run() {
             transcribe_audio,
             paste_text,
             check_accessibility,
+            get_available_models,
+            get_models_dir,
+            check_model_exists,
+            download_model_file,
+            is_local_stt_available,
+            load_whisper_model,
+            transcribe_local_audio,
         ])
         .run(tauri::generate_context!())
         .expect("error while running VoiceInk");

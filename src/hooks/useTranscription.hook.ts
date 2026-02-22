@@ -12,6 +12,7 @@ export function useTranscription() {
     finalText,
     error,
     groqApiKey,
+    sttMode,
     correctionEnabled,
     setStatus,
     setRawTranscript,
@@ -28,18 +29,26 @@ export function useTranscription() {
         return;
       }
 
-      if (!groqApiKey) {
+      if (sttMode === "cloud" && !groqApiKey) {
         setError("Groq API key not set. Open settings to configure.");
         return;
       }
 
       try {
-        // Step 1: Transcribe
+        // Step 1: Transcribe (cloud or local)
         setStatus("transcribing");
-        const transcript = await invoke<string>("transcribe_audio", {
-          samples,
-          apiKey: groqApiKey,
-        });
+        let transcript: string;
+
+        if (sttMode === "local") {
+          transcript = await invoke<string>("transcribe_local_audio", {
+            samples,
+          });
+        } else {
+          transcript = await invoke<string>("transcribe_audio", {
+            samples,
+            apiKey: groqApiKey,
+          });
+        }
 
         if (!transcript.trim()) {
           setError("No speech detected");
@@ -48,9 +57,9 @@ export function useTranscription() {
 
         setRawTranscript(transcript);
 
-        // Step 2: LLM correction (optional)
+        // Step 2: LLM correction (optional, requires API key)
         let finalResult = transcript;
-        if (correctionEnabled) {
+        if (correctionEnabled && groqApiKey) {
           setStatus("correcting");
           try {
             const corrected = await correctText(transcript, groqApiKey);
@@ -94,6 +103,7 @@ export function useTranscription() {
     },
     [
       groqApiKey,
+      sttMode,
       correctionEnabled,
       setStatus,
       setRawTranscript,

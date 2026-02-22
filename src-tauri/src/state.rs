@@ -18,6 +18,9 @@ pub struct AppState {
     pub audio_buffer: Arc<Mutex<Vec<f32>>>,
     /// Channel to send commands to the audio thread.
     pub audio_tx: Mutex<Option<mpsc::Sender<AudioCommand>>>,
+    /// whisper-rs context for local STT (loaded once, reused).
+    #[cfg(feature = "local-stt")]
+    pub whisper_ctx: Mutex<Option<whisper_rs::WhisperContext>>,
 }
 
 impl AppState {
@@ -26,6 +29,8 @@ impl AppState {
             recording: Mutex::new(RecordingState::default()),
             audio_buffer: Arc::new(Mutex::new(Vec::new())),
             audio_tx: Mutex::new(None),
+            #[cfg(feature = "local-stt")]
+            whisper_ctx: Mutex::new(None),
         }
     }
 }
