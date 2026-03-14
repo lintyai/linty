@@ -61,17 +61,17 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          shared-key: macos-aarch64
+          cache-on-failure: true
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: yarn
 
       - name: Install yarn dependencies
         run: yarn install --frozen-lockfile
-
-      - name: Install Tauri CLI
-        run: yarn tauri --version || npm install -g @tauri-apps/cli
 
       - name: Import Apple certificate
         env:
