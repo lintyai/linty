@@ -1,0 +1,44 @@
+name: Build macOS DMG
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-macos:
+    runs-on: macos-14 # Apple Silicon (M1) runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (aarch64)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install yarn dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Install Tauri CLI
+        run: yarn tauri --version || npm install -g @tauri-apps/cli
+
+      - name: Build DMG
+        run: yarn tauri build --target aarch64-apple-darwin --bundles dmg -- --features local-stt
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linty-macOS-arm64
+          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+

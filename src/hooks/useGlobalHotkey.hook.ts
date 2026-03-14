@@ -75,9 +75,9 @@ export function useGlobalHotkey() {
         await invoke("emit_capsule_state", { state: "transcribing" });
         await invoke("play_capsule_sound", { sound: "processing" });
       }
-      const samples = await stopRecordingRef.current();
-      if (samples.length) {
-        processAudioRef.current(samples);
+      const result = await stopRecordingRef.current();
+      if (result.sample_count > 0) {
+        await processAudioRef.current(result);
       }
     } finally {
       processingRef.current = false;

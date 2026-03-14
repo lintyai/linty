@@ -15,13 +15,11 @@ export interface TranscriptionSlice {
   correctedTranscript: string;
   finalText: string;
   error: string | null;
-  audioSamples: number[];
   setStatus: (status: TranscriptionStatus) => void;
   setRawTranscript: (text: string) => void;
   setCorrectedTranscript: (text: string) => void;
   setFinalText: (text: string) => void;
   setError: (error: string | null) => void;
-  setAudioSamples: (samples: number[]) => void;
   resetTranscription: () => void;
 }
 
@@ -33,13 +31,11 @@ export const createTranscriptionSlice: StateCreator<TranscriptionSlice> = (
   correctedTranscript: "",
   finalText: "",
   error: null,
-  audioSamples: [],
   setStatus: (status) => set({ status }),
   setRawTranscript: (rawTranscript) => set({ rawTranscript }),
   setCorrectedTranscript: (correctedTranscript) => set({ correctedTranscript }),
   setFinalText: (finalText) => set({ finalText }),
   setError: (error) => set({ error, status: error ? "error" : "idle" }),
-  setAudioSamples: (audioSamples) => set({ audioSamples }),
   resetTranscription: () =>
     set({
       status: "idle",
@@ -47,6 +43,5 @@ export const createTranscriptionSlice: StateCreator<TranscriptionSlice> = (
       correctedTranscript: "",
       finalText: "",
       error: null,
-      audioSamples: [],
     }),
 });

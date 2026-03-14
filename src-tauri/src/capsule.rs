@@ -98,7 +98,7 @@ pub fn show_capsule(app: AppHandle) {
         let main_screen = tauri_nspanel::cocoa::appkit::NSScreen::mainScreen(nil);
         let visible_frame: NSRect = msg_send![main_screen, visibleFrame];
 
-        let panel_width: f64 = 280.0;
+        let panel_width: f64 = 380.0;
         let panel_height: f64 = 52.0;
         let x = visible_frame.origin.x + (visible_frame.size.width - panel_width) / 2.0;
         let y = visible_frame.origin.y + 32.0;

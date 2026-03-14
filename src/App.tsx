@@ -1,4 +1,7 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { getStore } from "@tauri-apps/plugin-store";
 import { useSettings } from "@/hooks/useSettings.hook";
 import { useGlobalHotkey } from "@/hooks/useGlobalHotkey.hook";
 import { useModelAutoLoad } from "@/hooks/useModelAutoLoad.hook";
@@ -7,6 +10,7 @@ import { useTheme } from "@/hooks/useTheme.hook";
 import { useAppStore } from "@/store/app.store";
 import { Sidebar } from "@/components/layout/Sidebar.component";
 import { StatusBar } from "@/components/layout/StatusBar.component";
+import { ConfirmResetDialogue } from "@/components/shared/ConfirmReset.dialogue";
 
 import { ToastContainer } from "@/components/shared/ToastContainer.component";
 import { HistoryPage } from "@/pages/History.page";
@@ -19,7 +23,9 @@ import { OnboardingPage } from "@/pages/Onboarding.page";
 export default function App() {
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
-  const { groqApiKey, sttMode, onboardingComplete, saveOnboardingComplete } = useSettings();
+  const { groqApiKey, sttMode, onboardingComplete, saveOnboardingComplete, settingsLoaded } = useSettings();
+
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   useTheme();
   useGlobalHotkey();
@@ -30,14 +36,51 @@ export default function App() {
     await saveOnboardingComplete(true);
   }, [saveOnboardingComplete]);
 
-  // Auto-show settings if no API key and cloud mode selected (only after onboarding)
+  // Auto-show settings if no API key and cloud mode selected (only after settings loaded)
   useEffect(() => {
-    if (!onboardingComplete) return;
+    if (!onboardingComplete || !settingsLoaded) return;
     if (!groqApiKey && sttMode === "cloud") {
       const timer = setTimeout(() => setCurrentView("settings"), 500);
       return () => clearTimeout(timer);
     }
-  }, [groqApiKey, sttMode, setCurrentView, onboardingComplete]);
+  }, [groqApiKey, sttMode, setCurrentView, onboardingComplete, settingsLoaded]);
+
+  // Menu: Reset All Data — show in-app confirmation dialog
+  // (window.confirm is silently blocked by WKWebView — wry's WKUIDelegate
+  //  does not implement runJavaScriptConfirmPanelWithMessage)
+  useEffect(() => {
+    const unlisten = listen("menu-reset-all-data", () => {
+      setShowResetConfirm(true);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
+
+  const handleResetConfirm = useCallback(async () => {
+    setShowResetConfirm(false);
+    try {
+      // 1. Clear plugin-store in-memory caches — the Rust backend holds
+      //    state that survives webview reload, so deleting files alone
+      //    does nothing (autoSave re-writes them from memory).
+      const settingsStore = await getStore("linty-settings.json");
+      if (settingsStore) {
+        await settingsStore.clear();
+        await settingsStore.save();
+      }
+      const historyStore = await getStore("linty-history.json");
+      if (historyStore) {
+        await historyStore.clear();
+        await historyStore.save();
+      }
+
+      // 2. Delete model files from disk + unload whisper from memory
+      await invoke("reset_all_data");
+
+      // 3. Reload webview — JS singletons reset, stores rehydrate empty
+      window.location.reload();
+    } catch (err) {
+      console.error("Reset failed:", err);
+    }
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -82,6 +125,11 @@ export default function App() {
       </div>
 
       <ToastContainer />
+      <ConfirmResetDialogue
+        open={showResetConfirm}
+        onConfirm={handleResetConfirm}
+        onCancel={() => setShowResetConfirm(false)}
+      />
     </div>
   );
 }

@@ -1,13 +1,13 @@
 import {
   Search,
-  Copy,
-  Trash2,
   X,
   Mic,
   Sparkles,
   Zap,
   Wand2,
   Timer,
+  Cloud,
+  Cpu,
 } from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useHistory } from "@/hooks/useHistory.hook";
@@ -69,16 +69,10 @@ export function HistoryPage() {
     }
   };
 
-  const handleCopyDetail = async () => {
+  const handleCopyContent = async () => {
     if (!selectedTranscript) return;
     await writeText(selectedTranscript.finalText);
     success("Copied to clipboard");
-  };
-
-  const handleDeleteDetail = async () => {
-    if (!selectedTranscript) return;
-    await handleDeleteWithDeselect(selectedTranscript.transcriptId);
-    success("Transcript deleted");
   };
 
   return (
@@ -191,8 +185,11 @@ export function HistoryPage() {
               </button>
             </div>
 
-            {/* Detail content */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            {/* Detail content — click to copy */}
+            <div
+              onClick={handleCopyContent}
+              className="flex-1 overflow-y-auto p-5 space-y-4 cursor-pointer rounded-md transition-colors duration-150 hover:bg-bg-elevated/30 active:bg-bg-elevated/50"
+            >
               {selectedTranscript.corrected &&
                 selectedTranscript.rawText !== selectedTranscript.finalText && (
                   <div>
@@ -223,79 +220,60 @@ export function HistoryPage() {
                   {selectedTranscript.finalText}
                 </p>
               </div>
-
-              {/* Timing breakdown */}
-              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-bg-elevated/50 border border-border-subtle px-3 py-2">
-                <div className="flex items-center gap-1.5">
-                  <Mic size={11} className="text-text-muted" />
-                  <span className="text-[11px] text-text-muted">Rec</span>
-                  <span className="text-[11px] font-medium tabular-nums text-text-secondary">
-                    {selectedTranscript.durationSeconds < 60
-                      ? `${selectedTranscript.durationSeconds.toFixed(1)}s`
-                      : `${Math.floor(selectedTranscript.durationSeconds / 60)}:${Math.floor(selectedTranscript.durationSeconds % 60).toString().padStart(2, "0")}`}
-                  </span>
-                </div>
-                {selectedTranscript.sttTimeMs != null && (
-                  <>
-                    <span className="text-border-subtle text-[11px]">/</span>
-                    <div className="flex items-center gap-1.5">
-                      <Zap size={11} className="text-text-muted" />
-                      <span className="text-[11px] text-text-muted">STT</span>
-                      <span className="text-[11px] font-medium tabular-nums text-text-secondary">
-                        {(selectedTranscript.sttTimeMs / 1000).toFixed(1)}s
-                      </span>
-                    </div>
-                  </>
-                )}
-                {selectedTranscript.correctionTimeMs != null && selectedTranscript.correctionTimeMs > 0 && (
-                  <>
-                    <span className="text-border-subtle text-[11px]">/</span>
-                    <div className="flex items-center gap-1.5">
-                      <Wand2 size={11} className="text-text-muted" />
-                      <span className="text-[11px] text-text-muted">LLM</span>
-                      <span className="text-[11px] font-medium tabular-nums text-text-secondary">
-                        {(selectedTranscript.correctionTimeMs / 1000).toFixed(1)}s
-                      </span>
-                    </div>
-                  </>
-                )}
-                <span className="text-border-subtle text-[11px]">/</span>
-                <div className="flex items-center gap-1.5">
-                  <Timer size={11} className="text-text-muted" />
-                  <span className="text-[11px] text-text-muted">Total</span>
-                  <span className="text-[11px] font-medium tabular-nums text-text-secondary">
-                    {(selectedTranscript.processingTimeMs / 1000).toFixed(1)}s
-                  </span>
-                </div>
-              </div>
             </div>
 
-            {/* Detail footer actions */}
-            <div className="flex items-center gap-2 border-t border-border-subtle px-4 py-2.5">
-              <button
-                onClick={handleCopyDetail}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-lg px-3 py-[6px] text-[12px] font-medium",
-                  "bg-bg-elevated border border-border text-text-secondary",
-                  "hover:bg-bg-hover hover:text-text-primary transition-all duration-150",
-                  "active:scale-95",
+            {/* Metrics footer */}
+            <div className="flex flex-wrap items-center gap-3 border-t border-border-subtle px-4 py-2.5">
+              <div className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary">
+                {selectedTranscript.engine === "cloud" ? (
+                  <Cloud size={10} className="text-text-muted" />
+                ) : (
+                  <Cpu size={10} className="text-text-muted" />
                 )}
-              >
-                <Copy size={12} />
-                Copy
-              </button>
-              <button
-                onClick={handleDeleteDetail}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-lg px-3 py-[6px] text-[12px] font-medium",
-                  "bg-bg-elevated border border-border text-text-muted",
-                  "hover:bg-error-glow hover:text-error hover:border-error/20 transition-all duration-150",
-                  "active:scale-95",
-                )}
-              >
-                <Trash2 size={12} />
-                Delete
-              </button>
+                {selectedTranscript.modelName}
+              </div>
+              <span className="text-border-subtle text-[11px]">/</span>
+              <div className="flex items-center gap-1.5">
+                <Mic size={11} className="text-text-muted" />
+                <span className="text-[11px] text-text-muted">Rec</span>
+                <span className="text-[11px] font-medium tabular-nums text-text-secondary">
+                  {selectedTranscript.durationSeconds < 60
+                    ? `${selectedTranscript.durationSeconds.toFixed(1)}s`
+                    : `${Math.floor(selectedTranscript.durationSeconds / 60)}:${Math.floor(selectedTranscript.durationSeconds % 60).toString().padStart(2, "0")}`}
+                </span>
+              </div>
+              {selectedTranscript.sttTimeMs != null && (
+                <>
+                  <span className="text-border-subtle text-[11px]">/</span>
+                  <div className="flex items-center gap-1.5">
+                    <Zap size={11} className="text-text-muted" />
+                    <span className="text-[11px] text-text-muted">STT</span>
+                    <span className="text-[11px] font-medium tabular-nums text-text-secondary">
+                      {(selectedTranscript.sttTimeMs / 1000).toFixed(1)}s
+                    </span>
+                  </div>
+                </>
+              )}
+              {selectedTranscript.correctionTimeMs != null && selectedTranscript.correctionTimeMs > 0 && (
+                <>
+                  <span className="text-border-subtle text-[11px]">/</span>
+                  <div className="flex items-center gap-1.5">
+                    <Wand2 size={11} className="text-text-muted" />
+                    <span className="text-[11px] text-text-muted">LLM</span>
+                    <span className="text-[11px] font-medium tabular-nums text-text-secondary">
+                      {(selectedTranscript.correctionTimeMs / 1000).toFixed(1)}s
+                    </span>
+                  </div>
+                </>
+              )}
+              <span className="text-border-subtle text-[11px]">/</span>
+              <div className="flex items-center gap-1.5">
+                <Timer size={11} className="text-text-muted" />
+                <span className="text-[11px] text-text-muted">Total</span>
+                <span className="text-[11px] font-medium tabular-nums text-text-secondary">
+                  {(selectedTranscript.processingTimeMs / 1000).toFixed(1)}s
+                </span>
+              </div>
             </div>
           </div>
         )}

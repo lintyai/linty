@@ -46,6 +46,9 @@ export function useSettings() {
     setOnboardingComplete,
     setTranscriptionLanguage,
     setTranslateToEnglish,
+    setSelectedModelFilename,
+    settingsLoaded,
+    setSettingsLoaded,
   } = useAppStore();
 
   // Load settings on mount
@@ -62,6 +65,7 @@ export function useSettings() {
         const savedOnboarding = await store.get<boolean>("onboardingComplete");
         const savedLanguage = await store.get<string>("transcriptionLanguage");
         const savedTranslate = await store.get<boolean>("translateToEnglish");
+        const savedSelectedModel = await store.get<string>("selectedModelFilename");
 
         if (key) setGroqApiKey(key);
         if (mode) setSttMode(mode);
@@ -74,11 +78,15 @@ export function useSettings() {
         if (savedLanguage) setTranscriptionLanguage(savedLanguage);
         if (savedTranslate !== null && savedTranslate !== undefined)
           setTranslateToEnglish(savedTranslate);
+        if (savedSelectedModel) setSelectedModelFilename(savedSelectedModel);
+
+        setSettingsLoaded(true);
       } catch (err) {
         console.error("Failed to load settings:", err);
+        setSettingsLoaded(true);
       }
     })();
-  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setTranslateToEnglish]);
+  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setTranslateToEnglish, setSelectedModelFilename, setSettingsLoaded]);
 
   const saveGroqApiKey = useCallback(
     async (key: string) => {
@@ -161,6 +169,15 @@ export function useSettings() {
     [setTranslateToEnglish],
   );
 
+  const saveSelectedModelFilename = useCallback(
+    async (filename: string | null) => {
+      setSelectedModelFilename(filename);
+      const store = await getStore();
+      await store.set("selectedModelFilename", filename);
+    },
+    [setSelectedModelFilename],
+  );
+
   return {
     groqApiKey,
     sttMode,
@@ -180,5 +197,7 @@ export function useSettings() {
     translateToEnglish,
     saveTranscriptionLanguage,
     saveTranslateToEnglish,
+    saveSelectedModelFilename,
+    settingsLoaded,
   };
 }
