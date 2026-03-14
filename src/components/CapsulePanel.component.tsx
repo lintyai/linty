@@ -192,7 +192,7 @@ export function CapsulePanel() {
         if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
         durationIntervalRef.current = setInterval(() => {
           setDuration((Date.now() - durationStartRef.current) / 1000);
-        }, 100);
+        }, 500);
       } else {
         if (durationIntervalRef.current) {
           clearInterval(durationIntervalRef.current);

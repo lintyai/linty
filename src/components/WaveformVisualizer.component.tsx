@@ -16,6 +16,8 @@ export function WaveformVisualizer({
 }: WaveformVisualizerProps) {
   const barsRef = useRef<number[]>(Array(BAR_COUNT).fill(0));
   const frameRef = useRef<number>(0);
+  const amplitudeRef = useRef(amplitude);
+  amplitudeRef.current = amplitude;
 
   useEffect(() => {
     if (!isActive) {
@@ -25,6 +27,7 @@ export function WaveformVisualizer({
 
     const animate = () => {
       const bars = barsRef.current;
+      const amp = amplitudeRef.current;
       for (let i = 0; i < BAR_COUNT; i++) {
         const phase = (i / BAR_COUNT) * Math.PI * 2;
         const noise = Math.sin(Date.now() * 0.003 + phase) * 0.3;
@@ -32,7 +35,7 @@ export function WaveformVisualizer({
         const centerBoost = 1 - center * 0.6;
         const target = Math.max(
           0.08,
-          amplitude * centerBoost * (0.7 + noise * 0.3) * 3,
+          amp * centerBoost * (0.7 + noise * 0.3) * 3,
         );
         bars[i] =
           target > bars[i]
@@ -44,7 +47,7 @@ export function WaveformVisualizer({
 
     frameRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frameRef.current);
-  }, [amplitude, isActive]);
+  }, [isActive]);
 
   return (
     <div

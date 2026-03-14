@@ -20,7 +20,7 @@ export const createHistorySlice: StateCreator<HistorySlice> = (set) => ({
   setTranscripts: (transcripts) => set({ transcripts }),
   addTranscript: (transcript) =>
     set((state) => ({
-      transcripts: [transcript, ...state.transcripts],
+      transcripts: [transcript, ...state.transcripts].slice(0, 500),
     })),
   removeTranscript: (transcriptId) =>
     set((state) => ({

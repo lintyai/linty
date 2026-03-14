@@ -27,9 +27,10 @@ pub fn spawn_audio_thread(
                     // Fresh host per recording — stale CoreAudio handles die after sleep
                     let host = cpal::default_host();
 
-                    // Clear buffer
+                    // Release previous buffer memory (not just clear — avoids
+                    // retaining a large allocation from a prior long recording).
                     if let Ok(mut buf) = buffer.lock() {
-                        buf.clear();
+                        *buf = Vec::new();
                     }
 
                     let device = match host.default_input_device() {
@@ -67,49 +68,60 @@ pub fn spawn_audio_thread(
                     let app_clone = app.clone();
                     let cb_count = callback_count.clone();
 
+                    // Pre-allocate reusable scratch buffers — avoids heap allocs
+                    // per callback (~93/sec). Capacity grows once, reused forever.
+                    let mut mono_buf: Vec<f32> = Vec::with_capacity(4096);
+                    let mut resample_buf: Vec<f32> = Vec::with_capacity(4096);
+
                     let stream = match device.build_input_stream(
                         &config,
                         move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                            cb_count.fetch_add(1, Ordering::Relaxed);
-                            // Downmix to mono if needed
-                            let mono: Vec<f32> = if device_channels > 1 {
-                                data.chunks(device_channels as usize)
-                                    .map(|frame| {
-                                        frame.iter().sum::<f32>() / device_channels as f32
-                                    })
-                                    .collect()
-                            } else {
-                                data.to_vec()
-                            };
+                            let tick = cb_count.fetch_add(1, Ordering::Relaxed);
 
-                            // Resample to 16kHz using linear interpolation
-                            let resampled = if device_sample_rate != 16000 {
+                            // Downmix to mono, reusing scratch buffer
+                            mono_buf.clear();
+                            if device_channels > 1 {
+                                mono_buf.extend(
+                                    data.chunks(device_channels as usize)
+                                        .map(|frame| {
+                                            frame.iter().sum::<f32>() / device_channels as f32
+                                        }),
+                                );
+                            } else {
+                                mono_buf.extend_from_slice(data);
+                            }
+
+                            // Resample to 16kHz, reusing scratch buffer
+                            let samples: &[f32] = if device_sample_rate != 16000 {
                                 let ratio = device_sample_rate as f64 / 16000.0;
                                 let output_len =
-                                    (mono.len() as f64 / ratio).ceil() as usize;
-                                let mut out = Vec::with_capacity(output_len);
+                                    (mono_buf.len() as f64 / ratio).ceil() as usize;
+                                resample_buf.clear();
                                 for i in 0..output_len {
                                     let src_idx = i as f64 * ratio;
                                     let idx = src_idx as usize;
                                     let frac = (src_idx - idx as f64) as f32;
-                                    let s0 = mono.get(idx).copied().unwrap_or(0.0);
-                                    let s1 = mono.get(idx + 1).copied().unwrap_or(s0);
-                                    out.push(s0 + frac * (s1 - s0));
+                                    let s0 = mono_buf.get(idx).copied().unwrap_or(0.0);
+                                    let s1 = mono_buf.get(idx + 1).copied().unwrap_or(s0);
+                                    resample_buf.push(s0 + frac * (s1 - s0));
                                 }
-                                out
+                                &resample_buf
                             } else {
-                                mono
+                                &mono_buf
                             };
 
                             if let Ok(mut buf) = buf_clone.lock() {
-                                buf.extend_from_slice(&resampled);
+                                buf.extend_from_slice(samples);
                             }
-                            if !resampled.is_empty() {
-                                let rms: f32 = (resampled
+
+                            // Throttle amplitude events to ~15fps (every 6th callback
+                            // at ~93/sec) — UI can't display faster than this.
+                            if !samples.is_empty() && tick % 6 == 0 {
+                                let rms: f32 = (samples
                                     .iter()
                                     .map(|s| s * s)
                                     .sum::<f32>()
-                                    / resampled.len() as f32)
+                                    / samples.len() as f32)
                                     .sqrt();
                                 let _ = app_clone.emit("audio-amplitude", rms);
                                 let _ = app_clone.emit_to("capsule", "capsule-amplitude", rms);
