@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicU64;
 use std::sync::{mpsc, Arc, Mutex};
 
 #[derive(Default)]
@@ -22,6 +23,11 @@ pub struct AppState {
     /// Wrapped in Arc so we can clone it out of the mutex before blocking inference.
     #[cfg(feature = "local-stt")]
     pub whisper_ctx: Mutex<Option<Arc<whisper_rs::WhisperContext>>>,
+    /// Incremented by audio callback, read+reset by watchdog to detect runaway callbacks.
+    pub audio_callback_count: Arc<AtomicU64>,
+    /// Epoch millis when recording started, 0 when idle. Used by watchdog for max-duration check.
+    /// No Arc needed — accessed only through AppState (already Arc-wrapped by Tauri).
+    pub recording_started_at: AtomicU64,
 }
 
 impl AppState {
@@ -32,6 +38,8 @@ impl AppState {
             audio_tx: Mutex::new(None),
             #[cfg(feature = "local-stt")]
             whisper_ctx: Mutex::new(None),
+            audio_callback_count: Arc::new(AtomicU64::new(0)),
+            recording_started_at: AtomicU64::new(0),
         }
     }
 }

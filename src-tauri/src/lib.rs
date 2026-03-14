@@ -11,8 +11,10 @@ mod paste;
 mod permissions;
 mod state;
 mod transcribe;
+mod watchdog;
 
 use state::{AppState, AudioCommand};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
@@ -38,10 +40,24 @@ fn start_recording(
         rec.is_recording = true;
     }
 
+    // Record start timestamp and reset callback counter
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        state.recording_started_at.store(now, Ordering::Relaxed);
+        state.audio_callback_count.store(0, Ordering::Relaxed);
+    }
+
     {
         let mut tx_guard = state.audio_tx.lock().map_err(|e| e.to_string())?;
         if tx_guard.is_none() {
-            let tx = audio::spawn_audio_thread(app.clone(), Arc::clone(&state.audio_buffer));
+            let tx = audio::spawn_audio_thread(
+                app.clone(),
+                Arc::clone(&state.audio_buffer),
+                Arc::clone(&state.audio_callback_count),
+            );
             *tx_guard = Some(tx);
         }
     }
@@ -59,6 +75,9 @@ fn stop_recording(
     _app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<StopResult, String> {
+    // Clear recording timestamp
+    state.recording_started_at.store(0, Ordering::Relaxed);
+
     {
         let tx_guard = state.audio_tx.lock().map_err(|e| e.to_string())?;
         if let Some(tx) = tx_guard.as_ref() {
@@ -840,6 +859,9 @@ pub fn run() {
                 let app_state = app.state::<AppState>();
                 register_wake_observer(app.handle(), app_state.inner());
             }
+
+            // Start resource watchdog (auto-recovery from CPU overload)
+            watchdog::start(app.handle().clone());
 
             Ok(())
         })

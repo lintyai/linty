@@ -52,10 +52,8 @@ jobs:
           git commit -m "chore: bump version to v${{ steps.version.outputs.version }} [skip ci]"
           git push
 
-      - name: Install Rust (aarch64)
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -104,13 +102,13 @@ jobs:
           APPLE_ID: ${{ secrets.LINTY_APPLE_NOTARIZATION_APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.LINTY_APPLE_NOTARIZATION_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.LINTY_APPLE_TEAM_ID }}
-        run: yarn tauri build --target aarch64-apple-darwin --bundles dmg -- --features local-stt
+        run: yarn tauri build --bundles dmg -- --features local-stt
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
           name: Linty-macOS-arm64
-          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          path: src-tauri/target/release/bundle/dmg/*.dmg
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -118,5 +116,5 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}
           target_commitish: main
           name: Linty v${{ steps.version.outputs.version }}
-          files: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          files: src-tauri/target/release/bundle/dmg/*.dmg
           generate_release_notes: true
