@@ -104,6 +104,30 @@ export function useGlobalHotkey() {
     };
   }, []);
 
+  // ── Watchdog recovery: auto-stop from CPU overload or runaway recording ──
+  const addToast = useAppStore((s) => s.addToast);
+  const addToastRef = useRef(addToast);
+  useEffect(() => {
+    addToastRef.current = addToast;
+  }, [addToast]);
+
+  useEffect(() => {
+    const unlisten = listen<string>("watchdog-recovery", (event) => {
+      console.warn("[watchdog] Recovery triggered:", event.payload);
+      processingRef.current = false;
+      isRecordingRef.current = false;
+      inFocusPressRef.current = false;
+      addToastRef.current({
+        type: "warning",
+        message: `Recording auto-stopped: ${event.payload}`,
+      });
+    });
+
+    return () => {
+      unlisten.then((fn_) => fn_());
+    };
+  }, []);
+
   // ── Primary: Fn key push-to-talk ──
   useEffect(() => {
     const unlistenPress = listen("fnkey-pressed", handlePress);

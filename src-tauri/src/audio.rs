@@ -1,4 +1,5 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
@@ -10,6 +11,7 @@ use crate::state::AudioCommand;
 pub fn spawn_audio_thread(
     app: AppHandle,
     buffer: Arc<Mutex<Vec<f32>>>,
+    callback_count: Arc<AtomicU64>,
 ) -> mpsc::Sender<AudioCommand> {
     let (tx, rx) = mpsc::channel::<AudioCommand>();
 
@@ -63,10 +65,12 @@ pub fn spawn_audio_thread(
 
                     let buf_clone = buffer.clone();
                     let app_clone = app.clone();
+                    let cb_count = callback_count.clone();
 
                     let stream = match device.build_input_stream(
                         &config,
                         move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                            cb_count.fetch_add(1, Ordering::Relaxed);
                             // Downmix to mono if needed
                             let mono: Vec<f32> = if device_channels > 1 {
                                 data.chunks(device_channels as usize)
