@@ -15,6 +15,11 @@ export interface SettingsSlice {
   onboardingComplete: boolean;
   transcriptionLanguage: string;
   translateToEnglish: boolean;
+  loadedModelFilename: string | null;
+  selectedModelFilename: string | null;
+  settingsLoaded: boolean;
+  setLoadedModelFilename: (filename: string | null) => void;
+  setSelectedModelFilename: (filename: string | null) => void;
   setGroqApiKey: (key: string) => void;
   setSttMode: (mode: SttMode) => void;
   setCorrectionEnabled: (enabled: boolean) => void;
@@ -26,6 +31,7 @@ export interface SettingsSlice {
   setOnboardingComplete: (complete: boolean) => void;
   setTranscriptionLanguage: (language: string) => void;
   setTranslateToEnglish: (translate: boolean) => void;
+  setSettingsLoaded: (loaded: boolean) => void;
 }
 
 export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
@@ -40,6 +46,11 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   onboardingComplete: false,
   transcriptionLanguage: "auto",
   translateToEnglish: false,
+  loadedModelFilename: null,
+  selectedModelFilename: null,
+  settingsLoaded: false,
+  setLoadedModelFilename: (loadedModelFilename) => set({ loadedModelFilename }),
+  setSelectedModelFilename: (selectedModelFilename) => set({ selectedModelFilename }),
   setGroqApiKey: (groqApiKey) => set({ groqApiKey }),
   setSttMode: (sttMode) => set({ sttMode }),
   setCorrectionEnabled: (correctionEnabled) => set({ correctionEnabled }),
@@ -52,4 +63,5 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   setOnboardingComplete: (onboardingComplete) => set({ onboardingComplete }),
   setTranscriptionLanguage: (transcriptionLanguage) => set({ transcriptionLanguage }),
   setTranslateToEnglish: (translateToEnglish) => set({ translateToEnglish }),
+  setSettingsLoaded: (settingsLoaded) => set({ settingsLoaded }),
 });

@@ -467,11 +467,7 @@ function ModelsSection() {
                               "disabled:cursor-not-allowed disabled:opacity-40",
                             )}
                           >
-                            {isDownloading ? (
-                              <Loader2 size={12} className="animate-spin" />
-                            ) : (
-                              <Download size={12} />
-                            )}
+                            <Download size={12} />
                             Download
                           </button>
                         )}

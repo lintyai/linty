@@ -292,8 +292,21 @@ label {
 .animate-spin-slow {
   animation: spin-slow 1.8s linear infinite;
 }
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
 .animate-fade-in {
   animation: fade-in 180ms ease-out forwards;
+}
+.animate-scale-in {
+  animation: scale-in 200ms ease-out forwards;
 }
 .animate-slide-up {
   animation: slide-up 220ms ease-out forwards;

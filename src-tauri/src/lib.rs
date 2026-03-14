@@ -20,6 +20,13 @@ use tauri::{
     Emitter, Manager, WindowEvent,
 };
 
+/// Lightweight result from stop_recording — samples stay in Rust.
+#[derive(serde::Serialize)]
+struct StopResult {
+    sample_count: usize,
+    duration_secs: f64,
+}
+
 #[tauri::command]
 fn start_recording(
     app: tauri::AppHandle,
@@ -51,7 +58,7 @@ fn start_recording(
 fn stop_recording(
     _app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<f32>, String> {
+) -> Result<StopResult, String> {
     {
         let tx_guard = state.audio_tx.lock().map_err(|e| e.to_string())?;
         if let Some(tx) = tx_guard.as_ref() {
@@ -61,38 +68,116 @@ fn stop_recording(
 
     std::thread::sleep(std::time::Duration::from_millis(50));
 
+    // Zero-copy move: take samples out of audio buffer, place into recording state
     let samples = {
         let mut buf = state.audio_buffer.lock().map_err(|e| e.to_string())?;
-        let s = buf.clone();
-        buf.clear();
-        s
+        std::mem::take(&mut *buf)
     };
 
-    let duration_secs = samples.len() as f64 / 16000.0;
+    let sample_count = samples.len();
+    let duration_secs = sample_count as f64 / 16000.0;
     eprintln!(
         "[cmd] stop_recording: {} samples ({:.1}s audio)",
-        samples.len(),
+        sample_count,
         duration_secs
     );
 
     {
         let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
         rec.is_recording = false;
-        rec.samples = samples.clone();
+        rec.samples = samples;
     }
 
-    Ok(samples)
+    Ok(StopResult {
+        sample_count,
+        duration_secs,
+    })
 }
 
+/// Transcribe audio samples held in Rust state via local whisper model.
+/// Samples never cross IPC — read directly from RecordingState.
 #[tauri::command]
-async fn transcribe_audio(
-    samples: Vec<f32>,
+async fn transcribe_buffer(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    prompt: Option<String>,
+    language: Option<String>,
+    translate: bool,
+) -> Result<String, String> {
+    #[cfg(feature = "local-stt")]
+    {
+        // Take samples from recording state (zero-copy move)
+        let samples = {
+            let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
+            std::mem::take(&mut rec.samples)
+        };
+
+        eprintln!(
+            "[cmd] transcribe_buffer: {} samples ({:.1}s)",
+            samples.len(),
+            samples.len() as f64 / 16000.0
+        );
+
+        // Clone Arc<WhisperContext> then release mutex — don't hold it during inference
+        let ctx = {
+            let guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
+            guard
+                .as_ref()
+                .ok_or_else(|| "Whisper model not loaded".to_string())?
+                .clone()
+        };
+
+        let app_clone = app.clone();
+        tokio::task::spawn_blocking(move || {
+            transcribe::transcribe_local_with_events(
+                &ctx,
+                &samples,
+                prompt.as_deref(),
+                language.as_deref(),
+                translate,
+                app_clone,
+            )
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+    }
+    #[cfg(not(feature = "local-stt"))]
+    {
+        let _ = (app, state, prompt, language, translate);
+        Err("Local STT not available — rebuild with `local-stt` feature".into())
+    }
+}
+
+/// Transcribe audio samples held in Rust state via Groq cloud API.
+/// Samples never cross IPC — read directly from RecordingState.
+#[tauri::command]
+async fn transcribe_buffer_cloud(
+    state: tauri::State<'_, AppState>,
     api_key: String,
     prompt: Option<String>,
     language: Option<String>,
     translate: bool,
 ) -> Result<String, String> {
-    transcribe::transcribe_cloud(&samples, &api_key, prompt.as_deref(), language.as_deref(), translate).await
+    // Take samples from recording state
+    let samples = {
+        let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
+        std::mem::take(&mut rec.samples)
+    };
+
+    eprintln!(
+        "[cmd] transcribe_buffer_cloud: {} samples ({:.1}s)",
+        samples.len(),
+        samples.len() as f64 / 16000.0
+    );
+
+    transcribe::transcribe_cloud(
+        &samples,
+        &api_key,
+        prompt.as_deref(),
+        language.as_deref(),
+        translate,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -266,6 +351,56 @@ fn request_microphone() -> bool {
     }
 }
 
+// ── Reset all data ──
+
+#[tauri::command]
+fn reset_all_data(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("No app data dir: {}", e))?;
+
+    // Delete settings store
+    let settings_path = data_dir.join("linty-settings.json");
+    if settings_path.exists() {
+        std::fs::remove_file(&settings_path)
+            .map_err(|e| format!("Failed to delete settings: {}", e))?;
+        eprintln!("[reset] Deleted settings store");
+    }
+
+    // Delete history store
+    let history_path = data_dir.join("linty-history.json");
+    if history_path.exists() {
+        std::fs::remove_file(&history_path)
+            .map_err(|e| format!("Failed to delete history: {}", e))?;
+        eprintln!("[reset] Deleted history store");
+    }
+
+    // Delete all downloaded models
+    let models_dir = data_dir.join("models");
+    if models_dir.exists() {
+        std::fs::remove_dir_all(&models_dir)
+            .map_err(|e| format!("Failed to delete models: {}", e))?;
+        eprintln!("[reset] Deleted models directory");
+    }
+
+    // Unload whisper model from memory
+    #[cfg(feature = "local-stt")]
+    {
+        if let Ok(mut ctx) = state.whisper_ctx.lock() {
+            *ctx = None;
+        }
+        eprintln!("[reset] Unloaded whisper model");
+    }
+    #[cfg(not(feature = "local-stt"))]
+    {
+        let _ = &state;
+    }
+
+    eprintln!("[reset] All data cleared — app will reload");
+    Ok(())
+}
+
 // ── Local STT commands ──
 
 #[tauri::command]
@@ -365,44 +500,20 @@ fn load_whisper_model(
         }
 
         eprintln!("[cmd] Loading model from: {}", model_path.display());
+        let mut ctx_params = WhisperContextParameters::default();
+        ctx_params.use_gpu(true);
+
         let ctx = WhisperContext::new_with_params(
             model_path.to_str().ok_or("Invalid path")?,
-            WhisperContextParameters::default(),
+            ctx_params,
         )
         .map_err(|e| format!("Failed to load model: {}", e))?;
 
         let mut guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
-        *guard = Some(ctx);
+        *guard = Some(Arc::new(ctx));
 
         eprintln!("[cmd] Whisper model loaded successfully: {}", filename);
         Ok(())
-    }
-    #[cfg(not(feature = "local-stt"))]
-    Err("Local STT not available — rebuild with `local-stt` feature".into())
-}
-
-#[tauri::command]
-fn transcribe_local_audio(
-    #[allow(unused_variables)] state: tauri::State<'_, AppState>,
-    #[allow(unused_variables)] samples: Vec<f32>,
-    #[allow(unused_variables)] prompt: Option<String>,
-    #[allow(unused_variables)] language: Option<String>,
-    #[allow(unused_variables)] translate: bool,
-) -> Result<String, String> {
-    eprintln!("[cmd] transcribe_local_audio called with {} samples", samples.len());
-    #[cfg(feature = "local-stt")]
-    {
-        let guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
-        let ctx = guard.as_ref().ok_or_else(|| {
-            eprintln!("[cmd] Whisper model not loaded!");
-            "Whisper model not loaded".to_string()
-        })?;
-        let result = transcribe::transcribe_local(ctx, &samples, prompt.as_deref(), language.as_deref(), translate);
-        match &result {
-            Ok(text) => eprintln!("[cmd] Transcription result: {:?}", text),
-            Err(e) => eprintln!("[cmd] Transcription error: {}", e),
-        }
-        result
     }
     #[cfg(not(feature = "local-stt"))]
     Err("Local STT not available — rebuild with `local-stt` feature".into())
@@ -634,9 +745,11 @@ pub fn run() {
         .menu(|app| {
             let about = PredefinedMenuItem::about(app, Some("About Linty"), None)?;
             let sep = PredefinedMenuItem::separator(app)?;
+            let reset = MenuItem::with_id(app, "reset-all-data", "Reset All Data...", true, None::<&str>)?;
+            let sep2_app = PredefinedMenuItem::separator(app)?;
             let quit = PredefinedMenuItem::quit(app, Some("Quit Linty"))?;
             let app_submenu =
-                Submenu::with_items(app, "Linty", true, &[&about, &sep, &quit])?;
+                Submenu::with_items(app, "Linty", true, &[&about, &sep, &reset, &sep2_app, &quit])?;
 
             let undo = PredefinedMenuItem::undo(app, None)?;
             let redo = PredefinedMenuItem::redo(app, None)?;
@@ -653,6 +766,11 @@ pub fn run() {
             )?;
 
             Menu::with_items(app, &[&app_submenu, &edit_submenu])
+        })
+        .on_menu_event(|app, event| {
+            if event.id.as_ref() == "reset-all-data" {
+                let _ = app.emit("menu-reset-all-data", ());
+            }
         })
         .setup(|app| {
             // Start as accessory — switch to Regular when window is shown
@@ -736,7 +854,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             start_recording,
             stop_recording,
-            transcribe_audio,
+            transcribe_buffer,
+            transcribe_buffer_cloud,
             paste_text,
             snapshot_clipboard,
             write_transient_text,
@@ -754,7 +873,7 @@ pub fn run() {
             delete_model_file,
             is_local_stt_available,
             load_whisper_model,
-            transcribe_local_audio,
+            reset_all_data,
             capsule::show_capsule,
             capsule::hide_capsule,
             capsule::emit_capsule_state,

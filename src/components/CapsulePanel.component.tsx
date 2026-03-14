@@ -140,10 +140,19 @@ export function CapsulePanel() {
   const [amplitude, setAmplitude] = useState(0);
   const [duration, setDuration] = useState(0);
   const [dismissing, setDismissing] = useState(false);
+  const [partialText, setPartialText] = useState("");
+  const [sttProgress, setSttProgress] = useState(0);
+  const [doneText, setDoneText] = useState("");
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ampFrameRef = useRef(0);
   const durationStartRef = useRef(0);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const resetStreamingState = useCallback(() => {
+    setPartialText("");
+    setSttProgress(0);
+    setDoneText("");
+  }, []);
 
   const dismiss = useCallback(() => {
     setDismissing(true);
@@ -153,14 +162,15 @@ export function CapsulePanel() {
       setErrorMsg("");
       setAmplitude(0);
       setDuration(0);
+      resetStreamingState();
       invoke("hide_capsule").catch(() => {});
     }, 300);
-  }, []);
+  }, [resetStreamingState]);
 
   // Listen for capsule state from main window
   useEffect(() => {
     const unlisten = listen<CapsuleStatePayload>("capsule-state", (event) => {
-      const { state, error } = event.payload;
+      const { state, text, error } = event.payload;
 
       // Clear any pending dismiss timer
       if (dismissTimerRef.current) {
@@ -177,6 +187,7 @@ export function CapsulePanel() {
       setMode(state);
 
       if (state === "recording") {
+        resetStreamingState();
         durationStartRef.current = Date.now();
         if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
         durationIntervalRef.current = setInterval(() => {
@@ -190,8 +201,10 @@ export function CapsulePanel() {
       }
 
       if (state === "done") {
-        // Brief checkmark flash, then dismiss
-        dismissTimerRef.current = setTimeout(dismiss, 1200);
+        if (text) setDoneText(text);
+        // Longer dismiss when showing text for readability
+        const dismissDelay = text ? 1800 : 1200;
+        dismissTimerRef.current = setTimeout(dismiss, dismissDelay);
       }
 
       if (state === "error") {
@@ -205,7 +218,29 @@ export function CapsulePanel() {
       if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
       if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
     };
-  }, [dismiss]);
+  }, [dismiss, resetStreamingState]);
+
+  // Listen for streaming partial text from whisper segment callback
+  useEffect(() => {
+    const unlisten = listen<string>("capsule-partial-text", (event) => {
+      setPartialText(event.payload);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  // Listen for STT progress (0-100%)
+  useEffect(() => {
+    const unlisten = listen<number>("capsule-stt-progress", (event) => {
+      setSttProgress(event.payload);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // Listen for amplitude from Rust audio thread
   useEffect(() => {
@@ -243,44 +278,61 @@ export function CapsulePanel() {
           .filter(Boolean)
           .join(" ")}
       >
-        {/* Recording */}
-        {isRecording && (
-          <div className="flex items-center gap-2.5">
-            <span className="capsule-rec-dot" />
-            <WaveformBars amplitude={amplitude} />
-            <span className="text-[11px] font-medium text-text-secondary tabular-nums shrink-0">
-              {formatDuration(duration)}
-            </span>
-          </div>
-        )}
+        <div className="max-w-[340px]">
+          {/* Recording */}
+          {isRecording && (
+            <div className="flex items-center gap-2.5">
+              <span className="capsule-rec-dot" />
+              <WaveformBars amplitude={amplitude} />
+              <span className="text-[11px] font-medium text-text-secondary tabular-nums shrink-0">
+                {formatDuration(duration)}
+              </span>
+            </div>
+          )}
 
-        {/* Processing */}
-        {isProcessing && (
-          <div className="flex items-center gap-2">
-            <SpinnerIcon />
-            <span className="text-[11px] font-medium text-text-secondary">
-              {PROCESSING_LABELS[mode] || "Processing"}
-            </span>
-          </div>
-        )}
+          {/* Processing — show streaming text when available */}
+          {isProcessing && (
+            <div className="flex items-center gap-2">
+              <SpinnerIcon />
+              {partialText ? (
+                <span className="text-[11px] font-medium text-text-primary truncate capsule-text-appear">
+                  {partialText.trim()}
+                </span>
+              ) : (
+                <span className="text-[11px] font-medium text-text-secondary">
+                  {PROCESSING_LABELS[mode] || "Processing"}
+                  {mode === "transcribing" && sttProgress > 0 && sttProgress < 100 && (
+                    <span className="text-text-muted ml-1">{sttProgress}%</span>
+                  )}
+                </span>
+              )}
+            </div>
+          )}
 
-        {/* Done — just checkmark, no text */}
-        {isDone && (
-          <div className="flex items-center gap-1.5">
-            <CheckmarkIcon />
-            <span className="text-[11px] font-medium text-success">Done</span>
-          </div>
-        )}
+          {/* Done — show transcribed text or checkmark */}
+          {isDone && (
+            <div className="flex items-center gap-1.5">
+              <CheckmarkIcon />
+              {doneText ? (
+                <span className="text-[11px] font-medium text-success truncate capsule-text-appear">
+                  {doneText.trim().slice(0, 60)}{doneText.trim().length > 60 ? "…" : ""}
+                </span>
+              ) : (
+                <span className="text-[11px] font-medium text-success">Done</span>
+              )}
+            </div>
+          )}
 
-        {/* Error */}
-        {isError && (
-          <div className="flex items-center gap-2">
-            <AlertIcon />
-            <span className="text-[10px] text-text-secondary truncate max-w-[200px]">
-              {errorMsg}
-            </span>
-          </div>
-        )}
+          {/* Error */}
+          {isError && (
+            <div className="flex items-center gap-2">
+              <AlertIcon />
+              <span className="text-[10px] text-text-secondary truncate max-w-[200px]">
+                {errorMsg}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

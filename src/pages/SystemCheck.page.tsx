@@ -258,9 +258,9 @@ function RecordingTestWidget() {
   const isIdle = status === "idle";
 
   const handleStopAndProcess = useCallback(async () => {
-    const samples = await stopRecording();
-    if (samples.length) {
-      processAudio(samples);
+    const result = await stopRecording();
+    if (result.sample_count > 0) {
+      processAudio(result);
     }
   }, [stopRecording, processAudio]);
 

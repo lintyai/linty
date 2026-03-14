@@ -3,6 +3,11 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store/app.store";
 
+export interface StopResult {
+  sample_count: number;
+  duration_secs: number;
+}
+
 export function useRecording() {
   const {
     isRecording,
@@ -12,7 +17,6 @@ export function useRecording() {
     setRecordingDuration,
     setAmplitude,
     setStatus,
-    setAudioSamples,
   } = useAppStore();
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -35,25 +39,24 @@ export function useRecording() {
     }
   }, [setIsRecording, setStatus, setRecordingDuration]);
 
-  const stopRecording = useCallback(async () => {
+  const stopRecording = useCallback(async (): Promise<StopResult> => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
 
     try {
-      const samples = await invoke<number[]>("stop_recording");
+      const result = await invoke<StopResult>("stop_recording");
       setIsRecording(false);
-      setAudioSamples(samples);
       setStatus("transcribing");
-      return samples;
+      return result;
     } catch (err) {
       console.error("Failed to stop recording:", err);
       setIsRecording(false);
       setStatus("error");
-      return [];
+      return { sample_count: 0, duration_secs: 0 };
     }
-  }, [setIsRecording, setAudioSamples, setStatus]);
+  }, [setIsRecording, setStatus]);
 
   const getRecordingStartTime = useCallback(() => {
     return startTimeRef.current;

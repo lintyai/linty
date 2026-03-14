@@ -60,7 +60,7 @@ export function TranscriptRow({
             ) : (
               <Cpu size={10} />
             )}
-            {t.engine === "cloud" ? "Cloud" : "Local"}
+            {t.modelName}
           </span>
           <span className="text-border-subtle">·</span>
           <span>

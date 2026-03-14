@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { load } from "@tauri-apps/plugin-store";
 import { useAppStore } from "@/store/app.store";
 
 interface ModelInfo {
@@ -28,9 +29,27 @@ export function useModelDownload() {
     null,
   );
   const [isLocalAvailable, setIsLocalAvailable] = useState(false);
+  const globalLoadedModel = useAppStore((s) => s.loadedModelFilename);
   const [loadedModel, setLoadedModel] = useState<string | null>(null);
 
-  const { setIsLocalModelDownloaded, setLocalModelPath } = useAppStore();
+  const { setIsLocalModelDownloaded, setLocalModelPath, setLoadedModelFilename, setSelectedModelFilename } = useAppStore();
+
+  const persistModelSelection = useCallback(async (filename: string) => {
+    setSelectedModelFilename(filename);
+    try {
+      const store = await load("linty-settings.json", { defaults: {}, autoSave: true });
+      await store.set("selectedModelFilename", filename);
+    } catch (err) {
+      console.error("[model] Failed to persist selection:", err);
+    }
+  }, [setSelectedModelFilename]);
+
+  // Sync local state from global store (e.g. after auto-load on startup)
+  useEffect(() => {
+    if (globalLoadedModel && !loadedModel) {
+      setLoadedModel(globalLoadedModel);
+    }
+  }, [globalLoadedModel, loadedModel]);
 
   // Check if local-stt feature is compiled in
   useEffect(() => {
@@ -75,6 +94,7 @@ export function useModelDownload() {
                 filename: firstDownloaded.filename,
               });
               setLoadedModel(firstDownloaded.filename);
+              setLoadedModelFilename(firstDownloaded.filename);
               console.log("[model] Auto-loaded:", firstDownloaded.filename);
             } catch (err) {
               console.error("[model] Auto-load failed:", err);
@@ -129,6 +149,8 @@ export function useModelDownload() {
         try {
           await invoke("load_whisper_model", { filename: model.filename });
           setLoadedModel(model.filename);
+          setLoadedModelFilename(model.filename);
+          await persistModelSelection(model.filename);
           console.log("[model] Auto-loaded after download:", model.filename);
         } catch (loadErr) {
           console.error("[model] Auto-load after download failed:", loadErr);
@@ -140,19 +162,21 @@ export function useModelDownload() {
         setDownloadingFilename(null);
       }
     },
-    [setLocalModelPath, setIsLocalModelDownloaded],
+    [setLocalModelPath, setIsLocalModelDownloaded, setLoadedModelFilename, persistModelSelection],
   );
 
   const loadModel = useCallback(async (filename: string) => {
     try {
       await invoke("load_whisper_model", { filename });
       setLoadedModel(filename);
+      setLoadedModelFilename(filename);
+      await persistModelSelection(filename);
       console.log("[model] Loaded:", filename);
     } catch (err) {
       console.error("Failed to load model:", err);
       throw err;
     }
-  }, []);
+  }, [setLoadedModelFilename, persistModelSelection]);
 
   return {
     models,

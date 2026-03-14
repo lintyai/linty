@@ -19,8 +19,9 @@ pub struct AppState {
     /// Channel to send commands to the audio thread.
     pub audio_tx: Mutex<Option<mpsc::Sender<AudioCommand>>>,
     /// whisper-rs context for local STT (loaded once, reused).
+    /// Wrapped in Arc so we can clone it out of the mutex before blocking inference.
     #[cfg(feature = "local-stt")]
-    pub whisper_ctx: Mutex<Option<whisper_rs::WhisperContext>>,
+    pub whisper_ctx: Mutex<Option<Arc<whisper_rs::WhisperContext>>>,
 }
 
 impl AppState {
