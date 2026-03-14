@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getStore } from "@tauri-apps/plugin-store";
@@ -8,6 +8,7 @@ import { useModelAutoLoad } from "@/hooks/useModelAutoLoad.hook";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useTheme } from "@/hooks/useTheme.hook";
 import { useAppStore } from "@/store/app.store";
+import { checkMicrophonePermission } from "@/services/permissions.service";
 import { Sidebar } from "@/components/layout/Sidebar.component";
 import { StatusBar } from "@/components/layout/StatusBar.component";
 import { ConfirmResetDialogue } from "@/components/shared/ConfirmReset.dialogue";
@@ -26,6 +27,28 @@ export default function App() {
   const { groqApiKey, sttMode, onboardingComplete, saveOnboardingComplete, settingsLoaded } = useSettings();
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [micPermission, setMicPermission] = useState<string | null>(null);
+  const micPollRef = useRef<ReturnType<typeof setInterval>>(undefined);
+
+  // Poll mic permission every 3s — gate the app if not authorized
+  useEffect(() => {
+    if (!onboardingComplete || !settingsLoaded) return;
+
+    const poll = async () => {
+      const status = await checkMicrophonePermission().catch(() => "not_determined");
+      setMicPermission(status);
+    };
+    poll();
+    micPollRef.current = setInterval(poll, 3000);
+    return () => clearInterval(micPollRef.current);
+  }, [onboardingComplete, settingsLoaded]);
+
+  // Stop polling once authorized
+  useEffect(() => {
+    if (micPermission === "authorized" && micPollRef.current) {
+      clearInterval(micPollRef.current);
+    }
+  }, [micPermission]);
 
   useTheme();
   useGlobalHotkey();
@@ -102,6 +125,11 @@ export default function App() {
   // Show onboarding on first launch
   if (!onboardingComplete) {
     return <OnboardingPage onComplete={handleOnboardingComplete} />;
+  }
+
+  // Gate: if mic permission lost after onboarding, show mic step directly
+  if (micPermission !== null && micPermission !== "authorized") {
+    return <OnboardingPage onComplete={handleOnboardingComplete} startAtMic />;
   }
 
   return (
