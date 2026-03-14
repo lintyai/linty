@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { Mic, Accessibility, CheckCircle2, AlertCircle, ExternalLink, Square, Loader2, Check } from "lucide-react";
+import { Mic, Accessibility, CheckCircle2, AlertCircle, ExternalLink, Square, Loader2, Check, RotateCcw } from "lucide-react";
 import {
   checkMicrophonePermission,
   requestMicrophonePermission,
+  repairMicrophonePermission,
   checkAccessibility,
   reinitFnKeyMonitor,
   openSystemSettings,
@@ -58,7 +59,7 @@ function usePermissions() {
     poll();
   };
 
-  return { permissions, requestMic };
+  return { permissions, requestMic, poll };
 }
 
 function StatusBadge({
@@ -103,6 +104,7 @@ function PermissionRow({
   description,
   status,
   onGrant,
+  onRepair,
   onOpenSettings,
   isLast,
 }: {
@@ -111,9 +113,12 @@ function PermissionRow({
   description: string;
   status: "granted" | "denied" | "not_asked";
   onGrant?: () => void;
+  onRepair?: () => Promise<void>;
   onOpenSettings?: () => void;
   isLast?: boolean;
 }) {
+  const [repairing, setRepairing] = useState(false);
+
   return (
     <div
       className={cn(
@@ -147,6 +152,26 @@ function PermissionRow({
           </button>
         )}
 
+        {status === "denied" && onRepair && (
+          <button
+            onClick={async () => {
+              setRepairing(true);
+              try { await onRepair(); } finally { setRepairing(false); }
+            }}
+            disabled={repairing}
+            className={cn(
+              "flex items-center gap-1 rounded-lg px-3 py-[5px] text-[12px] font-medium",
+              "bg-accent text-white",
+              "hover:bg-accent-soft active:scale-95",
+              "transition-all duration-150",
+              repairing && "opacity-60 cursor-not-allowed",
+            )}
+          >
+            {repairing ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
+            Repair
+          </button>
+        )}
+
         {(status === "denied" || status === "granted") && onOpenSettings && (
           <button
             onClick={onOpenSettings}
@@ -167,7 +192,7 @@ function PermissionRow({
 }
 
 export function SystemCheckPage() {
-  const { permissions, requestMic } = usePermissions();
+  const { permissions, requestMic, poll } = usePermissions();
 
   const micStatus: "granted" | "denied" | "not_asked" =
     permissions.microphone === "authorized"
@@ -212,6 +237,11 @@ export function SystemCheckPage() {
             description="Required for voice recording"
             status={micStatus}
             onGrant={requestMic}
+            onRepair={async () => {
+              await repairMicrophonePermission();
+              await requestMicrophonePermission();
+              poll();
+            }}
             onOpenSettings={() => openSystemSettings("microphone")}
           />
           <PermissionRow

@@ -370,6 +370,18 @@ fn request_microphone() -> bool {
     }
 }
 
+#[tauri::command]
+fn repair_microphone_permission() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        permissions::reset_microphone_tcc()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
+    }
+}
+
 // ── Reset all data ──
 
 #[tauri::command]
@@ -888,6 +900,7 @@ pub fn run() {
             open_system_settings,
             check_microphone,
             request_microphone,
+            repair_microphone_permission,
             get_available_models,
             get_models_dir,
             check_model_exists,
