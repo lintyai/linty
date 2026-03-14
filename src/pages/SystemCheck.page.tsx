@@ -59,7 +59,7 @@ function usePermissions() {
     poll();
   };
 
-  return { permissions, requestMic, poll };
+  return { permissions, requestMic };
 }
 
 function StatusBadge({
@@ -192,7 +192,7 @@ function PermissionRow({
 }
 
 export function SystemCheckPage() {
-  const { permissions, requestMic, poll } = usePermissions();
+  const { permissions, requestMic } = usePermissions();
 
   const micStatus: "granted" | "denied" | "not_asked" =
     permissions.microphone === "authorized"
@@ -238,9 +238,8 @@ export function SystemCheckPage() {
             status={micStatus}
             onGrant={requestMic}
             onRepair={async () => {
+              // Clears stale TCC entry and restarts app for fresh prompt
               await repairMicrophonePermission();
-              await requestMicrophonePermission();
-              poll();
             }}
             onOpenSettings={() => openSystemSettings("microphone")}
           />
