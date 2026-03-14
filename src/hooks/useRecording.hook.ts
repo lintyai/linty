@@ -9,15 +9,13 @@ export interface StopResult {
 }
 
 export function useRecording() {
-  const {
-    isRecording,
-    recordingDuration,
-    amplitude,
-    setIsRecording,
-    setRecordingDuration,
-    setAmplitude,
-    setStatus,
-  } = useAppStore();
+  const isRecording = useAppStore((s) => s.isRecording);
+  const recordingDuration = useAppStore((s) => s.recordingDuration);
+  const amplitude = useAppStore((s) => s.amplitude);
+  const setIsRecording = useAppStore((s) => s.setIsRecording);
+  const setRecordingDuration = useAppStore((s) => s.setRecordingDuration);
+  const setAmplitude = useAppStore((s) => s.setAmplitude);
+  const setStatus = useAppStore((s) => s.setStatus);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);

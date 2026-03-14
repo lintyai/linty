@@ -38,9 +38,13 @@ function usePermissions() {
 
   useEffect(() => {
     poll();
+    // Stop polling once both permissions are granted
+    if (permissions.microphone === "authorized" && permissions.accessibility) {
+      return;
+    }
     const interval = setInterval(poll, 3000);
     return () => clearInterval(interval);
-  }, [poll]);
+  }, [poll, permissions.microphone, permissions.accessibility]);
 
   // Reinit fn key monitor when accessibility becomes granted
   useEffect(() => {

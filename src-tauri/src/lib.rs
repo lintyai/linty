@@ -36,7 +36,7 @@ fn start_recording(
 ) -> Result<(), String> {
     {
         let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
-        rec.samples.clear();
+        rec.samples = Vec::new();
         rec.is_recording = true;
     }
 
@@ -674,9 +674,9 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
                 *tx_guard = None;
             }
 
-            // 4. Clear any stale audio buffer
+            // 4. Release stale audio buffer memory
             if let Ok(mut buf) = state.audio_buffer.lock() {
-                buf.clear();
+                *buf = Vec::new();
             }
 
             // 5. Emit system-wake event to frontend

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { load } from "@tauri-apps/plugin-store";
 import { useAppStore } from "@/store/app.store";
@@ -222,7 +222,7 @@ export function useTranscription() {
             });
             const current =
               (await store.get<TranscriptRecord[]>("transcripts")) || [];
-            await store.set("transcripts", [record, ...current]);
+            await store.set("transcripts", [record, ...current].slice(0, 500));
           } catch (err) {
             console.error("Failed to persist transcript:", err);
           }
@@ -270,6 +270,11 @@ export function useTranscription() {
       addTranscript,
     ],
   );
+
+  // Clear pending timers on unmount to prevent firing against stale state
+  useEffect(() => {
+    return () => clearPendingTimers();
+  }, [clearPendingTimers]);
 
   return {
     status,

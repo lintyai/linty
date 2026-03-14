@@ -1,6 +1,32 @@
 use reqwest::multipart;
 use serde::Deserialize;
+use std::sync::OnceLock;
 use std::time::Duration;
+
+/// Shared HTTP client for Groq API calls — avoids rebuilding TLS state
+/// and connection pools per transcription.
+fn api_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(60))
+            .build()
+            .expect("Failed to build HTTP client")
+    })
+}
+
+/// Shared HTTP client for model downloads (longer timeout).
+fn download_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(600))
+            .build()
+            .expect("Failed to build HTTP client")
+    })
+}
 
 // ── Silence & hallucination guards ──
 
@@ -163,12 +189,7 @@ pub async fn transcribe_cloud(
         "https://api.groq.com/openai/v1/audio/transcriptions"
     };
 
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(60))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-    let response = client
+    let response = api_client()
         .post(endpoint)
         .header("Authorization", format!("Bearer {}", api_key))
         .multipart(form)
@@ -388,12 +409,7 @@ pub async fn download_model(
         std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create dir: {}", e))?;
     }
 
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(600))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-    let response = client
+    let response = download_client()
         .get(url)
         .send()
         .await
