@@ -371,13 +371,17 @@ fn request_microphone() -> bool {
 }
 
 #[tauri::command]
-fn repair_microphone_permission() -> Result<(), String> {
+fn repair_microphone_permission(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        permissions::reset_microphone_tcc()
+        permissions::reset_microphone_tcc()?;
+        // macOS caches TCC decisions per-process — must restart for a fresh prompt
+        eprintln!("[permissions] Restarting app for fresh TCC state...");
+        app.restart();
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = app;
         Ok(())
     }
 }

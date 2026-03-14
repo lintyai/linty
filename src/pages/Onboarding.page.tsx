@@ -182,14 +182,8 @@ function MicrophoneStep({ onNext }: { onNext: () => void }) {
             <button
               onClick={async () => {
                 setRepairing(true);
-                try {
-                  await repairMicrophonePermission();
-                  setStatus("requesting");
-                } catch {
-                  // Fall through — user can still use Open Settings
-                } finally {
-                  setRepairing(false);
-                }
+                // Clears stale TCC entry and restarts app for fresh prompt
+                await repairMicrophonePermission().catch(() => setRepairing(false));
               }}
               disabled={repairing}
               className={cn(
@@ -201,7 +195,7 @@ function MicrophoneStep({ onNext }: { onNext: () => void }) {
               )}
             >
               {repairing ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-              Repair Permissions
+              Repair & Restart
             </button>
             <button
               onClick={() => openSystemSettings("microphone")}
