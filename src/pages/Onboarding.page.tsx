@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { Mic, Shield, CheckCircle2, ArrowRight, Loader2, ExternalLink, RotateCcw } from "lucide-react";
+import { Mic, Shield, CheckCircle2, ArrowRight, Loader2, ExternalLink } from "lucide-react";
 import {
   checkMicrophonePermission,
   requestMicrophonePermission,
-  repairMicrophonePermission,
   checkAccessibility,
   requestAccessibility,
   reinitFnKeyMonitor,
@@ -93,7 +92,6 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
 
 function MicrophoneStep({ onNext }: { onNext: () => void }) {
   const [status, setStatus] = useState<"checking" | "requesting" | "granted" | "denied">("checking");
-  const [repairing, setRepairing] = useState(false);
 
   const checkStatus = useCallback(async () => {
     const result = await checkMicrophonePermission().catch(() => "not_determined");
@@ -176,40 +174,20 @@ function MicrophoneStep({ onNext }: { onNext: () => void }) {
       {status === "denied" && (
         <div className="flex flex-col items-center gap-3">
           <p className="text-[13px] text-warning">
-            Microphone access was denied. Please enable it in System Settings.
+            Microphone access was denied. Open System Settings, find Linty in the Microphone list, and toggle it off then back on.
           </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={async () => {
-                setRepairing(true);
-                // Clears stale TCC entry and restarts app for fresh prompt
-                await repairMicrophonePermission().catch(() => setRepairing(false));
-              }}
-              disabled={repairing}
-              className={cn(
-                "flex items-center gap-1.5 rounded-xl px-5 py-2 text-[13px] font-medium",
-                "bg-accent text-white",
-                "hover:bg-accent-soft active:scale-[0.97]",
-                "transition-all duration-150",
-                repairing && "opacity-60 cursor-not-allowed",
-              )}
-            >
-              {repairing ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-              Repair & Restart
-            </button>
-            <button
-              onClick={() => openSystemSettings("microphone")}
-              className={cn(
-                "flex items-center gap-1.5 rounded-xl px-5 py-2 text-[13px] font-medium",
-                "bg-bg-elevated border border-border text-text-secondary",
-                "hover:bg-bg-hover hover:text-text-primary active:scale-[0.97]",
-                "transition-all duration-150",
-              )}
-            >
-              Open System Settings
-              <ExternalLink size={13} />
-            </button>
-          </div>
+          <button
+            onClick={() => openSystemSettings("microphone")}
+            className={cn(
+              "flex items-center gap-1.5 rounded-xl px-5 py-2 text-[13px] font-medium",
+              "bg-accent text-white",
+              "hover:bg-accent-soft active:scale-[0.97]",
+              "transition-all duration-150",
+            )}
+          >
+            Open System Settings
+            <ExternalLink size={13} />
+          </button>
         </div>
       )}
     </div>
