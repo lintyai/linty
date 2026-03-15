@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicholasrice/tauri-schema/main/tauri.conf.json",
   "productName": "Linty",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "identifier": "ai.linty.desktop",
   "build": {
     "beforeDevCommand": "yarn dev",
