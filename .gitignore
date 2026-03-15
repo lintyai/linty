@@ -30,5 +30,8 @@ Thumbs.db
 firebase-debug.log
 *-fnkey.log
 
+# Claude Code
+.claude/
+
 # Tauri
 src-tauri/gen/
