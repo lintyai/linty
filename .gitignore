@@ -32,6 +32,7 @@ firebase-debug.log
 
 # Claude Code
 .claude/
+!.claude/skills/
 
 # Tauri
 src-tauri/gen/
