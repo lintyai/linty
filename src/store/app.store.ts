@@ -23,13 +23,18 @@ import {
   createToastSlice,
   type ToastSlice,
 } from "./slices/toast.slice";
+import {
+  createUpdaterSlice,
+  type UpdaterSlice,
+} from "./slices/updater.slice";
 
 export type AppStore = RecordingSlice &
   TranscriptionSlice &
   SettingsSlice &
   NavigationSlice &
   HistorySlice &
-  ToastSlice;
+  ToastSlice &
+  UpdaterSlice;
 
 export const useAppStore = create<AppStore>()((...a) => ({
   ...createRecordingSlice(...a),
@@ -38,4 +43,5 @@ export const useAppStore = create<AppStore>()((...a) => ({
   ...createNavigationSlice(...a),
   ...createHistorySlice(...a),
   ...createToastSlice(...a),
+  ...createUpdaterSlice(...a),
 }));

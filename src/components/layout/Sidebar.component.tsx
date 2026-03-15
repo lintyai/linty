@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   Clock,
   BarChart3,
@@ -15,7 +15,7 @@ import {
   Accessibility,
   Cloud,
 } from "lucide-react";
-import { open } from "@tauri-apps/plugin-shell";
+import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore } from "@/store/app.store";
 import type { AppView } from "@/store/slices/navigation.slice";
 import { cn } from "@/lib/utils";
@@ -265,6 +265,42 @@ function SidebarSearch({ onNavigate }: { onNavigate: (view: AppView) => void }) 
   );
 }
 
+/* ── Version indicator ── */
+
+function VersionIndicator() {
+  const [version, setVersion] = useState("");
+  const updateStatus = useAppStore((s) => s.updateStatus);
+  const updateVersion = useAppStore((s) => s.updateVersion);
+  const setCurrentView = useAppStore((s) => s.setCurrentView);
+
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => {});
+  }, []);
+
+  const handleClick = useCallback(() => {
+    setCurrentView("settings");
+  }, [setCurrentView]);
+
+  const hasUpdate = updateStatus === "available" && updateVersion;
+
+  return (
+    <div className="px-2.5 pb-3">
+      <div className="border-t border-border-subtle mb-2" />
+      <button
+        onClick={handleClick}
+        className="flex w-full items-center justify-between rounded-lg px-2.5 py-[5px] text-[11px] text-text-muted hover:bg-bg-hover hover:text-text-secondary transition-all duration-150"
+      >
+        <span>v{version || "..."}</span>
+        {hasUpdate && (
+          <span className="flex h-[18px] items-center rounded-full bg-accent/15 px-2 text-[10px] font-medium text-accent">
+            Update
+          </span>
+        )}
+      </button>
+    </div>
+  );
+}
+
 /* ── Sidebar ── */
 
 export function Sidebar() {
@@ -302,25 +338,8 @@ export function Sidebar() {
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* User status */}
-      <div className="px-2.5 pb-3">
-        <div className="border-t border-border-subtle mb-2" />
-        <button
-          onClick={() => open("https://colbin.com")}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-normal text-text-secondary hover:bg-bg-hover hover:text-text-primary active:bg-bg-active transition-all duration-150"
-        >
-          <div className="relative shrink-0">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/15 text-[11px] font-semibold text-accent">
-              U
-            </div>
-            <div className="absolute -bottom-px -right-px h-2.5 w-2.5 rounded-full border-2 border-bg-secondary bg-success" />
-          </div>
-          <div className="flex flex-col min-w-0">
-            <span className="truncate text-[13px] text-text-primary">User</span>
-            <span className="text-[11px] text-text-muted">Online</span>
-          </div>
-        </button>
-      </div>
+      {/* Version indicator */}
+      <VersionIndicator />
     </aside>
   );
 }

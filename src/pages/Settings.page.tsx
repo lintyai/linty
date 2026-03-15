@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Cpu,
   Eye,
@@ -9,6 +9,7 @@ import {
   Check,
   Loader2,
   Play,
+  RefreshCw,
   HardDrive,
   ExternalLink,
   Sun,
@@ -18,7 +19,10 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
+import { getVersion } from "@tauri-apps/api/app";
 import { useSettings } from "@/hooks/useSettings.hook";
+import { useUpdater } from "@/hooks/useUpdater.hook";
+import { useAppStore } from "@/store/app.store";
 import { useModelDownload } from "@/hooks/useModelDownload.hook";
 import { Toggle } from "@/components/shared/Toggle.component";
 import { SegmentedControl } from "@/components/shared/SegmentedControl.component";
@@ -649,6 +653,21 @@ function AppearanceSection() {
 
 /* ═══ About ═══ */
 function AboutSection() {
+  const [appVersion, setAppVersion] = useState("");
+  const updateStatus = useAppStore((s) => s.updateStatus);
+  const updateVersion = useAppStore((s) => s.updateVersion);
+  const updateProgress = useAppStore((s) => s.updateProgress);
+  const updateError = useAppStore((s) => s.updateError);
+  const { checkForUpdate, downloadAndInstall } = useUpdater();
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion("unknown"));
+  }, []);
+
+  const handleCheckUpdate = useCallback(() => {
+    checkForUpdate();
+  }, [checkForUpdate]);
+
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title="About" />
@@ -661,12 +680,85 @@ function AboutSection() {
           <span className="text-[15px] font-semibold text-text-primary">
             Linty
           </span>
-          <span className="text-[12px] text-text-muted">Version 0.1.0</span>
+          <span className="text-[12px] text-text-muted">
+            Version {appVersion || "..."}
+          </span>
         </div>
       </div>
 
+      {/* Update banner */}
+      {updateStatus === "available" && updateVersion && (
+        <SectionCard className="animate-fade-in">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[13px] font-medium text-text-primary">
+                v{updateVersion} available
+              </span>
+              <span className="text-[11px] text-text-muted">
+                A new version is ready to install
+              </span>
+            </div>
+            <button
+              onClick={downloadAndInstall}
+              className={cn(
+                "flex h-[30px] items-center gap-1.5 rounded-md px-3 text-[12px] font-medium",
+                "bg-accent text-white hover:bg-accent-soft active:scale-95 transition-all duration-150",
+              )}
+            >
+              <Download size={12} />
+              Install
+            </button>
+          </div>
+        </SectionCard>
+      )}
+
+      {updateStatus === "downloading" && (
+        <SectionCard className="animate-fade-in">
+          <div className="flex flex-col gap-2 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] text-text-primary">Downloading update...</span>
+              <span className="text-[11px] tabular-nums text-text-muted">{updateProgress}%</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
+              <div
+                className="h-full rounded-full bg-accent transition-all duration-300"
+                style={{ width: `${updateProgress}%` }}
+              />
+            </div>
+          </div>
+        </SectionCard>
+      )}
+
+      {updateStatus === "error" && updateError && (
+        <SectionCard className="animate-fade-in">
+          <div className="flex items-center justify-between px-4 py-3">
+            <span className="text-[13px] text-danger">{updateError}</span>
+            <button
+              onClick={handleCheckUpdate}
+              className="text-[12px] text-accent hover:text-accent-soft transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </SectionCard>
+      )}
+
       <SectionCard>
         <div className="flex flex-col">
+          <button
+            onClick={handleCheckUpdate}
+            disabled={updateStatus === "checking" || updateStatus === "downloading"}
+            className={cn(
+              "flex items-center justify-between px-4 py-[10px] hover:bg-bg-hover transition-colors border-b border-border-subtle",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+            )}
+          >
+            <span className="text-[13px] text-text-primary">Check for updates</span>
+            <RefreshCw
+              size={13}
+              className={cn("text-text-muted", updateStatus === "checking" && "animate-spin")}
+            />
+          </button>
           <button
             onClick={() => open("https://linty.ai")}
             className="flex items-center justify-between px-4 py-[10px] hover:bg-bg-hover transition-colors border-b border-border-subtle"
@@ -675,7 +767,7 @@ function AboutSection() {
             <ExternalLink size={13} className="text-text-muted" />
           </button>
           <button
-            onClick={() => open("https://github.com/linty-ai")}
+            onClick={() => open("https://github.com/lintyai/linty")}
             className="flex items-center justify-between px-4 py-[10px] hover:bg-bg-hover transition-colors border-b border-border-subtle"
           >
             <span className="text-[13px] text-text-primary">GitHub</span>

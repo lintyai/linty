@@ -7,6 +7,7 @@ import { useGlobalHotkey } from "@/hooks/useGlobalHotkey.hook";
 import { useModelAutoLoad } from "@/hooks/useModelAutoLoad.hook";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useTheme } from "@/hooks/useTheme.hook";
+import { useUpdater, useUpdaterAutoCheck } from "@/hooks/useUpdater.hook";
 import { useAppStore } from "@/store/app.store";
 import { checkMicrophonePermission } from "@/services/permissions.service";
 import { Sidebar } from "@/components/layout/Sidebar.component";
@@ -54,6 +55,8 @@ export default function App() {
   useGlobalHotkey();
   useModelAutoLoad();
   useHistory();
+  useUpdaterAutoCheck();
+  const { checkForUpdate } = useUpdater();
 
   const handleOnboardingComplete = useCallback(async () => {
     await saveOnboardingComplete(true);
@@ -67,6 +70,14 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [groqApiKey, sttMode, setCurrentView, onboardingComplete, settingsLoaded]);
+
+  // Menu: Check for Updates
+  useEffect(() => {
+    const unlisten = listen("menu-check-for-updates", () => {
+      checkForUpdate();
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [checkForUpdate]);
 
   // Menu: Reset All Data — show in-app confirmation dialog
   // (window.confirm is silently blocked by WKWebView — wry's WKUIDelegate
