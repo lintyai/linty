@@ -1,0 +1,362 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── Surfaces (solid dark palette — macOS native) ── */
+  --color-bg: #1e1e1e;
+  --color-bg-secondary: #171717;
+  --color-bg-elevated: #282828;
+  --color-bg-hover: #2e2e2e;
+  --color-bg-input: #141414;
+  --color-bg-active: #333333;
+
+  /* ── Borders ── */
+  --color-border: #3a3a3a;
+  --color-border-subtle: #2c2c2c;
+  --color-border-focus: #505050;
+
+  /* ── Text (macOS-native opacity levels — boosted for web rendering) ── */
+  --color-text-primary: rgba(255, 255, 255, 0.93);
+  --color-text-secondary: rgba(255, 255, 255, 0.63);
+  --color-text-muted: rgba(255, 255, 255, 0.42);
+  --color-text-inverted: rgba(0, 0, 0, 0.88);
+
+  /* ── Accent ── */
+  --color-accent: #e23535;
+  --color-accent-soft: #c42d2d;
+  --color-accent-glow: rgba(226, 53, 53, 0.10);
+  --color-accent-glow-strong: rgba(226, 53, 53, 0.22);
+
+  /* ── Semantic (macOS system colors) ── */
+  --color-success: #30d158;
+  --color-success-glow: rgba(48, 209, 88, 0.10);
+  --color-warning: #ff9f0a;
+  --color-warning-glow: rgba(255, 159, 10, 0.10);
+  --color-error: #ff453a;
+  --color-error-glow: rgba(255, 69, 58, 0.10);
+  --color-info: #0a84ff;
+  --color-info-glow: rgba(10, 132, 255, 0.10);
+
+  /* ── Utility ── */
+  --color-scrollbar: rgba(255, 255, 255, 0.06);
+  --color-scrollbar-hover: rgba(255, 255, 255, 0.12);
+  --color-shadow: rgba(0, 0, 0, 0.5);
+  --color-shimmer: rgba(255, 255, 255, 0.04);
+  --color-dropdown-bg: #1c1c1e;
+  --color-dropdown-active: rgba(255, 255, 255, 0.10);
+  --color-dropdown-hover: rgba(255, 255, 255, 0.05);
+
+  /* ── Sidebar ── */
+  --sidebar-width: 200px;
+}
+
+/* ── Light theme overrides ── */
+:root[data-theme="light"] {
+  --color-bg: #f5f5f5;
+  --color-bg-secondary: #ebebeb;
+  --color-bg-elevated: #ffffff;
+  --color-bg-hover: #e5e5e5;
+  --color-bg-input: #e0e0e0;
+  --color-bg-active: #d9d9d9;
+
+  --color-border: #d1d1d1;
+  --color-border-subtle: #e0e0e0;
+  --color-border-focus: #a0a0a0;
+
+  --color-text-primary: rgba(0, 0, 0, 0.88);
+  --color-text-secondary: rgba(0, 0, 0, 0.55);
+  --color-text-muted: rgba(0, 0, 0, 0.38);
+  --color-text-inverted: rgba(255, 255, 255, 0.93);
+
+  --color-accent: #d42a2a;
+  --color-accent-soft: #b82525;
+  --color-accent-glow: rgba(212, 42, 42, 0.08);
+  --color-accent-glow-strong: rgba(212, 42, 42, 0.16);
+
+  --color-success: #248a3d;
+  --color-success-glow: rgba(36, 138, 61, 0.08);
+  --color-warning: #c93400;
+  --color-warning-glow: rgba(201, 52, 0, 0.08);
+  --color-error: #d70015;
+  --color-error-glow: rgba(215, 0, 21, 0.08);
+  --color-info: #0071e3;
+  --color-info-glow: rgba(0, 113, 227, 0.08);
+
+  --color-scrollbar: rgba(0, 0, 0, 0.08);
+  --color-scrollbar-hover: rgba(0, 0, 0, 0.16);
+  --color-shadow: rgba(0, 0, 0, 0.12);
+  --color-shimmer: rgba(0, 0, 0, 0.03);
+  --color-dropdown-bg: #ffffff;
+  --color-dropdown-active: rgba(0, 0, 0, 0.06);
+  --color-dropdown-hover: rgba(0, 0, 0, 0.03);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    system-ui, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+  -webkit-user-select: none;
+  font-size: 13px;
+  line-height: 1.53846;  /* 20px / 13px — matches macOS body line-height */
+  letter-spacing: -0.003em;
+}
+
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+
+button,
+input,
+textarea,
+select,
+a,
+label {
+  -webkit-app-region: no-drag;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-hover);
+}
+
+/* ── Selection ── */
+::selection {
+  background: rgba(226, 53, 53, 0.25);
+}
+
+/* ── Animations ── */
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-ring-slow {
+  0% {
+    transform: scale(1);
+    opacity: 0.2;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes checkmark-draw {
+  0% {
+    stroke-dashoffset: 24;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes capsule-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes capsule-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 1.4s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+}
+.animate-pulse-ring-slow {
+  animation: pulse-ring-slow 2s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+}
+.animate-breathe {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+.animate-spin-slow {
+  animation: spin-slow 1.8s linear infinite;
+}
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 180ms ease-out forwards;
+}
+.animate-scale-in {
+  animation: scale-in 200ms ease-out forwards;
+}
+.animate-slide-up {
+  animation: slide-up 220ms ease-out forwards;
+}
+.animate-slide-down {
+  animation: slide-down 220ms ease-out forwards;
+}
+.animate-checkmark {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: checkmark-draw 350ms ease-out 80ms forwards;
+}
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--color-shimmer) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.animate-page-enter {
+  animation: page-enter 200ms ease-out forwards;
+}
+.animate-capsule-in {
+  animation: capsule-in 250ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+.animate-capsule-out {
+  animation: capsule-out 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.animate-toast-in {
+  animation: toast-in 250ms ease-out forwards;
+}
+
+/* ── Reduce motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-ring,
+  .animate-pulse-ring-slow,
+  .animate-breathe,
+  .animate-spin-slow {
+    animation: none;
+  }
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-slide-down,
+  .animate-page-enter,
+  .animate-capsule-in,
+  .animate-capsule-out,
+  .animate-toast-in {
+    animation-duration: 0ms;
+  }
+}

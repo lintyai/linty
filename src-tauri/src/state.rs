@@ -1,0 +1,45 @@
+use std::sync::atomic::AtomicU64;
+use std::sync::{mpsc, Arc, Mutex};
+
+#[derive(Default)]
+pub struct RecordingState {
+    pub is_recording: bool,
+    pub samples: Vec<f32>,
+}
+
+/// Commands sent to the dedicated audio thread.
+pub enum AudioCommand {
+    Start,
+    Stop,
+}
+
+pub struct AppState {
+    pub recording: Mutex<RecordingState>,
+    /// Shared buffer that the audio callback writes into.
+    pub audio_buffer: Arc<Mutex<Vec<f32>>>,
+    /// Channel to send commands to the audio thread.
+    pub audio_tx: Mutex<Option<mpsc::Sender<AudioCommand>>>,
+    /// whisper-rs context for local STT (loaded once, reused).
+    /// Wrapped in Arc so we can clone it out of the mutex before blocking inference.
+    #[cfg(feature = "local-stt")]
+    pub whisper_ctx: Mutex<Option<Arc<whisper_rs::WhisperContext>>>,
+    /// Incremented by audio callback, read+reset by watchdog to detect runaway callbacks.
+    pub audio_callback_count: Arc<AtomicU64>,
+    /// Epoch millis when recording started, 0 when idle. Used by watchdog for max-duration check.
+    /// No Arc needed — accessed only through AppState (already Arc-wrapped by Tauri).
+    pub recording_started_at: AtomicU64,
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        Self {
+            recording: Mutex::new(RecordingState::default()),
+            audio_buffer: Arc::new(Mutex::new(Vec::new())),
+            audio_tx: Mutex::new(None),
+            #[cfg(feature = "local-stt")]
+            whisper_ctx: Mutex::new(None),
+            audio_callback_count: Arc::new(AtomicU64::new(0)),
+            recording_started_at: AtomicU64::new(0),
+        }
+    }
+}
