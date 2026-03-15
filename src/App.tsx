@@ -8,6 +8,7 @@ import { useModelAutoLoad } from "@/hooks/useModelAutoLoad.hook";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useTheme } from "@/hooks/useTheme.hook";
 import { useUpdater, useUpdaterAutoCheck } from "@/hooks/useUpdater.hook";
+import { useTraySync } from "@/hooks/useTraySync.hook";
 import { useAppStore } from "@/store/app.store";
 import { checkMicrophonePermission } from "@/services/permissions.service";
 import { Sidebar } from "@/components/layout/Sidebar.component";
@@ -25,7 +26,7 @@ import { OnboardingPage } from "@/pages/Onboarding.page";
 export default function App() {
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
-  const { groqApiKey, sttMode, onboardingComplete, saveOnboardingComplete, settingsLoaded } = useSettings();
+  const { groqApiKey, sttMode, saveSttMode, onboardingComplete, saveOnboardingComplete, settingsLoaded } = useSettings();
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [micPermission, setMicPermission] = useState<string | null>(null);
@@ -56,6 +57,7 @@ export default function App() {
   useModelAutoLoad();
   useHistory();
   useUpdaterAutoCheck();
+  useTraySync(saveSttMode);
   const { checkForUpdate } = useUpdater();
 
   const handleOnboardingComplete = useCallback(async () => {
