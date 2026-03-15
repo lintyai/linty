@@ -40,6 +40,7 @@ export function useTranscription() {
     setError,
     resetTranscription,
     addTranscript,
+    addToast,
   } = useAppStore();
 
   const recordingStartRef = useRef<number>(0);
@@ -102,6 +103,7 @@ export function useTranscription() {
         return;
       }
 
+      let clipboardDirty = false;
       try {
         // Step 1: Transcribe (samples stay in Rust — no IPC transfer)
         setStatus("transcribing");
@@ -146,6 +148,7 @@ export function useTranscription() {
           resetTranscription();
           emitCapsule("idle");
           invoke("hide_capsule").catch(() => {});
+          addToast({ type: "warning", message: "No speech detected — try speaking louder or closer to the mic" });
           return;
         }
 
@@ -178,12 +181,17 @@ export function useTranscription() {
 
         // Snapshot ALL clipboard content (images, files, RTF, etc.) via NSPasteboard
         await invoke("snapshot_clipboard");
+        clipboardDirty = true;
         await invoke("write_transient_text", { text: finalResult });
 
         try {
           await invoke("paste_text");
         } catch (pasteErr) {
           console.warn("Paste failed (accessibility?):", pasteErr);
+          addToast({
+            type: "error",
+            message: "Paste failed — check Accessibility permission in System Settings",
+          });
         }
         const pasteTimeMs = Date.now() - pasteStart;
 
@@ -241,6 +249,10 @@ export function useTranscription() {
           resetTranscription();
         }, 3000);
       } catch (err) {
+        // Restore clipboard if we snapshotted but failed before paste completed
+        if (clipboardDirty) {
+          invoke("restore_clipboard").catch(() => {});
+        }
         const errMsg = err instanceof Error ? err.message : String(err);
         setError(errMsg);
         emitCapsule("error", undefined, errMsg);
@@ -268,6 +280,7 @@ export function useTranscription() {
       setError,
       resetTranscription,
       addTranscript,
+      addToast,
     ],
   );
 

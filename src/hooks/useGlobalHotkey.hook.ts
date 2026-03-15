@@ -16,6 +16,7 @@ export function useGlobalHotkey() {
   const { startRecording, stopRecording } = useRecording();
   const { processAudio, clearPendingTimers } = useTranscription();
   const setCurrentView = useAppStore((s) => s.setCurrentView);
+  const resetRecording = useAppStore((s) => s.resetRecording);
 
   // Latest-ref pattern: always hold current callback references so
   // event listeners never go stale and effects don't need to re-register.
@@ -45,22 +46,30 @@ export function useGlobalHotkey() {
 
   const handlePress = useCallback(async () => {
     if (isRecordingRef.current || processingRef.current) return;
+    // Synchronously mark as recording BEFORE any async work — prevents a fast
+    // fn-release from seeing isRecordingRef as false and being silently dropped.
+    isRecordingRef.current = true;
     // Cancel any stale hide/reset timers from a previous recording session
     clearPendingTimersRef.current();
 
     const inFocus = document.hasFocus();
     inFocusPressRef.current = inFocus;
 
-    if (inFocus) {
-      // In-app: navigate to SystemCheck and start recording in the mic test widget
-      setCurrentViewRef.current("system-check");
-      await startRecordingRef.current();
-    } else {
-      // Out-of-app: show capsule overlay
-      await invoke("show_capsule");
-      await invoke("emit_capsule_state", { state: "recording" });
-      await invoke("play_capsule_sound", { sound: "start" });
-      await startRecordingRef.current();
+    try {
+      if (inFocus) {
+        // In-app: navigate to SystemCheck and start recording in the mic test widget
+        setCurrentViewRef.current("system-check");
+        await startRecordingRef.current();
+      } else {
+        // Out-of-app: show capsule overlay
+        await invoke("show_capsule");
+        await invoke("emit_capsule_state", { state: "recording" });
+        await invoke("play_capsule_sound", { sound: "start" });
+        await startRecordingRef.current();
+      }
+    } catch {
+      // Start failed — reset synchronous lock so next press works
+      isRecordingRef.current = false;
     }
   }, []);
 
@@ -96,6 +105,7 @@ export function useGlobalHotkey() {
       processingRef.current = false;
       isRecordingRef.current = false;
       inFocusPressRef.current = false;
+      resetRecording();
       invoke("force_reinit_fn_key_monitor").catch(() => {});
     });
 
@@ -117,6 +127,7 @@ export function useGlobalHotkey() {
       processingRef.current = false;
       isRecordingRef.current = false;
       inFocusPressRef.current = false;
+      resetRecording();
       addToastRef.current({
         type: "warning",
         message: `Recording auto-stopped: ${event.payload}`,
