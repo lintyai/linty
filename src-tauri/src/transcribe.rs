@@ -32,10 +32,13 @@ fn download_client() -> &'static reqwest::Client {
 
 /// Minimum RMS energy threshold for f32 samples in [-1.0, 1.0].
 /// Audio below this is considered silence.
-const SILENCE_RMS_THRESHOLD: f32 = 0.02;
+const SILENCE_RMS_THRESHOLD: f32 = 0.01;
 
 /// Minimum fraction of 50ms windows that must contain speech-level energy.
-const MIN_SPEECH_RATIO: f32 = 0.10;
+/// Kept very low (2%) — only rejects truly blank/muted recordings.
+/// Natural speech with long pauses easily exceeds this.
+/// Whisper hallucination guard handles false positives from near-silent audio.
+const MIN_SPEECH_RATIO: f32 = 0.02;
 
 /// Returns true if enough of the audio contains speech-level energy.
 fn audio_has_speech(samples: &[f32]) -> bool {
