@@ -548,6 +548,30 @@ fn load_whisper_model(
         let mut guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
         *guard = Some(Arc::new(ctx));
 
+        // Warm up Metal GPU pipeline with a tiny silent inference
+        let ctx_clone = guard.as_ref().unwrap().clone();
+        std::thread::spawn(move || {
+            eprintln!("[cmd] Warming up Whisper GPU pipeline...");
+            let warmup_start = std::time::Instant::now();
+            if let Ok(mut state) = ctx_clone.create_state() {
+                let silence = vec![0.0f32; 1600]; // 0.1s at 16kHz
+                let mut params = whisper_rs::FullParams::new(
+                    whisper_rs::SamplingStrategy::Greedy { best_of: 1 },
+                );
+                params.set_n_threads(1);
+                params.set_single_segment(true);
+                params.set_no_timestamps(true);
+                params.set_print_special(false);
+                params.set_print_progress(false);
+                params.set_print_realtime(false);
+                let _ = state.full(params, &silence);
+            }
+            eprintln!(
+                "[cmd] GPU warm-up done in {:.0}ms",
+                warmup_start.elapsed().as_millis()
+            );
+        });
+
         eprintln!("[cmd] Whisper model loaded successfully: {}", filename);
         Ok(())
     }
