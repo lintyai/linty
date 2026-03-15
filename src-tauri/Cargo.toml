@@ -1,6 +1,6 @@
 [package]
 name = "linty"
-version = "0.0.8"
+version = "0.0.9"
 description = "Voice-to-text with global hotkey"
 authors = ["you"]
 edition = "2021"
