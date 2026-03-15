@@ -359,30 +359,18 @@ fn check_microphone() -> String {
 }
 
 #[tauri::command]
-fn request_microphone() -> bool {
+async fn request_microphone() -> bool {
     #[cfg(target_os = "macos")]
     {
-        permissions::request_microphone_permission()
+        // Must run off the main thread — blocking the main thread prevents
+        // macOS from displaying the TCC permission prompt.
+        tokio::task::spawn_blocking(|| permissions::request_microphone_permission())
+            .await
+            .unwrap_or(false)
     }
     #[cfg(not(target_os = "macos"))]
     {
         true
-    }
-}
-
-#[tauri::command]
-fn repair_microphone_permission(app: tauri::AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        permissions::reset_microphone_tcc()?;
-        // macOS caches TCC decisions per-process — must restart for a fresh prompt
-        eprintln!("[permissions] Restarting app for fresh TCC state...");
-        app.restart();
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = app;
-        Ok(())
     }
 }
 
@@ -904,7 +892,6 @@ pub fn run() {
             open_system_settings,
             check_microphone,
             request_microphone,
-            repair_microphone_permission,
             get_available_models,
             get_models_dir,
             check_model_exists,

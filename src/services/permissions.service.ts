@@ -8,10 +8,6 @@ export async function requestMicrophonePermission(): Promise<boolean> {
   return invoke<boolean>("request_microphone");
 }
 
-export async function repairMicrophonePermission(): Promise<void> {
-  return invoke("repair_microphone_permission");
-}
-
 export async function checkAccessibility(): Promise<boolean> {
   return invoke<boolean>("check_accessibility");
 }

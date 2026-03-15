@@ -32,7 +32,6 @@ pub fn check_microphone_permission() -> String {
             std::mem::transmute(objc_msgSend as *const c_void);
 
         let status = send(cls, sel, AVMediaTypeAudio);
-
         match status {
             0 => "not_determined".to_string(),
             1 => "restricted".to_string(),
@@ -75,25 +74,6 @@ unsafe extern "C" fn completion_copy_helper(dst: *mut c_void, src: *const c_void
 }
 
 unsafe extern "C" fn completion_dispose_helper(_block: *mut c_void) {}
-
-/// Clear stale TCC microphone entry via `tccutil reset`.
-/// After this, the next `requestAccess` call will trigger a fresh macOS prompt.
-pub fn reset_microphone_tcc() -> Result<(), String> {
-    let output = std::process::Command::new("tccutil")
-        .args(["reset", "Microphone", "ai.linty.desktop"])
-        .output()
-        .map_err(|e| format!("Failed to run tccutil: {}", e))?;
-
-    if output.status.success() {
-        eprintln!("[permissions] tccutil reset Microphone — stale TCC entry cleared");
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("[permissions] tccutil reset failed: {}", stderr);
-        // Still return Ok — tccutil may "fail" if there's no entry to reset
-        Ok(())
-    }
-}
 
 /// Request microphone permission from macOS. Blocks until the user responds.
 /// Returns `true` if granted.
