@@ -796,8 +796,6 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            // Start as accessory — switch to Regular when window is shown
-            set_activation_policy_accessory();
 
             // Tray icon
             let show = MenuItem::with_id(app, "show", "Show Linty", true, None::<&str>)?;

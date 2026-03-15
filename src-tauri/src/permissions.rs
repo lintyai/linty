@@ -32,13 +32,15 @@ pub fn check_microphone_permission() -> String {
             std::mem::transmute(objc_msgSend as *const c_void);
 
         let status = send(cls, sel, AVMediaTypeAudio);
-        match status {
-            0 => "not_determined".to_string(),
-            1 => "restricted".to_string(),
-            2 => "denied".to_string(),
-            3 => "authorized".to_string(),
-            _ => "not_determined".to_string(),
-        }
+        let result = match status {
+            0 => "not_determined",
+            1 => "restricted",
+            2 => "denied",
+            3 => "authorized",
+            _ => "not_determined",
+        };
+        eprintln!("[mic] check_microphone_permission: status={} ({})", status, result);
+        result.to_string()
     }
 }
 
@@ -78,6 +80,7 @@ unsafe extern "C" fn completion_dispose_helper(_block: *mut c_void) {}
 /// Request microphone permission from macOS. Blocks until the user responds.
 /// Returns `true` if granted.
 pub fn request_microphone_permission() -> bool {
+    eprintln!("[mic] request_microphone_permission: starting request");
     let (tx, rx) = mpsc::channel();
     let tx_ptr = Box::into_raw(Box::new(tx));
 
@@ -114,6 +117,9 @@ pub fn request_microphone_permission() -> bool {
     }
 
     // Block until macOS calls the completion handler (30s timeout)
-    rx.recv_timeout(std::time::Duration::from_secs(30))
-        .unwrap_or(false)
+    let granted = rx
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .unwrap_or(false);
+    eprintln!("[mic] request_microphone_permission: granted={}", granted);
+    granted
 }

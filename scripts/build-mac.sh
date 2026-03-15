@@ -9,7 +9,7 @@ APP_DIR="src-tauri/target/release/bundle/macos"
 
 # Build (Tauri notarizes .app automatically if env vars are set)
 APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-Developer ID Application: Hari Shekhar (3RPKRQ84N3)}" \
-  tauri build --bundles dmg app -- --features local-stt
+  tauri build --bundles dmg,app -- --features local-stt
 
 # Copy DMG to release/
 mkdir -p release
