@@ -93,31 +93,24 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
 function MicrophoneStep({ onNext }: { onNext: () => void }) {
   const [status, setStatus] = useState<"checking" | "requesting" | "granted" | "denied">("checking");
 
-  const checkStatus = useCallback(async () => {
-    const result = await checkMicrophonePermission().catch(() => "not_determined");
-    if (result === "authorized") {
-      setStatus("granted");
-    } else if (result === "denied" || result === "restricted") {
-      setStatus("denied");
-    } else {
+  // Check status then always attempt a request — handles stale TCC entries
+  // where authorizationStatus returns "denied" but no real entry exists.
+  useEffect(() => {
+    const init = async () => {
+      const result = await checkMicrophonePermission().catch(() => "not_determined");
+      if (result === "authorized") {
+        setStatus("granted");
+        return;
+      }
+
+      // Always try requesting — if truly denied, requestAccess returns false
+      // immediately (no prompt). If TCC was cleared/stale, it may prompt.
       setStatus("requesting");
-    }
-  }, []);
-
-  useEffect(() => {
-    checkStatus();
-  }, [checkStatus]);
-
-  // Auto-request when status is "requesting"
-  useEffect(() => {
-    if (status !== "requesting") return;
-
-    const doRequest = async () => {
       const granted = await requestMicrophonePermission().catch(() => false);
       setStatus(granted ? "granted" : "denied");
     };
-    doRequest();
-  }, [status]);
+    init();
+  }, []);
 
   // Auto-advance after grant
   useEffect(() => {

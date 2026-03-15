@@ -32,7 +32,6 @@ pub fn check_microphone_permission() -> String {
             std::mem::transmute(objc_msgSend as *const c_void);
 
         let status = send(cls, sel, AVMediaTypeAudio);
-
         match status {
             0 => "not_determined".to_string(),
             1 => "restricted".to_string(),

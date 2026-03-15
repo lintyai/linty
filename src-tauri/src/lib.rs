@@ -359,10 +359,14 @@ fn check_microphone() -> String {
 }
 
 #[tauri::command]
-fn request_microphone() -> bool {
+async fn request_microphone() -> bool {
     #[cfg(target_os = "macos")]
     {
-        permissions::request_microphone_permission()
+        // Must run off the main thread — blocking the main thread prevents
+        // macOS from displaying the TCC permission prompt.
+        tokio::task::spawn_blocking(|| permissions::request_microphone_permission())
+            .await
+            .unwrap_or(false)
     }
     #[cfg(not(target_os = "macos"))]
     {
