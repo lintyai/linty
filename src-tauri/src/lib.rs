@@ -11,6 +11,7 @@ mod paste;
 mod permissions;
 mod state;
 mod transcribe;
+mod tray;
 mod watchdog;
 
 use state::{AppState, AudioCommand};
@@ -18,7 +19,6 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
-    tray::TrayIconBuilder,
     Emitter, Manager, WindowEvent,
 };
 
@@ -564,7 +564,7 @@ fn is_local_stt_available() -> bool {
 
 #[cfg(target_os = "macos")]
 #[allow(deprecated)]
-fn set_activation_policy_regular() {
+pub(crate) fn set_activation_policy_regular() {
     use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
     unsafe {
         let app = NSApp();
@@ -575,11 +575,11 @@ fn set_activation_policy_regular() {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn set_activation_policy_regular() {}
+pub(crate) fn set_activation_policy_regular() {}
 
 #[cfg(target_os = "macos")]
 #[allow(deprecated)]
-fn set_activation_policy_accessory() {
+pub(crate) fn set_activation_policy_accessory() {
     use cocoa::appkit::{NSApp, NSApplication, NSApplicationActivationPolicy};
     unsafe {
         let app = NSApp();
@@ -590,7 +590,7 @@ fn set_activation_policy_accessory() {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn set_activation_policy_accessory() {}
+pub(crate) fn set_activation_policy_accessory() {}
 
 // ── macOS: System sleep/wake observer ──
 
@@ -822,45 +822,8 @@ pub fn run() {
         })
         .setup(|app| {
 
-            // Tray icon
-            let show = MenuItem::with_id(app, "show", "Show Linty", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&show, &quit])?;
-
-            TrayIconBuilder::new()
-                .menu(&tray_menu)
-                .tooltip("Linty — Hold fn to record")
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            set_activation_policy_regular();
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                            let _ = window.center();
-                        }
-                    }
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                                set_activation_policy_accessory();
-                            } else {
-                                set_activation_policy_regular();
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                                let _ = window.center();
-                            }
-                        }
-                    }
-                })
-                .build(app)?;
+            // Tray icon (menu, engine selector, status)
+            tray::init_tray(app)?;
 
             if let Some(window) = app.get_webview_window("main") {
                 set_activation_policy_regular();
