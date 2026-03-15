@@ -803,7 +803,6 @@ pub fn run() {
             let tray_menu = Menu::with_items(app, &[&show, &quit])?;
 
             TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
                 .menu(&tray_menu)
                 .tooltip("Linty — Hold fn to record")
                 .on_menu_event(|app, event| match event.id.as_ref() {
