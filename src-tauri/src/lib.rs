@@ -85,7 +85,7 @@ fn stop_recording(
         }
     }
 
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    std::thread::sleep(std::time::Duration::from_millis(100));
 
     // Zero-copy move: take samples out of audio buffer, place into recording state
     let samples = {
@@ -125,6 +125,16 @@ async fn transcribe_buffer(
 ) -> Result<String, String> {
     #[cfg(feature = "local-stt")]
     {
+        // Clone Arc<WhisperContext> BEFORE taking samples — if the model isn't loaded,
+        // we fail early and leave samples intact for a potential cloud fallback.
+        let ctx = {
+            let guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
+            guard
+                .as_ref()
+                .ok_or_else(|| "Whisper model not loaded".to_string())?
+                .clone()
+        };
+
         // Take samples from recording state (zero-copy move)
         let samples = {
             let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
@@ -136,15 +146,6 @@ async fn transcribe_buffer(
             samples.len(),
             samples.len() as f64 / 16000.0
         );
-
-        // Clone Arc<WhisperContext> then release mutex — don't hold it during inference
-        let ctx = {
-            let guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
-            guard
-                .as_ref()
-                .ok_or_else(|| "Whisper model not loaded".to_string())?
-                .clone()
-        };
 
         let app_clone = app.clone();
         tokio::task::spawn_blocking(move || {
@@ -260,6 +261,18 @@ fn snapshot_clipboard() {
     #[cfg(target_os = "macos")]
     {
         clipboard::cmd_snapshot();
+    }
+}
+
+#[tauri::command]
+fn restore_clipboard() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        clipboard::cmd_restore()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
     }
 }
 
@@ -683,7 +696,14 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
                 *buf = Vec::new();
             }
 
-            // 5. Emit system-wake event to frontend
+            // 5. Reset recording state (prevents desync if recording was active during sleep)
+            state.recording_started_at.store(0, Ordering::Relaxed);
+            if let Ok(mut rec) = state.recording.lock() {
+                rec.is_recording = false;
+                rec.samples = Vec::new();
+            }
+
+            // 6. Emit system-wake event to frontend
             let _ = app.emit("system-wake", ());
         }
 
@@ -881,6 +901,7 @@ pub fn run() {
             transcribe_buffer_cloud,
             paste_text,
             snapshot_clipboard,
+            restore_clipboard,
             write_transient_text,
             check_accessibility,
             request_accessibility,

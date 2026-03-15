@@ -125,7 +125,14 @@ struct FnKeyState {
     app: AppHandle,
     fn_held: AtomicBool,
     event_count: AtomicU64,
+    /// Timestamp (ms since epoch) of last fn-press — used to debounce spurious
+    /// releases during focus transitions (global ↔ local monitor handoff).
+    press_timestamp_ms: AtomicU64,
 }
+
+/// Minimum hold duration (ms) before a release is accepted.
+/// Prevents false releases caused by focus transitions between global/local monitors.
+const MIN_HOLD_MS: u64 = 150;
 
 // ── Local monitor block (returns NSEvent* to not consume the event) ──
 
@@ -162,12 +169,30 @@ unsafe extern "C" fn block_invoke(block: *mut FnKeyBlock, event: *const c_void) 
 
     if fn_pressed {
         if !state.fn_held.swap(true, Ordering::SeqCst) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            state.press_timestamp_ms.store(now, Ordering::SeqCst);
             log("[fnkey] fn PRESSED — starting recording");
             let _ = state.app.emit("fnkey-pressed", ());
         }
     } else if state.fn_held.swap(false, Ordering::SeqCst) {
-        log("[fnkey] fn RELEASED — stopping recording");
-        let _ = state.app.emit("fnkey-released", ());
+        // Debounce: suppress releases within MIN_HOLD_MS of press to avoid
+        // false releases during global ↔ local monitor focus transitions.
+        let press_ts = state.press_timestamp_ms.load(Ordering::SeqCst);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        if now.saturating_sub(press_ts) < MIN_HOLD_MS {
+            // Too fast — likely a focus-transition artefact, re-arm fn_held
+            state.fn_held.store(true, Ordering::SeqCst);
+            log("[fnkey] fn release suppressed (debounce — focus transition)");
+        } else {
+            log("[fnkey] fn RELEASED — stopping recording");
+            let _ = state.app.emit("fnkey-released", ());
+        }
     }
 }
 
@@ -192,12 +217,27 @@ unsafe extern "C" fn local_block_invoke(block: *mut LocalFnKeyBlock, event: *con
 
     if fn_pressed {
         if !state.fn_held.swap(true, Ordering::SeqCst) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            state.press_timestamp_ms.store(now, Ordering::SeqCst);
             log("[fnkey] fn PRESSED (local — app focused)");
             let _ = state.app.emit("fnkey-pressed", ());
         }
     } else if state.fn_held.swap(false, Ordering::SeqCst) {
-        log("[fnkey] fn RELEASED (local — app focused)");
-        let _ = state.app.emit("fnkey-released", ());
+        let press_ts = state.press_timestamp_ms.load(Ordering::SeqCst);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        if now.saturating_sub(press_ts) < MIN_HOLD_MS {
+            state.fn_held.store(true, Ordering::SeqCst);
+            log("[fnkey] fn release suppressed (debounce — local focus transition)");
+        } else {
+            log("[fnkey] fn RELEASED (local — app focused)");
+            let _ = state.app.emit("fnkey-released", ());
+        }
     }
 
     // Return the event so it's not consumed
@@ -341,6 +381,7 @@ fn init_monitor(app: AppHandle) {
         app,
         fn_held: AtomicBool::new(false),
         event_count: AtomicU64::new(0),
+        press_timestamp_ms: AtomicU64::new(0),
     });
 
     // Two Arc references — one for global monitor, one for local monitor
