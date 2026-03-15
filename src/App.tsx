@@ -21,6 +21,7 @@ import { SettingsPage } from "@/pages/Settings.page";
 import { DashboardPage } from "@/pages/Dashboard.page";
 import { SystemCheckPage } from "@/pages/SystemCheck.page";
 import { ShortcutsPage } from "@/pages/Shortcuts.page";
+import { AboutPage } from "@/pages/About.page";
 import { OnboardingPage } from "@/pages/Onboarding.page";
 
 export default function App() {
@@ -160,6 +161,7 @@ export default function App() {
           {currentView === "dashboard" && <DashboardPage />}
           {currentView === "system-check" && <SystemCheckPage />}
           {currentView === "shortcuts" && <ShortcutsPage />}
+          {currentView === "about" && <AboutPage />}
         </div>
 
         <StatusBar />

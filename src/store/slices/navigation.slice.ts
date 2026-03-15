@@ -1,6 +1,6 @@
 import type { StateCreator } from "zustand";
 
-export type AppView = "history" | "settings" | "dashboard" | "system-check" | "shortcuts";
+export type AppView = "history" | "settings" | "dashboard" | "system-check" | "shortcuts" | "about";
 
 export interface NavigationSlice {
   currentView: AppView;

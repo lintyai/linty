@@ -14,9 +14,15 @@ import {
   Sparkles,
   Accessibility,
   Cloud,
+  Info,
+  CheckCircle,
+  ArrowDownToLine,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore } from "@/store/app.store";
+import { useUpdater } from "@/hooks/useUpdater.hook";
 import type { AppView } from "@/store/slices/navigation.slice";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +40,7 @@ const NAV_ITEMS: NavItem[] = [
   { view: "system-check", label: "System Check", icon: <ShieldCheck size={16} /> },
   { view: "shortcuts", label: "Shortcuts", icon: <Keyboard size={16} /> },
   { view: "settings", label: "Settings", icon: <Settings size={16} /> },
+  { view: "about", label: "About", icon: <Info size={16} /> },
 ];
 
 /* ── Searchable items ── */
@@ -53,6 +60,7 @@ const SEARCH_ITEMS: SearchItem[] = [
   { label: "System Check", category: "Pages", keywords: "permissions microphone accessibility diagnostics", view: "system-check", icon: <ShieldCheck size={14} /> },
   { label: "Keyboard Shortcuts", category: "Pages", keywords: "hotkeys keys bindings", view: "shortcuts", icon: <Keyboard size={14} /> },
   { label: "Settings", category: "Pages", keywords: "preferences configuration", view: "settings", icon: <Settings size={14} /> },
+  { label: "About", category: "Pages", keywords: "version update website github licenses", view: "about", icon: <Info size={14} /> },
 
   // Settings > General
   { label: "LLM Correction", category: "Settings", keywords: "grammar punctuation ai fix correction", view: "settings", icon: <Sparkles size={14} /> },
@@ -271,31 +279,119 @@ function VersionIndicator() {
   const [version, setVersion] = useState("");
   const updateStatus = useAppStore((s) => s.updateStatus);
   const updateVersion = useAppStore((s) => s.updateVersion);
+  const updateProgress = useAppStore((s) => s.updateProgress);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
+  const { downloadAndInstall, checkForUpdate } = useUpdater();
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => {});
   }, []);
 
-  const handleClick = useCallback(() => {
-    setCurrentView("settings");
+  const navigateToAbout = useCallback(() => {
+    setCurrentView("about");
   }, [setCurrentView]);
 
-  const hasUpdate = updateStatus === "available" && updateVersion;
+  // Downloading state — show progress bar
+  if (updateStatus === "downloading") {
+    return (
+      <div className="px-2.5 pb-3">
+        <div className="border-t border-border-subtle mb-2" />
+        <div className="flex flex-col gap-1.5 px-2.5 py-[5px]">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-[11px] text-text-secondary">
+              <ArrowDownToLine size={11} className="text-accent" />
+              Downloading...
+            </span>
+            <span className="text-[10px] tabular-nums text-text-muted">{updateProgress}%</span>
+          </div>
+          <div className="h-1 w-full overflow-hidden rounded-full bg-border">
+            <div
+              className="h-full rounded-full bg-accent transition-all duration-300"
+              style={{ width: `${updateProgress}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
+  // Error state
+  if (updateStatus === "error") {
+    return (
+      <div className="px-2.5 pb-3">
+        <div className="border-t border-border-subtle mb-2" />
+        <div className="flex items-center justify-between px-2.5 py-[5px]">
+          <span className="flex items-center gap-1.5 text-[11px] text-danger">
+            <AlertCircle size={11} />
+            Update failed
+          </span>
+          <button
+            onClick={checkForUpdate}
+            className="text-[10px] text-accent hover:text-accent-soft transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Available state — show update button
+  if (updateStatus === "available" && updateVersion) {
+    return (
+      <div className="px-2.5 pb-3">
+        <div className="border-t border-border-subtle mb-2" />
+        <div className="flex items-center justify-between px-2.5 py-[5px]">
+          <button
+            onClick={navigateToAbout}
+            className="text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+          >
+            v{version || "..."}
+          </button>
+          <button
+            onClick={downloadAndInstall}
+            className={cn(
+              "flex h-[20px] items-center gap-1 rounded-full px-2 text-[10px] font-medium",
+              "bg-accent/15 text-accent hover:bg-accent/25 active:scale-95 transition-all duration-150",
+            )}
+          >
+            <ArrowDownToLine size={10} />
+            v{updateVersion}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Checking state
+  if (updateStatus === "checking") {
+    return (
+      <div className="px-2.5 pb-3">
+        <div className="border-t border-border-subtle mb-2" />
+        <button
+          onClick={navigateToAbout}
+          className="flex w-full items-center justify-between rounded-lg px-2.5 py-[5px] text-[11px] text-text-muted hover:bg-bg-hover hover:text-text-secondary transition-all duration-150"
+        >
+          <span>v{version || "..."}</span>
+          <Loader2 size={11} className="animate-spin text-text-muted" />
+        </button>
+      </div>
+    );
+  }
+
+  // Idle — up to date
   return (
     <div className="px-2.5 pb-3">
       <div className="border-t border-border-subtle mb-2" />
       <button
-        onClick={handleClick}
+        onClick={navigateToAbout}
         className="flex w-full items-center justify-between rounded-lg px-2.5 py-[5px] text-[11px] text-text-muted hover:bg-bg-hover hover:text-text-secondary transition-all duration-150"
       >
         <span>v{version || "..."}</span>
-        {hasUpdate && (
-          <span className="flex h-[18px] items-center rounded-full bg-accent/15 px-2 text-[10px] font-medium text-accent">
-            Update
-          </span>
-        )}
+        <span className="flex items-center gap-1 text-[10px] text-success/70">
+          <CheckCircle size={11} />
+          Latest
+        </span>
       </button>
     </div>
   );
