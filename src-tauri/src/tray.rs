@@ -1,10 +1,11 @@
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
-    tray::{TrayIconBuilder, TrayIconId},
+    tray::{MouseButton, MouseButtonState},
     Emitter, Listener, Manager,
 };
 
-const TRAY_ID: &str = "linty-tray";
+/// The config-created tray icon always has id "main" in Tauri v2.
+const TRAY_ID: &str = "main";
 
 fn status_label(status: &str) -> &str {
     match status {
@@ -65,48 +66,59 @@ fn build_tray_menu(
 }
 
 pub fn init_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let menu = build_tray_menu(app.handle(), "idle", "cloud")?;
+    // Attach to the tray icon already created by tauri.conf.json (id = "main").
+    // Do NOT create a second tray with TrayIconBuilder — that produces a ghost icon
+    // where handlers are attached to an invisible duplicate instead of the real one.
+    let tray = app
+        .tray_by_id(TRAY_ID)
+        .expect("tray icon must exist from tauri.conf.json trayIcon config");
 
-    TrayIconBuilder::with_id(TRAY_ID)
-        .menu(&menu)
-        .tooltip("Linty — Hold fn to record")
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "show" => {
-                if let Some(window) = app.get_webview_window("main") {
+    let menu = build_tray_menu(app.handle(), "idle", "cloud")?;
+    tray.set_menu(Some(menu))?;
+    tray.set_show_menu_on_left_click(false)?; // left-click toggles window, right-click opens menu
+
+    tray.on_menu_event(|app, event| match event.id.as_ref() {
+        "show" => {
+            if let Some(window) = app.get_webview_window("main") {
+                super::set_activation_policy_regular();
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.center();
+            }
+        }
+        "quit" => {
+            app.exit(0);
+        }
+        "engine-cloud" => {
+            let _ = app.emit("tray-engine-changed", "cloud");
+        }
+        "engine-local" => {
+            let _ = app.emit("tray-engine-changed", "local");
+        }
+        _ => {}
+    });
+
+    tray.on_tray_icon_event(|tray, event| {
+        if let tauri::tray::TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+        } = event
+        {
+            let app = tray.app_handle();
+            if let Some(window) = app.get_webview_window("main") {
+                if window.is_visible().unwrap_or(false) {
+                    let _ = window.hide();
+                    super::set_activation_policy_accessory();
+                } else {
                     super::set_activation_policy_regular();
                     let _ = window.show();
                     let _ = window.set_focus();
                     let _ = window.center();
                 }
             }
-            "quit" => {
-                app.exit(0);
-            }
-            "engine-cloud" => {
-                let _ = app.emit("tray-engine-changed", "cloud");
-            }
-            "engine-local" => {
-                let _ = app.emit("tray-engine-changed", "local");
-            }
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let tauri::tray::TrayIconEvent::Click { .. } = event {
-                let app = tray.app_handle();
-                if let Some(window) = app.get_webview_window("main") {
-                    if window.is_visible().unwrap_or(false) {
-                        let _ = window.hide();
-                        super::set_activation_policy_accessory();
-                    } else {
-                        super::set_activation_policy_regular();
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                        let _ = window.center();
-                    }
-                }
-            }
-        })
-        .build(app)?;
+        }
+    });
 
     // Listen for frontend state changes to update tray menu + tooltip
     let handle = app.handle().clone();
@@ -126,7 +138,7 @@ pub fn init_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
 
         // Rebuild menu
         if let Ok(menu) = build_tray_menu(&handle, status, stt_mode) {
-            if let Some(tray) = handle.tray_by_id(&TrayIconId::new(TRAY_ID)) {
+            if let Some(tray) = handle.tray_by_id(TRAY_ID) {
                 let _ = tray.set_menu(Some(menu));
                 let _ = tray.set_tooltip(Some(&tooltip_text(status, stt_mode)));
             }
