@@ -102,7 +102,7 @@ jobs:
           APPLE_ID: ${{ secrets.LINTY_APPLE_NOTARIZATION_APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.LINTY_APPLE_NOTARIZATION_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.LINTY_APPLE_TEAM_ID }}
-        run: yarn tauri build --bundles dmg -- --features local-stt
+        run: yarn tauri build --bundles dmg app -- --features local-stt
 
       - name: Notarize & staple DMG
         env:
