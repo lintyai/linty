@@ -793,8 +793,9 @@ pub fn run() {
             let reset = MenuItem::with_id(app, "reset-all-data", "Reset All Data...", true, None::<&str>)?;
             let sep2_app = PredefinedMenuItem::separator(app)?;
             let quit = PredefinedMenuItem::quit(app, Some("Quit Linty"))?;
+            let check_updates = MenuItem::with_id(app, "check-for-updates", "Check for Updates...", true, None::<&str>)?;
             let app_submenu =
-                Submenu::with_items(app, "Linty", true, &[&about, &sep, &reset, &sep2_app, &quit])?;
+                Submenu::with_items(app, "Linty", true, &[&about, &check_updates, &sep, &reset, &sep2_app, &quit])?;
 
             let undo = PredefinedMenuItem::undo(app, None)?;
             let redo = PredefinedMenuItem::redo(app, None)?;
@@ -813,8 +814,10 @@ pub fn run() {
             Menu::with_items(app, &[&app_submenu, &edit_submenu])
         })
         .on_menu_event(|app, event| {
-            if event.id.as_ref() == "reset-all-data" {
-                let _ = app.emit("menu-reset-all-data", ());
+            match event.id.as_ref() {
+                "reset-all-data" => { let _ = app.emit("menu-reset-all-data", ()); }
+                "check-for-updates" => { let _ = app.emit("menu-check-for-updates", ()); }
+                _ => {}
             }
         })
         .setup(|app| {
