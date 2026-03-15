@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:mac": "tauri build --bundles dmg app -- --features local-stt && mkdir -p release && cp -f src-tauri/target/release/bundle/dmg/*.dmg release/",
+    "build:mac": "tauri build --bundles dmg app -- --features local-stt && mkdir -p release && cp -f src-tauri/target/release/bundle/dmg/*.dmg release/ && xattr -cr src-tauri/target/release/bundle/macos/Linty.app",
     "build:mac:universal": "tauri build --target universal-apple-darwin --bundles dmg app -- --features local-stt && mkdir -p release && cp -f src-tauri/target/release/bundle/dmg/*.dmg release/"
   },
   "dependencies": {
