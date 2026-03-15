@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback } from "react";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useAppStore } from "@/store/app.store";
@@ -6,13 +6,18 @@ import { useAppStore } from "@/store/app.store";
 const CHECK_DELAY_MS = 5_000;
 const CHECK_INTERVAL_MS = 60 * 60 * 1_000; // 60 min
 
+// Module-level singleton — shared across all hook instances so
+// downloadAndInstall always has the update object regardless of
+// which component called checkForUpdate.
+let pendingUpdate: Awaited<ReturnType<typeof check>> | null = null;
+let autoCheckActive = false;
+
 export function useUpdater() {
   const setUpdateStatus = useAppStore((s) => s.setUpdateStatus);
   const setUpdateVersion = useAppStore((s) => s.setUpdateVersion);
   const setUpdateError = useAppStore((s) => s.setUpdateError);
   const setUpdateProgress = useAppStore((s) => s.setUpdateProgress);
   const addToast = useAppStore((s) => s.addToast);
-  const updateRef = useRef<Awaited<ReturnType<typeof check>> | null>(null);
 
   const checkForUpdate = useCallback(async () => {
     try {
@@ -20,7 +25,7 @@ export function useUpdater() {
       const update = await check();
 
       if (update) {
-        updateRef.current = update;
+        pendingUpdate = update;
         setUpdateVersion(update.version);
         setUpdateStatus("available");
         addToast({
@@ -38,8 +43,7 @@ export function useUpdater() {
   }, [setUpdateStatus, setUpdateVersion, addToast]);
 
   const downloadAndInstall = useCallback(async () => {
-    const update = updateRef.current;
-    if (!update) return;
+    if (!pendingUpdate) return;
 
     try {
       setUpdateStatus("downloading");
@@ -48,7 +52,7 @@ export function useUpdater() {
 
       let contentLength = 0;
       let downloaded = 0;
-      await update.downloadAndInstall((event) => {
+      await pendingUpdate.downloadAndInstall((event) => {
         switch (event.event) {
           case "Started":
             contentLength = event.data.contentLength ?? 0;
@@ -80,15 +84,26 @@ export function useUpdater() {
     }
   }, [setUpdateStatus, setUpdateProgress, setUpdateError, addToast]);
 
-  // Auto-check on mount (delayed) + periodic interval
+  return { checkForUpdate, downloadAndInstall };
+}
+
+/**
+ * Auto-check on mount (5s delay) + every 60min.
+ * Call this ONCE in App.tsx — not in every component that uses useUpdater().
+ */
+export function useUpdaterAutoCheck() {
+  const { checkForUpdate } = useUpdater();
+
   useEffect(() => {
+    if (autoCheckActive) return;
+    autoCheckActive = true;
+
     const timeout = setTimeout(checkForUpdate, CHECK_DELAY_MS);
     const interval = setInterval(checkForUpdate, CHECK_INTERVAL_MS);
     return () => {
       clearTimeout(timeout);
       clearInterval(interval);
+      autoCheckActive = false;
     };
   }, [checkForUpdate]);
-
-  return { checkForUpdate, downloadAndInstall };
 }

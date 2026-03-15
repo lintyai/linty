@@ -7,7 +7,7 @@ import { useGlobalHotkey } from "@/hooks/useGlobalHotkey.hook";
 import { useModelAutoLoad } from "@/hooks/useModelAutoLoad.hook";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useTheme } from "@/hooks/useTheme.hook";
-import { useUpdater } from "@/hooks/useUpdater.hook";
+import { useUpdaterAutoCheck } from "@/hooks/useUpdater.hook";
 import { useAppStore } from "@/store/app.store";
 import { checkMicrophonePermission } from "@/services/permissions.service";
 import { Sidebar } from "@/components/layout/Sidebar.component";
@@ -55,7 +55,7 @@ export default function App() {
   useGlobalHotkey();
   useModelAutoLoad();
   useHistory();
-  useUpdater();
+  useUpdaterAutoCheck();
 
   const handleOnboardingComplete = useCallback(async () => {
     await saveOnboardingComplete(true);
