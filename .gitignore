@@ -31,7 +31,7 @@ firebase-debug.log
 *-fnkey.log
 
 # Claude Code
-.claude/
+.claude/*
 !.claude/skills/
 
 # Tauri
