@@ -36,7 +36,7 @@ export interface SettingsSlice {
 
 export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   groqApiKey: "",
-  sttMode: "cloud",
+  sttMode: "local",
   correctionEnabled: true,
   localModelPath: null,
   isLocalModelDownloaded: false,

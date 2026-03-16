@@ -12,7 +12,7 @@ async function getStore() {
     storeInstance = await load(STORE_PATH, {
       defaults: {
         groqApiKey: "",
-        sttMode: "cloud",
+        sttMode: "local",
         correctionEnabled: true,
         theme: "system",
         whisperPrompt: "",
