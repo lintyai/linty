@@ -44,11 +44,14 @@ jobs:
           # Update Cargo.toml
           sed -i '' "s/^version = \".*\"/version = \"$NEW_VERSION\"/" src-tauri/Cargo.toml
 
+          # Sync Cargo.lock with new version
+          cd src-tauri && cargo update -p linty && cd ..
+
       - name: Commit version bump
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
-          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
           git commit -m "chore: bump version to v${{ steps.version.outputs.version }} [skip ci]"
           git push
 
