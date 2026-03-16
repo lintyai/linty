@@ -28,7 +28,7 @@ Run `/pr-merge` when:
 - The PR is ready to merge into main
 - **Auto-invoked** by `/pr-resolve` after all threads are resolved
 
-**Input**: PR number or URL (e.g., `75` or `https://github.com/shekhardtu/colbin/pull/75`)
+**Input**: PR number or URL (e.g., `18` or `https://github.com/lintyai/linty/pull/18`)
 
 ---
 
@@ -42,7 +42,7 @@ If not authenticated, stop and instruct: `gh auth login`.
 
 ### 1.2 Fetch PR State
 ```bash
-gh pr view <PR_NUMBER> --repo shekhardtu/colbin --json number,title,headRefName,baseRefName,state,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision,url,body
+gh pr view <PR_NUMBER> --repo lintyai/linty --json number,title,headRefName,baseRefName,state,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision,url,body
 ```
 
 ### 1.3 Verify Merge Conditions
@@ -64,7 +64,7 @@ Run through ALL checks before proceeding. **All must pass.**
 ```bash
 gh api graphql -f query='
 {
-  repository(owner: "shekhardtu", name: "colbin") {
+  repository(owner: "lintyai", name: "linty") {
     pullRequest(number: PR_NUMBER) {
       reviewThreads(first: 100) {
         pageInfo {
@@ -91,7 +91,7 @@ Count threads where `isResolved: false` and `isOutdated: false`. If any exist, l
 ### 1.5 Check CI Status
 
 ```bash
-gh pr checks <PR_NUMBER> --repo shekhardtu/colbin
+gh pr checks <PR_NUMBER> --repo lintyai/linty
 ```
 
 If any checks are still running, wait and re-check (up to 2 retries with 30s between). If checks fail, **block merge** and report which checks failed.
@@ -110,9 +110,9 @@ Display to the user before merging:
 ├──────────────────────────────────────────────────┤
 │ PR:              #{number} — {title}             │
 │ Branch:          {head} → {base}                 │
-│ Mergeable:       ✅ / ❌                          │
-│ CI Checks:       ✅ All passing / ❌ {N} failing  │
-│ Unresolved:      ✅ 0 threads / ❌ {N} threads    │
+│ Mergeable:       Pass / Fail                     │
+│ CI Checks:       All passing / {N} failing       │
+│ Unresolved:      0 threads / {N} threads         │
 │ Review Decision: APPROVED / CHANGES_REQUESTED    │
 │ Branch Status:   CLEAN / BEHIND                  │
 ├──────────────────────────────────────────────────┤
@@ -146,7 +146,7 @@ These produce a warning but do NOT block:
 Use squash merge (default for this repo) to keep history clean:
 
 ```bash
-gh pr merge <PR_NUMBER> --repo shekhardtu/colbin --squash --delete-branch
+gh pr merge <PR_NUMBER> --repo lintyai/linty --squash --delete-branch
 ```
 
 **Merge strategy**: `--squash` combines all commits into one clean commit on main.
@@ -168,7 +168,7 @@ gh pr merge <PR_NUMBER> --repo shekhardtu/colbin --squash --delete-branch
 ### 4.1 Verify Merge
 
 ```bash
-gh pr view <PR_NUMBER> --repo shekhardtu/colbin --json state,mergedAt,mergeCommit
+gh pr view <PR_NUMBER> --repo lintyai/linty --json state,mergedAt,mergeCommit
 ```
 
 Confirm `state: MERGED`.
@@ -179,38 +179,6 @@ Confirm `state: MERGED`.
 git checkout main
 git pull origin main
 ```
-
-### 4.3 Update Colbin Knowledge Doc (if linked)
-
-If the PR body contains a Colbin knowledge doc link, update its status:
-
-1. Extract the document slug from the PR body
-2. Read the document via `mcp__colbin__colbin_get_document`
-3. Append merge details via `mcp__colbin__colbin_update_document_content` (mode: append):
-
-```markdown
-
-## Merge Details
-| Step | Details |
-|------|---------|
-| Merged At | {mergedAt} |
-| Merge Commit | `{mergeCommit}` |
-| Merged By | `/pr-merge` pipeline |
-
----
-**Status**: Merged
-```
-
-### 4.4 Update Release Notes
-
-Update the release notes document with the merge status:
-
-```
-mcp__colbin__colbin_get_document with:
-- documentSlug: "colbin-release-notes-eX1B2xbk"
-```
-
-Find the entry for this PR and update its status from "Shipped" to "Merged".
 
 ---
 
@@ -229,17 +197,16 @@ Find the entry for this PR and update its status from "Shipped" to "Merged".
 │ Branch       │ {head} — deleted                                                                                       │
 ├──────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ Pipeline Complete                                                                                                      │
-│  /ship ✅ → /pr-review ✅ → /pr-resolve ✅ → /pr-merge ✅                                                              │
+│  /ship -> /pr-review -> /pr-resolve -> /pr-merge                                                                      │
 ├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ Post-Merge                                                                                                             │
-│  1. Monitor Railway deployment                                                                                         │
-│  2. Verify production after deploy                                                                                     │
-│  3. Check Sentry for new errors                                                                                        │
+│  1. Monitor CI build-dmg workflow                                                                                      │
+│  2. Verify GitHub Release created                                                                                      │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 Skill: /pr-merge
 File:  .claude/skills/pr-merge/SKILL.md
-Repo:  https://github.com/shekhardtu/colbin/blob/main/.claude/skills/pr-merge/SKILL.md
+Repo:  https://github.com/lintyai/linty/blob/main/.claude/skills/pr-merge/SKILL.md
 ```
 
 ---
@@ -269,7 +236,7 @@ Repo:  https://github.com/shekhardtu/colbin/blob/main/.claude/skills/pr-merge/SK
 | **gh pr merge flags** | Did `--squash --delete-branch` work? Any new required flags? |
 | **GraphQL queries** | Did the unresolved threads query work? Field names correct? |
 | **CI check format** | Did `gh pr checks` output match expectations? |
-| **Post-merge steps** | Did local checkout/pull work? Did Colbin doc update work? |
+| **Post-merge steps** | Did local checkout/pull work? |
 
 ### Fix Issues Found
 

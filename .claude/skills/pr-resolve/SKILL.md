@@ -7,9 +7,9 @@ description: "Resolve PR review comments, check for issues, commit fixes and pus
 
 # PR Resolve — Critical Pull Request Resolution & Review
 
-Resolves reviewer comments **and** performs proactive code quality analysis, build validation, threaded replies, and re-review requests. Adapted for the Colbin monorepo (Yarn workspaces + Turborepo).
+Resolves reviewer comments **and** performs proactive code quality analysis, build validation, threaded replies, and re-review requests. Adapted for the Linty desktop app (Tauri v2 + React 19 + Rust).
 
-**Pipeline position**: This is the final step in the `/ship` → `/pr-review` → `/pr-resolve` chain.
+**Pipeline position**: This is the final step in the `/ship` -> `/pr-review` -> `/pr-resolve` chain.
 
 ```
 ┌─────────┐     ┌────────────┐     ┌──────────────┐     ┌────────────┐
@@ -30,7 +30,7 @@ Run `/pr-resolve` when:
 - You need to resolve, reply, and re-request review in one pass
 - **Auto-invoked** by `/pr-review` when findings are posted
 
-**Input**: A GitHub PR URL (e.g., `https://github.com/shekhardtu/colbin/pull/42`)
+**Input**: A GitHub PR URL (e.g., `https://github.com/lintyai/linty/pull/18`)
 
 ---
 
@@ -57,13 +57,13 @@ gh pr checkout <PR_NUMBER>
 ### 1.3 Fetch All Comments & Reviews
 ```bash
 # Review comments (inline code comments)
-gh api repos/shekhardtu/colbin/pulls/{pr_number}/comments --paginate
+gh api repos/lintyai/linty/pulls/{pr_number}/comments --paginate
 
 # Issue comments (general PR comments)
-gh api repos/shekhardtu/colbin/issues/{pr_number}/comments --paginate
+gh api repos/lintyai/linty/issues/{pr_number}/comments --paginate
 
 # Reviews with their states (APPROVED, CHANGES_REQUESTED, COMMENTED)
-gh api repos/shekhardtu/colbin/pulls/{pr_number}/reviews --paginate
+gh api repos/lintyai/linty/pulls/{pr_number}/reviews --paginate
 ```
 
 ### 1.4 Fetch Review Threads (for later resolution)
@@ -92,27 +92,10 @@ gh api graphql -f query='
       }
     }
   }
-' -f owner='shekhardtu' -f repo='colbin' -F pr=PR_NUMBER
+' -f owner='lintyai' -f repo='linty' -F pr=PR_NUMBER
 ```
 
 Save thread IDs mapped to file paths and line numbers for Phase 8.
-
-### 1.5 Identify Linked Context
-
-Check the PR body for Colbin knowledge document links (created by `/build` skill). If found, fetch the document content for implementation context:
-
-```bash
-# Look for Colbin doc URLs in PR body (e.g., colbin.app/doc/... or ## Knowledge Doc section)
-# Extract the URL from the PR body field fetched in 1.2
-```
-
-If a Colbin doc link is found, use `mcp__colbin__colbin_get_document` to fetch the document content. This provides:
-- Original research context and technical approach
-- Acceptance criteria
-- Architecture decisions and rationale
-- Known risks and edge cases
-
-Use this context to understand the intent of the PR — this prevents over-scoping fixes.
 
 ---
 
@@ -120,33 +103,26 @@ Use this context to understand the intent of the PR — this prevents over-scopi
 
 Before reviewing any comments, load the project-specific coding standards and architectural context. These files contain **critical rules** that reviewers enforce — understanding them prevents incorrect fixes and ensures compliance.
 
-### 1B.1 Determine Affected Apps/Packages
+### 1B.1 Determine Affected Areas
 
-From the PR diff file list (Phase 1.2), identify which apps/packages are touched:
+From the PR diff file list (Phase 1.2), identify which areas are touched:
 ```bash
 gh pr diff <PR_NUMBER> --name-only
 ```
 
-Map changed file paths to their app/package:
-| Path prefix | App/Package |
-|-------------|-------------|
-| `apps/api/` | api (Express + TSOA + Mongoose) |
-| `apps/editor/` | editor (React 19 + Vite + Tailwind + shadcn/ui) |
-| `packages/block-editor/` | block-editor (ProseMirror + Y.js) |
-| `packages/magic-input/` | magic-input (custom pattern matcher) |
-| `packages/shared-types/` | shared-types (cross-package types) |
-| Root-level files | monorepo |
+Map changed file paths to their area:
+| Path prefix | Area |
+|-------------|------|
+| `src/` | React frontend (pages, components, hooks, store, services) |
+| `src-tauri/src/` | Rust backend (audio, transcription, permissions, clipboard, paste, fnkey) |
+| `src-tauri/` | Tauri config (tauri.conf.json, Cargo.toml, Entitlements.plist, Info.plist) |
+| `.github/` | CI/CD (build-dmg workflow, actions) |
+| Root-level files | Project config (package.json, tsconfig, vite.config) |
 
 ### 1B.2 Read Instruction Files
 
 **Always read** (these apply to all PRs):
-1. **Root `CLAUDE.md`** — `./CLAUDE.md` — Monorepo-wide coding standards, Mongoose conventions, Redis caching, appSource partitioning, ProseMirror patterns, multi-document architecture, dependency hoisting rules
-
-**Conditionally read** based on affected files:
-2. **`apps/api/`** files changed — Read relevant TSOA controllers, services, and models to understand API patterns (DTOs, middleware, route decorators, Mongoose models)
-3. **`apps/editor/`** files changed — Read relevant pages, components, stores to understand frontend patterns (Zustand stores, React 19 patterns, shadcn/ui usage, Tailwind)
-4. **`packages/block-editor/`** files changed — Read ProseMirror plugin patterns, Y.js CRDT handling, input rules architecture
-5. **`packages/magic-input/`** files changed — Read custom PatternMatcher engine, plugin system
+1. **Root `CLAUDE.md`** — Project-wide coding standards, architecture overview, build commands, entitlement rules, zero-copy audio design, activation policy rules
 
 ### 1B.3 Extract Review-Critical Rules
 
@@ -155,21 +131,14 @@ From the loaded instruction files, extract and keep in mind:
 **Naming & File Conventions:**
 - File naming: `ComponentName.component.tsx`, `DialogName.dialogue.tsx`, `auth.store.ts`, `useAuth.hook.ts`, `user.service.ts`, `user.types.ts`, `PageName.page.tsx`, `LayoutName.layout.tsx`, `ContainerName.container.tsx`, `ContextName.context.tsx`
 - Dialogues: Modal/dialog/popup components MUST use `.dialogue.tsx` (not `.modal.tsx`, `.popup.tsx`, or `.dialog.tsx`)
-- Imports: External libs → internal packages → relative imports
+- Imports: External libs -> internal packages -> relative imports
 - Naming: `camelCase` functions, `PascalCase` components, `UPPER_SNAKE` constants
-- ID fields: Must include collection name prefix (`userId` not `id`, `orgId` not `id`, `documentId` not `id`)
+- ID fields: Must include collection name prefix (`userId` not `id`, `orgId` not `id`)
 
 **Architecture-Specific Rules:**
-- **apps/api**: Express + TSOA patterns — DTOs for validation, middleware for auth, TSOA decorators for route definitions. Mongoose models with correct collection naming. `appSource: "editor"` filter on all document queries. Redis cache with base64 encoding for binary fields.
-- **apps/editor**: Zustand stores for state management. React 19 patterns. shadcn/ui components. Tailwind for styling. Path aliases.
-- **packages/block-editor**: ProseMirror native `InputRule` for markdown marks. `tr.wrap()` for block-level nodes (NOT `replaceSelectionWith()`). Y.js CRDT handling via Hocuspocus.
-- **packages/magic-input**: Custom `PatternMatcher` for interactive shortcuts (emoji picker, symbols).
-
-**Monorepo Rules:**
-- Yarn workspace dependency hoisting — check for version conflicts before adding deps
-- `resolutions` field in root `package.json` for deduplication
-- Non-critical features use dynamic imports with try/catch
-- Single source of truth — types defined once, imported everywhere
+- **Rust backend**: Zero-copy audio (samples stay in Rust, never cross IPC). `Arc<Mutex<>>` for shared state. Feature-gated `local-stt` for whisper-rs/Metal. macOS FFI over plugins for permissions, fn key, clipboard. Proper entitlement keys for Hardened Runtime (NOT App Sandbox).
+- **React frontend**: Zustand store split into slices. React 19 patterns. shadcn/ui components. Tailwind for styling.
+- **Tauri config**: Two windows (main + capsule overlay). Programmatic activation policy (NOT `LSUIElement` in Info.plist). Hardened Runtime entitlements.
 
 ### 1B.4 Use Context During Review
 
@@ -242,14 +211,14 @@ Based on verification evidence from 2.2, assign a status **and** a confidence le
 **CRITICAL**: If a reviewer surfaces a **real, verified issue** — even if it existed before this PR — **fix it**. Do NOT classify it as NOT APPLICABLE or DEFERRED just because it's pre-existing. The reviewer took the time to identify it, it's real, and the PR is the right place to resolve it.
 
 **When to fix pre-existing issues:**
-- Security vulnerabilities (XSS, injection, auth gaps) — **always fix**
+- Security vulnerabilities (XSS, entitlement gaps, permission bypass) — **always fix**
 - Correctness bugs (wrong behavior, data corruption) — **always fix**
 - Type safety gaps (`any` types, missing validation) — **fix if in affected files**
-- Performance issues (N+1 queries, unbounded operations) — **fix if in affected files**
+- Performance issues (allocations in audio callback, unnecessary IPC) — **fix if in affected files**
 
 **When to genuinely defer:**
 - Purely cosmetic suggestions (rename a variable, reorder imports) in unrelated files
-- Large-scope refactors that would expand the PR beyond its intent (e.g., "extract to shared package")
+- Large-scope refactors that would expand the PR beyond its intent
 - Issues in files not touched by this PR and unrelated to its scope
 
 **The principle**: A PR review is a quality gate for the codebase, not just for the diff. If an issue is surfaced and can be fixed without derailing the PR, fix it.
@@ -318,7 +287,7 @@ gh pr diff <PR_NUMBER> --name-only
 gh pr diff <PR_NUMBER>
 ```
 
-### 4.2 Check Against Colbin Code Standards
+### 4.2 Check Against Linty Code Standards
 
 Run through these checks on **changed files only** (not the entire codebase). Use rules loaded in **Phase 1B** as the source of truth.
 
@@ -330,30 +299,28 @@ Run through these checks on **changed files only** (not the entire codebase). Us
 - [ ] XSS vectors (`dangerouslySetInnerHTML` without sanitization)
 
 **High (should fix):**
-- [ ] Missing Mongoose transaction where multiple writes should be atomic
-- [ ] N+1 query patterns (querying inside loops instead of batch operations)
-- [ ] Improper auth middleware usage (missing auth middleware on protected routes)
-- [ ] Missing `appSource: "editor"` filter on document queries
-- [ ] Redis cache storing Buffer objects directly instead of base64 strings
-- [ ] Raw MongoDB collection names not matching Mongoose pluralization rules
+- [ ] `.unwrap()` in new Rust code (use `?` or proper error handling)
+- [ ] `unsafe` block without safety comment explaining why it's sound
+- [ ] Mutex scope issues (held across await points or longer than necessary)
+- [ ] Missing `#[cfg(feature = "local-stt")]` feature gate on whisper/Metal code
+- [ ] Wrong entitlement key in `Entitlements.plist` (must use Hardened Runtime keys, not App Sandbox)
+- [ ] Allocations in audio callback (real-time thread must not allocate)
+- [ ] Large data crossing IPC boundary (should use zero-copy pattern)
 
 **Naming & Convention violations (from CLAUDE.md — Phase 1B):**
 - [ ] File names not matching convention (`ComponentName.component.tsx`, `DialogName.dialogue.tsx`, `name.store.ts`, `useName.hook.ts`, `name.service.ts`, `name.types.ts`, `PageName.page.tsx`)
-- [ ] Import order wrong (should be: external libs → internal packages → relative imports)
+- [ ] Import order wrong (should be: external libs -> internal packages -> relative imports)
 - [ ] Modal/dialog components not using `.dialogue.tsx` extension
-- [ ] ID fields without collection prefix (`id` instead of `userId`, `orgId`, `documentId`, etc.)
+- [ ] ID fields without collection prefix (`id` instead of `userId`, `orgId`, etc.)
 - [ ] Generic names that don't reveal intent (`getData` instead of `getUserById`)
 
 **Architecture violations (from app-level context — Phase 1B):**
-- [ ] **apps/api**: Missing DTOs for request validation
-- [ ] **apps/api**: Missing auth middleware on protected routes
-- [ ] **apps/api**: Direct Mongoose queries instead of using service layer
-- [ ] **apps/api**: Missing `appSource` filter on document queries
-- [ ] **apps/editor**: Using Context API instead of Zustand stores for new state
-- [ ] **apps/editor**: Not using shadcn/ui components where available
-- [ ] **apps/editor**: Missing loading/error states on async operations
-- [ ] **packages/block-editor**: Using `replaceSelectionWith()` for block-level nodes instead of `tr.wrap()`
-- [ ] **packages/block-editor**: Inline marks in `magic-input` instead of `markInputRules.plugin.ts`
+- [ ] **src-tauri/src/**: Missing `Arc<Mutex<>>` for shared state across threads
+- [ ] **src-tauri/src/**: Audio samples crossing IPC instead of staying in Rust
+- [ ] **src-tauri/src/**: `LSUIElement` in Info.plist (should use programmatic activation policy)
+- [ ] **src/**: Using Context API instead of Zustand stores for new state
+- [ ] **src/**: Not using shadcn/ui components where available
+- [ ] **src/**: Missing loading/error states on async operations
 
 **Medium (suggest in comment):**
 - [ ] Files exceeding 500 lines
@@ -373,21 +340,14 @@ If issues are found:
 
 After all changes are committed, validate the build:
 
-### 5.1 Type Check
+### 5.1 Frontend Build Check
 ```bash
-yarn typecheck
+yarn build
 ```
 
-### 5.2 Build Check (based on affected workspaces)
+### 5.2 Rust Build Check
 ```bash
-# If apps/api/ was changed
-yarn workspace @colbin/api build
-
-# If apps/web/ was changed
-yarn workspace @colbin/web build
-
-# If packages were changed, build all
-yarn build
+cd src-tauri && cargo check --features local-stt
 ```
 
 ### 5.3 If Build Fails
@@ -397,7 +357,7 @@ yarn build
 4. Re-run the failing check to confirm
 
 ### 5.4 If Build Was Already Broken
-Fix it if feasible within the PR scope. If the breakage is in a completely unrelated area (different app, different feature), note it in the output and move on.
+Fix it if feasible within the PR scope. If the breakage is in a completely unrelated area, note it in the output and move on.
 
 ---
 
@@ -444,7 +404,7 @@ Could you clarify what you mean by <specific question>? I interpreted it as <you
 
 **DEFERRED:**
 ```
-Valid point. This is outside the scope of this PR — I've noted it for a follow-up.
+Valid point. This is outside the scope of this PR — I've created a GitHub issue to track it.
 ```
 
 **DISAGREE:**
@@ -462,7 +422,7 @@ The `{comment_id}` is the **numeric ID** of the root comment in the thread (from
 
 ```bash
 # Reply to a review comment thread (REST — primary method)
-gh api repos/shekhardtu/colbin/pulls/{pr_number}/comments/{comment_id}/replies \
+gh api repos/lintyai/linty/pulls/{pr_number}/comments/{comment_id}/replies \
   -X POST \
   -f body='Your reply message here'
 ```
@@ -526,56 +486,54 @@ Skip threads already resolved (`isResolved: true`).
 
 ---
 
-## Phase 8B: Add Deferred Items to Backlog
+## Phase 8B: Create GitHub Issues for Deferred Items
 
-**MANDATORY**: Any comment classified as **DEFERRED** must be captured in the product backlog so it doesn't get lost. Deferred means "valid but out of scope" — it still needs to be done eventually.
+**MANDATORY**: Any comment classified as **DEFERRED** must be captured as a GitHub issue so it doesn't get lost. Deferred means "valid but out of scope" — it still needs to be done eventually.
 
 ### 8B.1 Identify Deferred Comments
 
 From Phase 2 classification, collect all comments with status `DEFERRED`.
 
-### 8B.2 Add to Backlog Document
+### 8B.2 Create GitHub Issues
 
-For each deferred comment, add a backlog entry using `mcp__colbin__colbin_update_document_content`:
+For each deferred comment, create a GitHub issue:
 
-**Backlog Document**: `colbin-product-backlog-yvTu7bSy` ([View](https://colbin.com/bin/colbin-product-backlog-yvTu7bSy))
+```bash
+gh issue create --repo lintyai/linty \
+  --title "Brief description of the deferred improvement" \
+  --body "$(cat <<'EOF'
+## Context
 
-1. Read the current backlog to find the highest `BL-NNN` number
-2. For each deferred item, create a new entry with:
-   - Next sequential `BL-NNN` ID
-   - Type: `tech-debt` (most deferred items are improvements)
-   - Priority: `P3` or `P4` based on impact
-   - Source: `PR #NNN review (deferred)`
-   - Description, affected files, implementation hints from the review comment context
+Deferred from PR #NNN review.
 
-**Entry format** (prepend after the legend/divider, before existing entries):
+**Original review comment by @reviewer:**
+> <quote the review comment>
 
-```markdown
-### BL-NNN: Brief description of the deferred improvement
+## Description
 
-> **Type: tech-debt | Priority: P3 | Complexity: S | Status: Open
-> Added: YYYY-MM-DD | Source: PR #NNN review (deferred)**
-
-**Description**
 <What the reviewer suggested and why it matters>
 
-**Affected Workspaces:** `<workspace>`
+## Affected Files
 
-**Key Files**
-| File | Purpose | Action |
-|------|---------|--------|
-| `path/to/file.ts` | Description | Modify |
+- `path/to/file.ts`
 
-**Implementation Hints**
+## Implementation Hints
+
 - <How to implement the improvement>
+
+---
+*Created by `/pr-resolve` — deferred from PR review*
+EOF
+)" \
+  --label "tech-debt"
 ```
 
 ### 8B.3 Update Reply
 
-After adding to backlog, update the DEFERRED reply on the PR thread to include the backlog reference:
+After creating the issue, update the DEFERRED reply on the PR thread to include the issue reference:
 
 ```
-Valid point. Tracked as BL-NNN in the [product backlog](https://colbin.com/bin/colbin-product-backlog-yvTu7bSy). This is outside the scope of this PR — will be addressed in a follow-up.
+Valid point. Tracked as #<issue-number>. This is outside the scope of this PR — will be addressed in a follow-up.
 ```
 
 ### 8B.4 Skip Conditions
@@ -604,7 +562,7 @@ gh pr edit <PR_NUMBER> --add-reviewer <reviewer1>,<reviewer2>
 
 ```bash
 # Find existing "PR Review Comments Addressed" comment by the bot/current user
-gh api repos/shekhardtu/colbin/issues/{pr_number}/comments --jq '
+gh api repos/lintyai/linty/issues/{pr_number}/comments --jq '
   .[] | select(.body | startswith("## PR Review Comments Addressed")) | {id: .id, node_id: .node_id}
 '
 ```
@@ -613,7 +571,7 @@ gh api repos/shekhardtu/colbin/issues/{pr_number}/comments --jq '
 
 **If an existing comment was found** — edit it with the updated summary (additive — merge new info into existing):
 ```bash
-gh api repos/shekhardtu/colbin/issues/comments/{comment_id} \
+gh api repos/lintyai/linty/issues/comments/{comment_id} \
   -X PATCH \
   -f body='<updated summary body>'
 ```
@@ -649,7 +607,7 @@ All review feedback has been addressed and pushed. Here's a summary:
 Ready for re-review. @reviewer1 @reviewer2
 
 ---
-*Resolved by [`/pr-resolve`](https://github.com/shekhardtu/colbin/blob/main/.claude/skills/pr-resolve/SKILL.md) — Triggers: "resolve PR", "fix PR comments", "address PR feedback", "resolve PR comments"*
+*Resolved by [`/pr-resolve`](https://github.com/lintyai/linty/blob/main/.claude/skills/pr-resolve/SKILL.md) — Triggers: "resolve PR", "fix PR comments", "address PR feedback", "resolve PR comments"*
 ```
 
 **Additive edits:** When editing an existing comment, merge new information:
@@ -670,9 +628,8 @@ After completing all phases, provide this final report:
 ===============================================================
 
  Pull Request: <PR_URL>
- Repository: shekhardtu/colbin
+ Repository: lintyai/linty
  Branch: <branch-name>
- Colbin Doc: <doc-url> (if found in PR body)
 
 ---------------------------------------------------------------
  REVIEWER COMMENTS
@@ -704,9 +661,8 @@ Comment #1: [File: path/to/file.ts, Line: XX]
 ---------------------------------------------------------------
  BUILD VALIDATION
 ---------------------------------------------------------------
- TypeCheck: PASS | FAIL (details)
- Build (api): PASS | FAIL | SKIPPED (details)
- Build (web): PASS | FAIL | SKIPPED (details)
+ Frontend (yarn build): PASS | FAIL (details)
+ Rust (cargo check):    PASS | FAIL | SKIPPED (details)
 
 ---------------------------------------------------------------
  STATISTICS
@@ -749,7 +705,7 @@ Summary comment posted on PR: Yes
 
 Skill: /pr-resolve
 File:  .claude/skills/pr-resolve/SKILL.md
-Repo:  https://github.com/shekhardtu/colbin/blob/main/.claude/skills/pr-resolve/SKILL.md
+Repo:  https://github.com/lintyai/linty/blob/main/.claude/skills/pr-resolve/SKILL.md
 ```
 
 ---
@@ -825,11 +781,10 @@ Re-read this skill file (`Read` tool on `.claude/skills/pr-resolve/SKILL.md`) an
 | **GitHub API calls** | Did any `gh api` REST or GraphQL calls fail due to changed endpoints, field names, or auth issues? |
 | **Thread resolution** | Did the GraphQL `resolveReviewThread` mutation work? Did thread ID format change? |
 | **Reply posting** | Did REST `/comments/{id}/replies` work? Did it need `-X POST`? Did node_id format change? |
-| **Colbin MCP tools** | Did any `mcp__colbin__*` calls fail because the tool name or parameters changed? |
-| **Build commands** | Did `yarn typecheck`, `yarn workspace @colbin/api build`, or `yarn workspace @colbin/web build` work as expected? |
+| **Build commands** | Did `yarn build` and `cargo check --features local-stt` work as expected? |
 | **Code quality checks** | Are the Phase 4 checklist items still valid for the current codebase conventions? |
 | **Workflow phases** | Did any phase need to be skipped, reordered, or modified? |
-| **Repo references** | Are all GitHub URLs pointing to `shekhardtu/colbin`? |
+| **Repo references** | Are all GitHub URLs pointing to `lintyai/linty`? |
 
 ### 10.2 Fix Issues Found
 
@@ -854,12 +809,12 @@ After execution, append a skill attribution footer to:
 **PR summary comment** (add to the Phase 9.3 summary comment posted on the PR):
 ```markdown
 ---
-*Resolved by [`/pr-resolve`](https://github.com/shekhardtu/colbin/blob/main/.claude/skills/pr-resolve/SKILL.md) — Triggers: "resolve PR", "fix PR comments", "address PR feedback", "resolve PR comments"*
+*Resolved by [`/pr-resolve`](https://github.com/lintyai/linty/blob/main/.claude/skills/pr-resolve/SKILL.md) — Triggers: "resolve PR", "fix PR comments", "address PR feedback", "resolve PR comments"*
 ```
 
 **Output report** displayed to the user (add to the final report in Output Format):
 ```
 Skill: /pr-resolve
 File:  .claude/skills/pr-resolve/SKILL.md
-Repo:  https://github.com/shekhardtu/colbin/blob/main/.claude/skills/pr-resolve/SKILL.md
+Repo:  https://github.com/lintyai/linty/blob/main/.claude/skills/pr-resolve/SKILL.md
 ```

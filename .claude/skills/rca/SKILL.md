@@ -2,531 +2,387 @@
 name: rca
 user-invocable: true
 disable-model-invocation: false
-description: Root Cause Analysis for production issues. Investigates data mismatches, blank pages, missing data, API errors, collaboration failures, auth issues using Sentry, Railway logs, Colbin MCP, and GitHub. Triggers on "investigate issue", "root cause", "debug production", "why is this broken", "blank page", "data mismatch", "collaboration broken", "websocket error", "document not loading".
+description: Root Cause Analysis for desktop app issues. Investigates audio capture failures, transcription errors, permission denials, clipboard/paste failures, capsule overlay issues, fn key detection, build/release problems, performance issues, and crashes. Triggers on "investigate issue", "root cause", "debug issue", "why is this broken", "not recording", "blank transcription", "permission denied", "paste not working", "capsule not showing", "fn key not working", "crash", "panic".
 ---
 
 # RCA — Root Cause Analysis
 
-Systematic investigation of production issues using the full observability stack: Sentry, Railway application logs, Colbin MCP, and GitHub. Use this when a user reports a problem — blank documents, missing data, collaboration failures, slow pages, API errors, WebSocket disconnects, auth failures, etc.
+Systematic investigation of Linty desktop app issues using macOS system tools, Rust/Tauri diagnostics, and the local codebase. Use this when a user reports a problem — recording not working, blank transcription, permission denied, paste failure, capsule overlay missing, fn key not detected, crash, performance issue, etc.
 
-## Core Concept: Trace Correlation
+## Core Concept: Event Trace
 
-The investigation links events across multiple systems to reconstruct the full request lifecycle:
+The investigation traces events across the desktop app stack to reconstruct the full lifecycle of a user action:
 
 ```
- Browser                Railway Logs           Sentry
-    |                      |                    |
-    | user action          |                    |
-    +--- API call ---------+                    |
-    |    (JWT token)       | (endpoint, userId, |
-    |                      |  status, latency)  |
-    |                      |        |           |
-    |                      |        v           |
-    |                      | Mongoose query log |
-    |                      | (collection, query)|
-    |                      |        |           |
-    |                      |        +----------►| Error event
-    |                      |                    | (if exception)
-    |                      |                    |
-    | WebSocket            |                    |
-    +--- Y.js sync --------+-------------------►| Hocuspocus log
-    |    (awareness,       | (documentName,     |
-    |     CRDT updates)    |  connection state) |
+ macOS System          Rust Backend (Tauri)         React Frontend
+     |                      |                            |
+     | fn key press         |                            |
+     | (NSEvent monitor)    |                            |
+     +--- fnkey.rs ---------+--- fnkey-pressed event --->|
+     |                      |                            | Zustand: recording=true
+     |                      |                            |
+     | cpal audio device    |                            |
+     +--- audio.rs -------->| Arc<Mutex<Vec<f32>>>       |
+     |    (16kHz mono)      | buffer grows               |
+     |                      |                            |
+     | fn key release       |                            |
+     +--- fnkey.rs ---------+--- fnkey-released event -->|
+     |                      |                            | calls stop_recording
+     |                      | std::mem::take (zero-copy) |
+     |                      |                            |
+     |                      | transcribe_buffer          |
+     |                      | (whisper-rs / Groq API)    |
+     |                      +--- transcription result -->|
+     |                      |                            | Zustand: text update
+     | NSPasteboard         |                            |
+     +--- clipboard.rs ---->| snapshot → write → Cmd+V   |
+     |    (snapshot/restore) | → restore                 |
+     |                      |                            |
+     | NSPanel              |                            |
+     +--- capsule.rs ------>| overlay panel state        |
 ```
 
 **How it flows:**
-1. Frontend actions trigger API calls with JWT auth tokens
-2. API calls hit Express backend (Railway) with JWT auth token identifying the user
-3. Express structured logs capture request details, user IDs, and response metadata
-4. Sentry captures errors from both frontend (React) and backend (Express)
-5. Hocuspocus WebSocket server logs collaboration events
-6. MongoDB (via Mongoose) and Redis provide data state verification
+1. macOS NSEvent monitor detects fn key press in `fnkey.rs`
+2. Tauri event emitted to frontend, Zustand starts recording state
+3. cpal audio thread captures to shared buffer in `audio.rs`
+4. Fn key release stops recording, `std::mem::take` moves samples (zero-copy)
+5. `transcribe_buffer` runs whisper-rs (local Metal GPU) or Groq cloud API
+6. Clipboard snapshot, write text, simulate Cmd+V paste, restore clipboard
+7. Capsule overlay (NSPanel) shows state throughout the flow
 
 ## Input Required
 
 Ask the user for (if not already provided):
-1. **User email** — who experienced the issue
-2. **Page/URL** — where the issue occurred (e.g., `/bin/:slug`, `/bins/:slug`, dashboard)
-3. **Description** — what they saw (blank document, sync failure, error, slow load)
-4. **Time window** — when it happened (default: last 24 hours)
-5. **Screenshot** — if available, analyze it to understand what loaded vs what didn't
+1. **What happened** — what they saw or expected vs actual behavior
+2. **When** — just now, intermittent, after update, after system restart
+3. **What they were doing** — recording, transcribing, which app was focused
+4. **macOS version** — especially relevant for TCC permission issues
+5. **Screenshot/error** — if available, analyze to narrow investigation
+6. **STT mode** — local (whisper-rs) or cloud (Groq)
 
 ## Investigation Workflow
 
 Execute steps IN ORDER. Run independent queries in PARALLEL where possible.
 
-**IMPORTANT:** Before starting any investigation, create a Colbin knowledge document to track findings live. This is NOT optional.
-
 ---
 
-### Step 0: Create Colbin RCA Document
+### Step 1: Categorize the Issue
 
-Before investigating, create a Colbin knowledge document to track the full RCA lifecycle. This serves as a live investigation log and the final RCA report.
-
-**Create the RCA document:**
-
-Use Colbin MCP `colbin_create_document` tool:
-- **Title:** `RCA: <short description>` (e.g., `RCA: Blank document for user after sharing`)
-- **parentDocumentId:** `69a4171aab146a731a14e6f8`
-
-**Content:** Initialize with the template below:
-
-```markdown
-# RCA: <short description>
-
-**Date:** <today>
-**Investigator:** [`/rca`](https://github.com/shekhardtu/colbin/blob/main/.claude/skills/rca/SKILL.md)
-**Status:** Investigating
-
----
-
-## 0. Observability Dashboard URLs
-
-Visual confirmation links for every platform in this RCA. Click to verify findings directly.
-
-### Sentry (Org ID: `o4507072911572992`)
-| Dashboard | URL |
-|-----------|-----|
-| Issues | [Sentry Issues](https://sentry.io/issues/) |
-| DSN Project | `4510866152161280` |
-
-### Railway
-| Dashboard | URL |
-|-----------|-----|
-| Project Dashboard | [Railway Dashboard](https://railway.app/dashboard) |
-| API Service Logs | Check Railway project logs for Express API output |
-| Hocuspocus Logs | Check Railway project logs for WebSocket server |
-
-### GitHub
-| Dashboard | URL |
-|-----------|-----|
-| Repository | [shekhardtu/colbin](https://github.com/shekhardtu/colbin) |
-| Recent PRs | [Pull Requests](https://github.com/shekhardtu/colbin/pulls) |
-| Actions | [GitHub Actions](https://github.com/shekhardtu/colbin/actions) |
-
-### Vercel (Frontend)
-| Dashboard | URL |
-|-----------|-----|
-| Project | [colbin-com](https://vercel.com/shekhardtu/colbin-com) |
-| Deployments | Check latest deployments |
-
-_Replace all `<placeholders>` with actual values during investigation._
-
----
-
-## 1. Issue Report
-| Field | Value |
-|-------|-------|
-| Affected user | <email> |
-| Page/URL | <path> |
-| Time reported | <timestamp> |
-| Description | <what was observed> |
-
----
-
-## 2. Investigation Log
-
-_Findings are added here as each step completes. This is a live log._
-
-### Sentry — Errors
-_pending_
-
-### Railway — API Logs
-| Timestamp | Endpoint | User ID | Status | Latency | Notes |
-|-----------|----------|---------|--------|---------|-------|
-| _pending_ | | | | | |
-
-### Railway — Hocuspocus/WebSocket Logs
-_pending_
-
-### Database State (MongoDB/Redis)
-_pending_
-
-### Vercel — Deployments
-_pending_
-
-### GitHub — Code Changes
-_pending_
-
-### Auth State (JWT/Refresh Tokens)
-_pending_
-
----
-
-## 3. Root Cause
-
-**Category:** _pending_
-**Root cause:** _pending_
-**Evidence:** _pending_
-
----
-
-## 4. Recommendation
-
-_pending_
-
----
-
-## 5. Timeline
-
-| Time | Event |
-|------|-------|
-| <now> | RCA investigation started |
-```
-
-**After creating**, note the document URL and slug. As you complete EACH step below, update the document with findings using Colbin MCP `colbin_update_document_content`. This creates a real-time audit trail.
-
----
-
-### Step 1: Check Sentry for Errors
-
-Use Sentry MCP tools:
-1. `search_issues` -- search for errors from the user's email or on the affected URL
-2. `search_events` -- search for error events in the time window
-3. If issues found, use `get_issue_details` or `analyze_issue_with_seer` for deep analysis
-
-Sentry DSN info:
-- **Org ID:** `o4507072911572992`
-- **Project ID:** `4510866152161280`
-- **Region:** `https://us.sentry.io`
-
-Search for:
-- Frontend React errors (component crashes, unhandled promise rejections)
-- Backend Express API errors (500s, Mongoose errors, connection failures)
-- WebSocket errors (Hocuspocus connection failures, Y.js sync errors)
-
-**--> Update Colbin doc:** Fill in "Sentry -- Errors" with issue links or "No Sentry errors found".
-
----
-
-### Step 2: Check Railway Application Logs
-
-Railway hosts the Express API and Hocuspocus WebSocket server. Since Railway does not have a CLI equivalent to `gcloud logging read`, use these approaches:
-
-#### 6.1 Check Express API Application Logs
-
-The Express API uses structured logging. Key log patterns to look for:
-
-- **Request/response logs** -- endpoint, userId, status code, latency
-- **Mongoose query errors** -- failed database operations
-- **Auth failures** -- invalid JWT, expired refresh token
-- **Redis errors** -- cache connection issues
-- **Hocuspocus events** -- WebSocket connection/disconnection
-
-Use GitHub to check if the API has any logging middleware that captures request IDs:
-
-```bash
-# Search for logging patterns in the API
-grep -r "Logger\|logger\|LoggerService" /Users/hari/2025/mp/colbin/apps/api/src/ --include="*.ts" -l
-```
-
-#### 6.2 Check Recent Error Patterns
-
-If the issue is reproducible, check the Railway dashboard logs filtered by:
-- Timestamp matching the user's reported issue time
-- Error-level log entries (ERROR, WARN)
-- The user's ID or email in log entries
-- The affected endpoint path
-
-#### 6.3 Check Hocuspocus/WebSocket Server Logs
-
-For collaboration issues specifically:
-- Connection events (connect, disconnect, close)
-- Document sync errors
-- Authentication failures on WebSocket upgrade
-- Y.js merge conflicts or CRDT state corruption
-
-**--> Update Colbin doc:** Fill in "Railway -- API Logs" and "Railway -- Hocuspocus/WebSocket Logs" sections.
-
----
-
-### Step 3: Check Database State (MongoDB + Redis)
-
-Verify the data layer is consistent. Use Mongoose queries or direct database inspection.
-
-#### 7.1 MongoDB (via Mongoose)
-
-Check the affected entity's state in the database:
-
-```bash
-# For document issues — check document exists and state
-# Use MongoDB Compass or mongosh for direct inspection
-mongosh "<MONGODB_URI>"
-```
-
-Key things to verify:
-- **Document exists** and is not soft-deleted (`___status !== 'DELETED'`)
-- **Document has correct appSource** (`appSource: 'editor'`)
-- **User has access** -- check UserOrgMapping, document permissions
-- **CRDT state** -- document has valid crdtState if collaboration issue
-- **Share links** -- ShareLink records are valid and not expired
-- **Session room** -- SessionRoom exists and links to the document
-
-#### 7.2 Redis Cache
-
-Check if stale cache is causing the issue:
-- Cached document data might be outdated
-- User session/token cached incorrectly
-- Rate limiting might be blocking the user
-
-**--> Update Colbin doc:** Fill in "Database State (MongoDB/Redis)" with findings.
-
----
-
-### Step 4: Check Vercel Deployments (Frontend)
-
-The frontend (`apps/editor`) is deployed to Vercel. Was there a recent deployment that could have caused the issue?
-
-Use Vercel MCP tools:
-1. `list_deployments` -- check recent deployments and their timestamps
-2. `get_deployment` -- get details of a specific deployment
-3. `get_deployment_build_logs` -- check for build warnings/errors
-4. `get_runtime_logs` -- check for edge function errors
-
-Key Vercel project:
-| Project | App |
-|---------|-----|
-| `colbin-com` | Main editor app (`colbin.com` / `editor.colbin.com`) |
-
-If a deploy happened close to the issue time, proceed to Step 5 to check what changed.
-
-**--> Update Colbin doc:** Fill in "Vercel -- Deployments" with deployment timestamps and status.
-
----
-
-### Step 5: Check GitHub for Recent Changes
-
-If a deployment was identified near the issue time, or if the issue might be a regression, check what code was deployed:
-
-```bash
-# Check recent commits on main
-git log --oneline --since="<issue_time_minus_2h>" --until="<issue_time>" --first-parent origin/main
-
-# See what files changed in last N commits on main
-git log --oneline --name-only -10 origin/main
-
-# Check if a specific area was modified recently
-git log --oneline --since="2 days ago" -- "apps/api/src/features/<affected_feature>/"
-git log --oneline --since="2 days ago" -- "apps/editor/src/"
-
-# Check the PR that was merged (via GitHub CLI)
-gh pr list --state merged --base main --limit 10
-
-# View a specific PR's changes
-gh pr view <pr_number>
-gh pr diff <pr_number>
-
-# Diff between two commits to see exact changes
-git diff <older_sha>..<newer_sha>
-```
-
-Also check:
-- **GitHub Actions** -- any failed CI/CD runs: `gh run list --limit 10`
-- **Blame** -- who last touched the affected file: `git blame <file_path>`
-
-**--> Update Colbin doc:** Fill in "GitHub -- Code Changes" with commit SHAs, PR links, and relevant changes.
-
----
-
-### Step 6: Check Auth State (JWT + Refresh Tokens)
-
-Colbin uses JWT access tokens (15-minute expiry) and database-stored refresh tokens (7-day expiry) with rotation. There is NO Firebase Auth.
-
-If the issue might be auth-related (401 errors, empty data, permission denied):
-
-#### 10.1 Check User Account
-
-Query the MongoDB database for the user:
-- Account exists and is active (not disabled/deleted)
-- User belongs to the correct organization (UserOrgMapping)
-- User has appropriate role (Owner, Admin, Member)
-
-#### 10.2 Check Refresh Token State
-
-- Is the refresh token expired (older than 7 days)?
-- Has the refresh token been rotated (used and invalidated)?
-- Is the user's session still valid in the database?
-
-#### 10.3 Signs of Auth Issues
-- User's access token expired and refresh failed silently
-- User was removed from organization but frontend cached old state
-- JWT secret rotation invalidated all existing tokens
-- API returning 200 with empty/restricted data due to permission check failure
-
-**--> Update Colbin doc:** Fill in "Auth State (JWT/Refresh Tokens)" with findings or "Auth verified -- no issues".
-
----
-
-### Step 7: Check Frontend Code (if needed)
-
-If the API returned valid data but the UI still showed wrong output:
-1. Find the page component that renders the affected area
-2. Trace the data flow: API response -> Zustand store -> React component
-3. Look for missing empty-state handling, data transformation bugs, or rendering conditions
-
-Key frontend areas:
-- `apps/editor/src/pages/` -- route-based pages
-- `apps/editor/src/store/` -- Zustand state management
-- `apps/editor/src/contexts/` -- WebSocket, Y.js, Activity contexts
-- `apps/editor/src/services/` -- API service layer
-- `packages/block-editor/` -- ProseMirror editor core
-- `packages/websocket/` -- WebSocket connection management
-
-**--> Update Colbin doc:** Add code file paths, data flow notes, and any rendering bugs found.
-
----
-
-### Step 8: Finalize RCA Report
-
-**A) Present summary to user:**
-
-| Section | Content |
-|---------|---------|
-| **User** | Email, affected page |
-| **What they saw** | Description + screenshot analysis |
-| **API calls** | Endpoints, status codes, latency |
-| **Database state** | Document state, user permissions, cache status |
-| **Deployment** | Recent deploys near issue time, what changed (Vercel + Railway + GitHub) |
-| **Auth status** | JWT/refresh token state |
-| **Collaboration** | Hocuspocus/Y.js connection state if relevant |
-| **Errors** | Sentry issues, Railway error logs |
-| **Root cause** | Clear explanation of WHY the issue occurred |
-| **Category** | See categories below |
-| **Recommendation** | Fix, workaround, or follow-up action |
-| **Dashboard URLs** | Links to every observability platform used (see Section 0 template) |
-
-**B) Finalize the Colbin RCA document:**
-
-Use Colbin MCP `colbin_update_document_content` to fill in:
-1. **Section 0 (Dashboard URLs)** -- Replace all placeholders with actual URLs
-2. **Section 3 (Root Cause)** -- category, root cause explanation, evidence
-3. **Section 4 (Recommendation)** -- fix, workaround, or follow-up action
-4. **Section 5 (Timeline)** -- add final entry: `RCA completed -- <category>: <one-line root cause>`
-5. Change **Status** from `Investigating` to `Completed`
-
-**C) Create GitHub issue (if bug found):**
-
-```bash
-gh issue create --title "[RCA] <short description>" --body "<summary with links to Colbin doc>"
-```
-
-## Issue Categories
+Based on user report, classify into one of the issue categories below. This determines which investigation steps to prioritize.
 
 | Category | Description | Example |
 |----------|-------------|---------|
-| **Data Gap** | API returned 200 but empty/missing data | Empty document, missing CRDT state, no content after share |
-| **API Error** | Non-200 status, timeout, or exception | Express 500, Mongoose query failure, connection pool exhausted |
-| **Frontend Bug** | Data received correctly but rendered wrong | React rendering issue, Zustand state stale, empty state not handled |
-| **Collaboration Issue** | Hocuspocus/Y.js problems | WebSocket disconnect, Y.js merge conflict, CRDT state corruption, awareness sync failure |
-| **Auth Issue** | Token expired, permission denied | Expired JWT, invalid refresh token, user removed from org |
-| **Deploy Regression** | Recent deployment introduced the bug | Railway or Vercel deploy broke existing functionality |
-| **Database Issue** | Schema or data inconsistency | MongoDB connection pool, schema mismatch, orphaned records |
-| **Cache Issue** | Redis cache stale or corrupted | Stale document cache, Buffer/base64 encoding mismatch, cache invalidation failure |
-| **User Config** | User's action caused expected behavior | No documents in collection, permission correctly restricted |
-| **Infra Issue** | Service degradation, resource limits | Railway scaling, MongoDB connection limits, Redis memory |
+| **Audio Capture Failure** | Recording doesn't capture or captures silence | cpal device issue, wrong sample rate, buffer not growing |
+| **Transcription Error** | Blank/wrong/hallucinated text | Silence guard too aggressive, model not loaded, Groq API error |
+| **Permission Denied** | macOS TCC blocks mic or accessibility | Wrong entitlement, LSUIElement, stale TCC cache |
+| **Clipboard/Paste Failure** | Text not pasted or wrong clipboard state | Accessibility denied, CGEvent timing, clipboard restore race |
+| **Capsule Overlay Issue** | Floating panel not visible or mispositioned | NSPanel not initialized, z-order, system wake |
+| **Fn Key Not Working** | Key press not detected | Accessibility permission, NSEvent monitor died, wake recovery |
+| **Build/Release Issue** | App doesn't build, notarization fails | Missing features flag, signing issues, CI workflow |
+| **Performance Issue** | Slow transcription, high CPU/memory | Metal GPU cold start, runaway recording, watchdog not triggered |
+| **Crash/Panic** | App crashes during recording or transcription | Rust panic, unwrap failure, FFI crash |
+
+---
+
+### Step 2: Check macOS Permissions
+
+TCC (Transparency, Consent, and Control) is the most common source of silent failures on macOS.
+
+```bash
+# Check microphone TCC status for Linty
+# Note: TCC database is protected; use tccutil for resets
+tccutil reset Microphone ai.linty.desktop
+
+# Check if accessibility permission is granted (needed for fn key + paste)
+# Look in System Settings > Privacy & Security > Accessibility
+
+# Check entitlements on the built app
+codesign -d --entitlements - /Applications/Linty.app 2>&1
+```
+
+**Key entitlement checks:**
+- Microphone: must be `com.apple.security.device.audio-input` (NOT `.microphone`)
+- Hardened Runtime: NOT App Sandbox
+- `LSUIElement` must NOT be `true` in Info.plist (prevents TCC prompts on Sequoia)
+
+**Check source entitlements:**
+```bash
+# Read the entitlements file
+cat /Users/hari/2025/mp/linty/src-tauri/Entitlements.plist
+
+# Read Info.plist for LSUIElement
+cat /Users/hari/2025/mp/linty/src-tauri/Info.plist
+```
+
+**Important TCC notes:**
+- Terminal launch (`./Linty.app/Contents/MacOS/linty`) bypasses entitlement checks — always test from Finder/DMG
+- Once denied, `requestAccessForMediaType:` returns false without prompting — guide user to System Settings
+- After entitlement changes, reset TCC: `tccutil reset Microphone ai.linty.desktop`
+
+---
+
+### Step 3: Check Audio Device & Capture
+
+If the issue involves recording or silence:
+
+```bash
+# List available audio input devices
+system_profiler SPAudioDataType
+```
+
+**Check the Rust audio code:**
+- Read `src-tauri/src/audio.rs` — verify cpal device selection, sample rate (16kHz), channel config (mono)
+- Check if `Arc<Mutex<Vec<f32>>>` buffer is growing during recording
+- Look for error handling on device enumeration failures
+- Verify `std::mem::take` correctly moves samples on stop
+
+**Common audio issues:**
+- No default input device available
+- Sample rate mismatch (cpal default vs whisper's expected 16kHz)
+- Buffer mutex lock contention or deadlock
+- cpal stream callback errors (device disconnected mid-recording)
+
+---
+
+### Step 4: Check Rust Backend State
+
+Investigate `AppState` and the Tauri command handlers:
+
+```bash
+# Check Rust code compiles
+cd /Users/hari/2025/mp/linty/src-tauri && cargo check --features local-stt
+```
+
+**Key state to verify in code:**
+- `AppState` struct fields: recording flag, audio buffer, whisper context
+- `start_recording` / `stop_recording` command handlers
+- `transcribe_buffer` — whisper-rs model loaded? Groq API key set?
+- Watchdog timer state — is it detecting runaway recordings?
+
+**Read key files:**
+- `src-tauri/src/lib.rs` — app setup, state initialization
+- `src-tauri/src/audio.rs` — cpal capture logic
+- `src-tauri/src/transcribe.rs` — whisper-rs local + Groq cloud
+- `src-tauri/src/fnkey.rs` — NSEvent fn key monitor
+- `src-tauri/src/clipboard.rs` — NSPasteboard snapshot/restore
+- `src-tauri/src/paste.rs` — CGEvent Cmd+V simulation
+- `src-tauri/src/capsule.rs` — overlay panel
+- `src-tauri/src/permissions.rs` — AVFoundation mic FFI
+- `src-tauri/src/watchdog.rs` — runaway recording recovery
+
+---
+
+### Step 5: Check Frontend State
+
+If the Rust backend seems correct, investigate the React frontend:
+
+**Key frontend areas:**
+- `src/store/slices/` — Zustand slices (recording, transcription, settings, navigation, history, toast)
+- `src/hooks/` — recording hook, transcription hook
+- `src/services/` — permissions, paste, correction services
+- `src/pages/` — page components
+- `src/components/` — capsule, sidebar, waveform
+
+**Things to check:**
+- Zustand store state transitions (recording start/stop, transcription lifecycle)
+- Tauri event listeners (`fnkey-pressed`, `fnkey-released`) — are they registered?
+- IPC command invocations — correct command names and parameters?
+- Error handling in async operations (try/catch around `invoke()`)
+
+---
+
+### Step 6: Check Logs & Console Output
+
+```bash
+# Run app in dev mode to see all output
+yarn tauri dev
+
+# Check macOS system log for crash reports
+log show --predicate 'process == "linty"' --last 5m
+
+# Check for crash reports
+ls ~/Library/Logs/DiagnosticReports/ | grep -i linty
+```
+
+**Rust stderr/stdout:**
+- `yarn tauri dev` outputs Rust `println!`/`eprintln!` to terminal
+- Look for panic messages, unwrap failures, FFI errors
+- Check whisper-rs model loading messages (Metal GPU init)
+
+---
+
+### Step 7: Check Recent Code Changes
+
+```bash
+# Recent commits
+git -C /Users/hari/2025/mp/linty log --oneline -20
+
+# Changes in specific area
+git -C /Users/hari/2025/mp/linty log --oneline --since="3 days ago" -- "src-tauri/src/"
+git -C /Users/hari/2025/mp/linty log --oneline --since="3 days ago" -- "src/"
+
+# Check recent PRs
+gh pr list --repo lintyai/linty --state merged --limit 10
+
+# Diff a specific PR
+gh pr diff <pr_number> --repo lintyai/linty
+```
+
+---
+
+### Step 8: Check Build & System State
+
+```bash
+# Frontend build
+cd /Users/hari/2025/mp/linty && yarn build
+
+# Rust build
+cd /Users/hari/2025/mp/linty/src-tauri && cargo check --features local-stt
+
+# Check Metal GPU support
+system_profiler SPDisplaysDataType | grep -i metal
+
+# Check macOS version
+sw_vers
+
+# Check available microphone devices
+system_profiler SPAudioDataType
+```
+
+---
+
+### Step 9: Finalize RCA Report
+
+**Present summary to user:**
+
+| Section | Content |
+|---------|---------|
+| **Issue** | What the user reported |
+| **Category** | One of the 9 categories above |
+| **Root cause** | Clear explanation of WHY the issue occurred |
+| **Evidence** | Log output, code paths, system state that confirms the cause |
+| **Recommendation** | Fix, workaround, or configuration change |
+| **Affected files** | List of source files involved |
+
+**Create GitHub issue (if bug found):**
+
+```bash
+gh issue create --repo lintyai/linty --title "[RCA] <short description>" --body "$(cat <<'EOF'
+## Root Cause Analysis
+
+**Category:** <category>
+**Root cause:** <explanation>
+
+## Evidence
+<logs, code paths, system state>
+
+## Recommendation
+<fix or workaround>
+
+## Affected Files
+- `<file paths>`
+EOF
+)"
+```
 
 ## Key Reference
 
 ### Tools & What They Provide
 
-| Tool | Use For | MCP Available |
-|------|---------|---------------|
-| **Sentry** | JavaScript errors, unhandled exceptions, stack traces, AI analysis (Seer) | Yes |
-| **Colbin MCP** | Create/update RCA knowledge documents, search existing documents | Yes |
-| **Vercel** | Frontend deployment history, build logs, runtime logs | Yes |
-| **Cloudflare DNS** | DNS record verification, domain resolution | Yes |
-| **GitHub** | Deployed code changes, PR diffs, CI/CD status, commit history | Via `gh` CLI |
-| **Railway Logs** | Express backend logs, Hocuspocus WebSocket logs | Via Railway dashboard |
-| **MongoDB** | Database state verification, user/document/permission records | Via mongosh or MongoDB Compass |
-| **Redis** | Cache state verification, session data | Via application or Redis CLI |
-| **Frontend Code** | Data flow, rendering logic, empty state handling | Via file read |
+| Tool | Use For |
+|------|---------|
+| **macOS system tools** | `tccutil` (TCC reset), `codesign` (entitlements), `log show` (system logs), `system_profiler` (hardware), `sw_vers` (OS version), `ioreg` (device tree) |
+| **Cargo/Rust** | `cargo check`, `cargo build`, compile errors, Rust diagnostics |
+| **Yarn/Vite** | `yarn build`, `yarn tauri dev`, frontend build errors |
+| **GitHub CLI** | `gh pr list`, `gh pr diff`, `gh issue create`, commit history |
+| **Git** | `git log`, `git diff`, `git blame`, code change history |
+| **File reading** | Direct inspection of Rust, TypeScript, config files |
 
 ### Infrastructure Reference
 
 | Resource | Value |
 |----------|-------|
-| **Deployment Platform** | Railway (API + Hocuspocus) + Vercel (Frontend) |
-| **Database** | MongoDB on Railway (Mongoose ODM) |
-| **Cache** | Redis on Railway |
-| **Real-time** | Hocuspocus Y.js WebSocket server (Railway) |
-| **Auth** | JWT access tokens (15m) + DB refresh tokens (7d) with rotation |
-| **Frontend Framework** | React 19 + Vite 6 + Tailwind + shadcn/ui + Zustand |
-| **Backend Framework** | Node.js + Express + TSOA + Mongoose |
-| **Editor** | ProseMirror block editor + Monaco code editor |
-| **Collaboration** | Y.js CRDT via Hocuspocus |
-| **Sentry DSN Org** | `o4507072911572992` |
-| **Sentry Project ID** | `4510866152161280` |
-| **Production URL** | `colbin.com` / `editor.colbin.com` |
-| **API URL** | `api.colbin.com` |
-| **GitHub Repo** | `shekhardtu/colbin` |
-| **Vercel Project** | `colbin-com` |
-| **Monorepo Tool** | Yarn workspaces + Turborepo |
+| **Platform** | macOS desktop (Hardened Runtime, NOT App Sandbox) |
+| **Bundle ID** | `ai.linty.desktop` |
+| **Framework** | Tauri v2 (Rust backend + React frontend) |
+| **Frontend** | React 19 + Zustand + Vite + TypeScript |
+| **Backend** | Rust + Tauri 2 + cpal + whisper-rs |
+| **Local STT** | whisper-rs with Metal GPU acceleration (feature-gated: `local-stt`) |
+| **Cloud STT** | Groq API |
+| **Audio** | cpal library, 16kHz mono, shared `Arc<Mutex<Vec<f32>>>` buffer |
+| **macOS FFI** | ObjC FFI for NSEvent (fn key), AVFoundation (mic), NSPasteboard (clipboard), CGEvent (paste), NSPanel (capsule) |
+| **Activation** | Programmatic `set_activation_policy_accessory/regular()` (NOT `LSUIElement`) |
+| **Persistence** | `tauri-plugin-store` (JSON files in app data dir) |
+| **Build** | `yarn build` (frontend) + `cargo build --features local-stt` (Rust) |
+| **Release** | `scripts/build-mac.sh`, CI auto-version-bump, notarization |
+| **GitHub Repo** | `lintyai/linty` |
+| **CI** | `.github/workflows/build-dmg.yml` |
 
 ### Project Structure
 
 | Path | Purpose |
 |------|---------|
-| `apps/api/` | Express backend (REST API + Hocuspocus) |
-| `apps/editor/` | React frontend (Vite + Tailwind + shadcn/ui) |
-| `packages/block-editor/` | ProseMirror block editor core |
-| `packages/magic-input/` | Input transformation engine |
-| `packages/shared-utils/` | Shared utility functions |
-| `packages/websocket/` | WebSocket connection management |
-| `packages/hagen-client/` | Generated API TypeScript client |
-| `packages/storage/` | Storage abstraction |
-| `packages/retry/` | Retry logic utilities |
-| `packages/canvas-editor/` | Canvas-based editor |
-
-### Demo Credentials (from seed)
-
-| Email | Password | Role |
-|-------|----------|------|
-| alice@demo.com | DemoPass123 | Owner |
-| bob@demo.com | DemoPass123 | Admin |
-| carol@demo.com | DemoPass123 | Not yet in org |
-| **Organization:** Demo Team (`demo-team`) | | |
+| `src/` | React frontend (pages, hooks, store, services, components) |
+| `src/pages/` | 6 pages |
+| `src/hooks/` | Recording, transcription hooks |
+| `src/store/slices/` | Zustand slices (recording, transcription, settings, navigation, history, toast) |
+| `src/services/` | Permissions, paste, correction services |
+| `src/components/` | Capsule, sidebar, waveform components |
+| `src-tauri/` | Rust backend |
+| `src-tauri/src/lib.rs` | App setup, state initialization |
+| `src-tauri/src/audio.rs` | cpal audio capture (16kHz mono) |
+| `src-tauri/src/transcribe.rs` | whisper-rs local + Groq cloud STT |
+| `src-tauri/src/fnkey.rs` | NSEvent fn key monitor |
+| `src-tauri/src/permissions.rs` | AVFoundation mic FFI |
+| `src-tauri/src/clipboard.rs` | NSPasteboard snapshot/restore |
+| `src-tauri/src/paste.rs` | CGEvent Cmd+V simulation |
+| `src-tauri/src/capsule.rs` | Overlay panel (NSPanel) |
+| `src-tauri/src/watchdog.rs` | Runaway recording recovery |
+| `src-tauri/Entitlements.plist` | Hardened Runtime entitlements |
+| `src-tauri/Info.plist` | App metadata |
+| `scripts/build-mac.sh` | Build + sign + notarize script |
+| `.github/workflows/build-dmg.yml` | CI build workflow |
 
 ## Tips
 
 ### Maximize Parallelism
-- Steps 1, 2, 4 can ALL run in parallel -- they query different systems
-- Run Vercel deployment check in parallel with database state checks
-- Run GitHub code check in parallel with auth state verification
+- Steps 2, 3, 6, 7 can run in parallel — they query different systems
+- Check permissions while reading audio code
+- Check recent git changes while running build checks
 
-### Railway Logs
-- Express API uses structured logging -- look for JSON-formatted log entries
-- Hocuspocus logs WebSocket connection events with document names
-- Filter by timestamp and error level for efficient investigation
-- Check both API service and WebSocket service logs separately
+### Permission Issues
+- TCC is the #1 cause of "it works in dev but not in release" — always check
+- Microphone entitlement must be `com.apple.security.device.audio-input` (Hardened Runtime)
+- Accessibility permission needed for both fn key monitoring AND paste simulation
+- After any entitlement change, reset TCC cache: `tccutil reset Microphone ai.linty.desktop`
+- Terminal launch bypasses entitlement checks — test from Finder/DMG
 
-### Database (MongoDB + Redis)
-- Use MongoDB Compass or mongosh for quick database inspection
-- Check `appSource: 'editor'` filter -- missing this returns cross-app data
-- For CRDT issues, check if `crdtState` field is null or corrupted
-- Redis cache uses base64 encoding for binary fields -- check for encoding mismatches
+### Audio Issues
+- cpal device enumeration can fail silently — check for `None` default device
+- Sample rate must be 16kHz for whisper-rs — verify cpal stream config
+- Buffer mutex deadlock: check if lock is held across await points
+- Silence detection: check threshold values in transcribe.rs
 
-### Vercel + GitHub
-- Check deployments FIRST if the issue started suddenly for multiple users
-- Use `gh pr diff` to see exactly what code changed in a suspicious deployment
-- Compare the deployment timestamp with the issue report timestamp
-- Check both Vercel (frontend) AND Railway (backend) deploys -- they're independent
+### Transcription Issues
+- whisper-rs Metal GPU cold start: first transcription is slow (see `transcribe.rs` warm-up)
+- Groq API: check API key in settings, network connectivity, rate limits
+- Silence guard: may reject recordings with long pauses (see recent fixes)
+- Model not loaded: check whisper context initialization in AppState
 
-### Auth-Specific
-- JWT access tokens expire every 15 minutes -- check if frontend refresh flow works
-- Refresh tokens are stored in MongoDB and rotated on use
-- Check UserOrgMapping table for permission issues
-- No Firebase -- all auth is JWT-based with database-stored sessions
+### Clipboard/Paste Issues
+- Accessibility permission required for CGEvent paste simulation
+- Race condition: clipboard restore may happen before paste completes
+- Some apps intercept Cmd+V differently — check focused app
 
-### Collaboration-Specific
-- Hocuspocus manages Y.js document state server-side
-- Check if the WebSocket connection was established (upgrade successful)
-- Y.js awareness protocol handles cursor positions and user presence
-- CRDT state corruption can cause "blank document" even when data exists in DB
-- Check `packages/websocket/` for shared WebSocket connection management
+### Capsule Overlay
+- NSPanel z-order issues after system sleep/wake
+- Panel may not be visible if created before window server is ready
 
 ### General
-- When the user provides a screenshot, analyze what DID load vs what DIDN'T to narrow investigation
-- For multi-document collections (`/bins/:slug`), verify SessionRoom -> Document relationships
+- When user provides a screenshot, analyze what IS visible vs what ISN'T to narrow scope
+- `yarn tauri dev` gives the richest debug output — use it for reproduction
+- Check `src-tauri/Cargo.toml` for feature flags — `local-stt` gates whisper-rs
 
 ---
 
@@ -540,21 +396,20 @@ Re-read this skill file (`Read` tool on `.claude/skills/rca/SKILL.md`) and compa
 
 | Check | What to look for |
 |-------|-----------------|
-| **MCP tool names** | Did any `colbin_*`, `mcp__sentry__*`, or `mcp__vercel__*` calls fail? |
-| **Railway logs** | Were Railway logs accessible as documented? Did the logging format change? |
-| **Infrastructure** | Did Sentry org/project IDs, domain names, Vercel project names, or Railway config change? |
-| **Auth flow** | Did the JWT/refresh token flow work as documented? Any changes to token expiry or rotation? |
-| **Database** | Did Mongoose schemas or collection names change? Are the documented collections still accurate? |
-| **New tools** | Were any new observability tools or MCP servers used that aren't documented here? |
+| **File paths** | Did any Rust or TypeScript files move, rename, or get deleted? |
+| **CLI commands** | Did `cargo check`, `yarn build`, `tccutil`, `codesign`, or `gh` commands fail or change syntax? |
+| **App state** | Did `AppState` fields change? New Tauri commands added? |
+| **macOS APIs** | Did any macOS FFI patterns change (NSEvent, AVFoundation, NSPasteboard, CGEvent)? |
+| **Build system** | Did Cargo features, Tauri config, or build scripts change? |
+| **New tools** | Were any new diagnostic tools or approaches used that aren't documented here? |
 
 ### Fix Issues Found
 
 If any discrepancies were found:
 1. Use the `Edit` tool to fix the specific inaccurate section in this skill file
-2. Update the Infrastructure Reference table if values changed
-3. Update HogQL queries if column/table names changed
-4. Keep changes minimal and targeted
-5. Log each fix:
+2. Update the Infrastructure Reference or Project Structure tables if paths changed
+3. Keep changes minimal and targeted
+4. Log each fix:
 
    ```
    Self-Healing Log:
@@ -566,17 +421,11 @@ If nothing needs fixing, skip silently.
 
 ### Append Trigger Documentation
 
-After execution, append a skill attribution footer to:
+After execution, display skill attribution to the user:
 
-**Colbin RCA document** (add to the finalized document in Step 13):
-```markdown
----
-*Investigated by [`/rca`](https://github.com/shekhardtu/colbin/blob/main/.claude/skills/rca/SKILL.md) -- Triggers: "investigate issue", "root cause", "debug production", "why is this broken", "blank page", "data mismatch", "collaboration broken", "websocket error", "document not loading"*
-```
-
-**Output summary** displayed to the user:
+**Output summary:**
 ```
 Skill: /rca
 File:  .claude/skills/rca/SKILL.md
-Repo:  https://github.com/shekhardtu/colbin/blob/main/.claude/skills/rca/SKILL.md
+Repo:  https://github.com/lintyai/linty/blob/main/.claude/skills/rca/SKILL.md
 ```

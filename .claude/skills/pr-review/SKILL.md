@@ -2,7 +2,7 @@
 name: pr-review
 user-invocable: true
 disable-model-invocation: false
-description: Deep PR review from a principal engineer's perspective. Multi-stage pipeline (Triage -> Specialized Passes -> Filter -> Output) with risk classification, security pass, cross-package impact analysis, and line-level GitHub comments. Triggers on "review PR", "review this PR", "review PR changes", "deep review", "PR review".
+description: Deep PR review from a principal engineer's perspective. Multi-stage pipeline (Triage -> Specialized Passes -> Filter -> Output) with risk classification, security pass, and line-level GitHub comments. Triggers on "review PR", "review this PR", "review PR changes", "deep review", "PR review".
 ---
 
 # PR Review — Deep Pull Request Inspection
@@ -15,7 +15,7 @@ PR -> Triage -> Specialized Passes -> Filter & Dedupe -> Line-Level Output
 
 **Read-only.** Does NOT modify code, push commits, or resolve threads.
 
-**Input**: PR number or URL (e.g., `123` or `https://github.com/shekhardtu/colbin/pull/123`)
+**Input**: PR number or URL (e.g., `18` or `https://github.com/lintyai/linty/pull/18`)
 
 ---
 
@@ -26,27 +26,25 @@ PR -> Triage -> Specialized Passes -> Filter & Dedupe -> Line-Level Output
 ### 1.1 Auth & Metadata
 ```bash
 gh auth status
-gh pr view <NUMBER> --repo shekhardtu/colbin --json number,title,headRefName,baseRefName,author,reviewRequests,labels,state,url,body,commits,additions,deletions,changedFiles,files
-gh pr diff <NUMBER> --repo shekhardtu/colbin --name-only
-gh pr diff <NUMBER> --repo shekhardtu/colbin
-gh pr view <NUMBER> --repo shekhardtu/colbin --json comments,commits
+gh pr view <NUMBER> --repo lintyai/linty --json number,title,headRefName,baseRefName,author,reviewRequests,labels,state,url,body,commits,additions,deletions,changedFiles,files
+gh pr diff <NUMBER> --repo lintyai/linty --name-only
+gh pr diff <NUMBER> --repo lintyai/linty
+gh pr view <NUMBER> --repo lintyai/linty --json comments,commits
 ```
 
 ### 1.2 Checkout & Context
 ```bash
-gh pr checkout <NUMBER> --repo shekhardtu/colbin
+gh pr checkout <NUMBER> --repo lintyai/linty
 ```
-
-**Colbin Knowledge Docs**: Scan PR body for `colbin.com/bin/...` URLs. Fetch via `colbin_get_document` MCP for task context.
 
 **GitHub Issues**: If PR body references `#<issue>` or `closes #<issue>`:
 ```bash
-gh issue view <number> --repo shekhardtu/colbin --json title,body,labels
+gh issue view <number> --repo lintyai/linty --json title,body,labels
 ```
 
 ### 1.3 Check for Existing Inspection
 ```bash
-gh api repos/shekhardtu/colbin/pulls/{pr_number}/reviews --jq '
+gh api repos/lintyai/linty/pulls/{pr_number}/reviews --jq '
   .[] | select(.body | contains("PR Inspection Report")) | {id: .id, submitted_at: .submitted_at}
 '
 ```
@@ -61,15 +59,14 @@ gh api repos/shekhardtu/colbin/pulls/{pr_number}/reviews --jq '
 
 | Risk | Path Patterns | Depth |
 |------|--------------|-------|
-| **Critical** | `features/auth/**`, `features/permission/**`, `features/deviceAuth/**`, `features/securityAudit/**`, `middlewares/**`, `websocket/**`, `**/middleware*`, `**/*.guard.ts`, `**/*secret*`, `**/*token*`, `**/*credential*`, `**/*oauth*`, `config/**`, `.env*` | Full + security pass |
-| **High** | `features/**/*.service.ts`, `features/**/*.controller.ts`, `features/**/*.model.ts`, `features/mcp/**`, `store/**`, `**/*.store.ts`, `routes/**`, `providers/**`, `packages/block-editor/src/collaboration/**`, `packages/websocket/**`, `packages/shared-types/**` | Deep line-by-line |
-| **Medium** | `**/*.page.tsx`, `**/*.component.tsx`, `**/*.dialogue.tsx`, `**/*.hook.ts`, `hooks/**`, `utils/**`, `services/**`, `packages/block-editor/src/core/**`, `packages/magic-input/**` | Standard |
-| **Low** | `**/*.test.*`, `**/*.md`, `**/package.json`, `**/*.config.*`, `**/public/**`, `**/assets/**` | Light |
+| **Critical** | `src-tauri/src/permissions.rs`, `src-tauri/src/fnkey.rs`, `src-tauri/Entitlements.plist`, `src-tauri/Info.plist`, `.env*`, `**/secret*`, `**/token*` | Full + security pass |
+| **High** | `src-tauri/src/*.rs`, `src/store/**`, `src/hooks/**`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` | Deep line-by-line |
+| **Medium** | `src/pages/**`, `src/components/**`, `src/services/**`, `src/types/**` | Standard |
+| **Low** | `**/*.md`, `**/package.json`, `**/*.config.*`, `scripts/**` | Light |
 
 ### 2.2 Aggregate Risk
 PR risk = **highest risk** among all changed files. Determines:
 - Security Pass runs (Critical/High only)
-- Cross-impact analysis runs (Critical/High + `packages/` changes)
 - Verdict threshold (Critical PRs need zero Major findings)
 
 ---
@@ -82,7 +79,7 @@ PR risk = **highest risk** among all changed files. Determines:
 | **Feature** | "add", "implement", new files/routes/components | **Completeness Walk** |
 | **Bugfix** | "fix", "resolve", small targeted change | **Root Cause Validation** |
 | **Refactor** | "refactor", "restructure", "migrate", same behavior | **Equivalence Check** |
-| **Config / Infra** | env vars, build config, Docker, deps | **Side-Effect Scan** |
+| **Config / Infra** | env vars, build config, CI, deps | **Side-Effect Scan** |
 | **UI / Design** | component changes, styling, layout | **Visual Consistency** |
 
 A PR can have **multiple types**. Apply all relevant strategies.
@@ -95,9 +92,6 @@ Record: primary type, secondary types, one-sentence intent, scope boundary.
 
 ### 4.1 Read Instructions
 - **Always**: Root `CLAUDE.md`
-- **If API changed**: `apps/api/CLAUDE.md`
-- **If editor changed**: `apps/editor/CLAUDE.md` (if exists)
-- **If packages changed**: Relevant `packages/*/CLAUDE.md`
 
 ### 4.2 Read Code-Optimizer Patterns
 ```
@@ -111,7 +105,7 @@ Extract known anti-patterns for the team.
 - **Low**: File itself only
 
 ### 4.4 Engineering Principles
-DRY (3+ duplications), KISS (over-engineering), YAGNI (speculative code), SRP (500+ line files), Performance (N+1, missing `.lean()`, `await` in loops), Separation of Concerns (business logic in controllers), Fail Fast (empty catch blocks).
+DRY (3+ duplications), KISS (over-engineering), YAGNI (speculative code), SRP (500+ line files), Performance (unnecessary allocations, blocking operations), Separation of Concerns (business logic in wrong layer), Fail Fast (empty catch blocks, swallowed panics).
 
 ---
 
@@ -130,14 +124,12 @@ DRY (3+ duplications), KISS (over-engineering), YAGNI (speculative code), SRP (5
 | Off-by-one errors | Major |
 | Incomplete cleanup (useEffect without cleanup) | Major |
 | Dead code paths | Minor |
-| N+1 Mongoose query patterns | Major |
-| Unbounded queries (missing `.limit()`) | Major |
+| Mutex held across await points | Major |
+| `.unwrap()` in new Rust code | Major |
+| `unsafe` block without safety comment | Major |
+| Audio callback allocating (real-time thread must not allocate) | Major |
+| IPC serialization of large data (should use zero-copy) | Major |
 | `await` in loops (use `Promise.all`) | Major |
-| Missing pagination on list endpoints | Major |
-| Y.js full sync when incremental suffices | Major |
-| Buffer as JSON array instead of base64 | Major |
-| Missing `.lean()` on read-only queries | Minor |
-| Redis cache without invalidation on writes | Minor |
 
 ---
 
@@ -154,7 +146,6 @@ DRY (3+ duplications), KISS (over-engineering), YAGNI (speculative code), SRP (5
 | Unused imports/variables | Major |
 | Hardcoded secrets | Major |
 | `dangerouslySetInnerHTML` without sanitization | Major |
-| Missing `.js` extension in ES module imports (API) | Major |
 | Commented-out code | Minor |
 | TODO/FIXME without issue reference | Minor |
 
@@ -163,24 +154,11 @@ DRY (3+ duplications), KISS (over-engineering), YAGNI (speculative code), SRP (5
 | Check | Severity |
 |-------|----------|
 | File naming mismatch (`.component.tsx`, `.dialogue.tsx`, `.store.ts`, etc.) | Minor |
-| Import order wrong (external -> `@colbin/*` -> relative) | Minor |
+| Import order wrong (external -> internal -> relative) | Minor |
 | ID fields without collection prefix (`id` instead of `userId`) | Minor |
-| Business logic in controllers (should be services) | Major |
-| Document queries missing `appSource: "editor"` | Major |
-| Mongoose model names not snake_case | Minor |
+| Missing `#[cfg(feature = "local-stt")]` on whisper code | Major |
+| Wrong entitlement key in `Entitlements.plist` | Major |
 | Custom UI when shadcn/ui component exists | Minor |
-
-### Cross-Package Impact (only when `packages/` changed)
-
-| Check | Severity |
-|-------|----------|
-| Changed exports break downstream imports | Major |
-| Removed/renamed exports without consumer updates | Major |
-| Type signature changes without downstream fixes | Major |
-
-```bash
-grep -r "from '@colbin/<package>'" apps/ packages/ --include='*.ts' --include='*.tsx' -l
-```
 
 ---
 
@@ -190,20 +168,13 @@ grep -r "from '@colbin/<package>'" apps/ packages/ --include='*.ts' --include='*
 
 | Check | Severity |
 |-------|----------|
-| Hardcoded secrets, tokens, connection strings | Major |
+| Hardcoded secrets, tokens, API keys in source code | Major |
 | Sensitive data in logs (PII, tokens) | Major |
-| NoSQL injection (unsanitized input in Mongoose) | Major |
 | XSS (unescaped user content in DOM) | Major |
-| Routes/actions without auth checks | Major |
-| Authorization gaps (missing role/permission checks) | Major |
-| CORS misconfiguration | Major |
 | New deps with known CVEs | Major |
-| JWT handling issues (insecure storage, missing refresh) | Major |
-| MCP OAuth callback URL bypass | Major |
-| WebSocket endpoints without auth | Major |
-| Hocuspocus direct connections without `sessionUserId` | Major |
-| MCP tools without `requireScope()` checks | Major |
-| MCP tools accessing documents without `requireDocumentAccess()` | Major |
+| API keys in source code | Major |
+| Entitlement changes without documentation | Major |
+| Accessibility permission bypass | Major |
 
 ---
 
@@ -220,14 +191,14 @@ Build removal manifest (deleted files, removed exports/types/functions). Search 
 - Stale comments/config referencing removed features -> Minor
 
 ### 8.2 Completeness Walk (Feature PRs)
-Walk execution tree: Route -> Page -> Components -> Hooks -> API Calls -> Error Handlers.
+Walk execution tree: Page -> Components -> Hooks -> Tauri Commands -> Rust Backend -> Error Handlers.
 
 | Missing | Severity |
 |---------|----------|
 | Error handling, loading states, types, permissions | Major |
 | Empty states, edge cases, accessibility | Minor |
 
-PM check: Does implementation match Colbin knowledge doc requirements? All acceptance criteria satisfied?
+PM check: Does implementation match PR description and linked issue requirements? All acceptance criteria satisfied?
 
 ### 8.3 Root Cause Validation (Bugfix PRs)
 
@@ -243,13 +214,13 @@ PM check: Does implementation match Colbin knowledge doc requirements? All accep
 All public exports preserved? Type signatures preserved? Same behavior? All consumers updated? Side effects preserved? -> Major for each failure.
 
 ### 8.5 Side-Effect Scan (Config PRs)
-Build/runtime impact? Environment parity? Dependency conflicts? Docker/Railway impact? Yarn hoisting issues? -> Major for each.
+Build/runtime impact? Environment parity? Dependency conflicts? CI workflow impact? Cargo feature gate impact? -> Major for each.
 
 ### 8.6 Visual Consistency (UI PRs)
 Uses shadcn/ui? Tailwind (no inline styles)? Loading/error states? Accessibility? -> Major for design system violations, Minor for style consistency.
 
-### 8.7 Mongoose Patterns (when `*.model.ts` or `*.service.ts` changed)
-Missing indexes for queries (Major), `appSource` filter missing (Major), wrong collection names in raw queries (Major), Buffer not base64 for Redis/HTTP (Major), missing timestamps (Minor), `$match` not early in aggregation (Minor).
+### 8.7 Rust Patterns (when `*.rs` files changed)
+Missing feature gate on whisper/Metal code (Major), `.unwrap()` instead of proper error handling (Major), `unsafe` without safety comment (Major), Mutex scope too broad (Major), allocations in audio callback (Major), missing `Arc<Mutex<>>` for shared state (Major), wrong entitlement key (Major), missing `Drop` impl for cleanup (Minor).
 
 ---
 
@@ -310,7 +281,7 @@ cat > /tmp/pr-review-payload.json <<'PAYLOAD_EOF'
 }
 PAYLOAD_EOF
 
-gh api repos/shekhardtu/colbin/pulls/{pr_number}/reviews \
+gh api repos/lintyai/linty/pulls/{pr_number}/reviews \
   -X POST \
   --input /tmp/pr-review-payload.json
 
@@ -344,7 +315,6 @@ For findings without code suggestion, use `**Action**: What to do.` instead of d
 ## PR Inspection Report
 
 **PR Type**: <Type> | **Risk**: <Level> | **Intent**: <One sentence>
-**Colbin Doc**: <title + URL, if found>
 
 ### Pipeline
 
@@ -361,9 +331,6 @@ For findings without code suggestion, use `**Action**: What to do.` instead of d
 |-------|-------|---------|
 | X | Y | Z |
 
-### Cross-Package Impact
-<if applicable>
-
 ### Findings Outside Diff
 <if any>
 
@@ -372,7 +339,7 @@ For findings without code suggestion, use `**Action**: What to do.` instead of d
 - <positive 2>
 
 ---
-*Reviewed by [`/pr-review`](https://github.com/shekhardtu/colbin/blob/main/.claude/skills/pr-review/SKILL.md)*
+*Reviewed by [`/pr-review`](https://github.com/lintyai/linty/blob/main/.claude/skills/pr-review/SKILL.md)*
 ```
 
 ---
@@ -380,10 +347,8 @@ For findings without code suggestion, use `**Action**: What to do.` instead of d
 ## Phase 11: Build Validation
 
 ```bash
-yarn typecheck
-# Or workspace-specific:
-yarn workspace @colbin/api build    # if API changed
-yarn workspace @colbin/web build    # if Web changed
+yarn build
+cargo check --features local-stt
 ```
 
 Report: PASS (clean or pre-existing only) or FAIL (new errors, list them).
@@ -398,7 +363,6 @@ Report: PASS (clean or pre-existing only) or FAIL (new errors, list them).
 ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
  PR:     <full-pr-url>
  Branch: <name>
- Doc:    <colbin-doc-url-if-found>
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  TRIAGE
  Type:       <Primary> (+<Secondary>)
@@ -478,7 +442,6 @@ After posting the review on GitHub, **automatically chain into `/pr-resolve`** i
 | Already merged | Warn, still review |
 | Draft | Note it, review anyway |
 | 50+ files | Flag "consider splitting" |
-| MCP unavailable | Skip doc fetch, note it |
 | Empty diff | Exit |
 | `gh api` fails | Retry once, fallback to `gh pr review --comment --body` |
 | Own PR (self-review) | GitHub rejects APPROVE/REQUEST_CHANGES on own PRs. Use `COMMENT` event instead |
@@ -496,7 +459,7 @@ After every execution, re-read this file and compare against what happened:
 | **Passes** | False positives? Checklists still valid? |
 | **Severity** | Major/Minor/Trivial calibrated right? |
 | **Filtering** | Low-quality posted? High-quality filtered? |
-| **Build** | `yarn typecheck` worked? |
+| **Build** | `yarn build` and `cargo check` worked? |
 
 Fix inaccuracies with `Edit` tool. Log changes:
 ```
@@ -507,5 +470,5 @@ Self-Healing Log:
 
 Check for new file paths not in risk classification:
 ```bash
-gh pr view <number> --repo shekhardtu/colbin --json files --jq '.files[].path' | xargs -I{} dirname {} | sort -u
+gh pr view <number> --repo lintyai/linty --json files --jq '.files[].path' | xargs -I{} dirname {} | sort -u
 ```
