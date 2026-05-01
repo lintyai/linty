@@ -151,10 +151,8 @@ export default function App() {
       <Sidebar />
 
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Drag region for title bar area */}
         <div data-tauri-drag-region className="absolute right-0 top-0 left-[var(--sidebar-width)] z-20 h-[52px] pointer-events-none" />
 
-        {/* Page content */}
         <div key={currentView} className="flex-1 min-h-0 animate-page-enter">
           {currentView === "history" && <HistoryPage />}
           {currentView === "settings" && <SettingsPage />}

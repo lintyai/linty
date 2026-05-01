@@ -117,7 +117,8 @@ function WaveformBars({ amplitude }: { amplitude: number }) {
         const y = (height - barHeight) / 2;
 
         // Color: accent with opacity based on height
-        const opacity = 0.5 + (barHeight / height) * 0.5;
+        const centerFade = 1 - distFromCenter * 0.4;
+        const opacity = (0.4 + (barHeight / height) * 0.6) * centerFade;
         ctx.fillStyle = `rgba(226, 53, 53, ${opacity})`;
         ctx.beginPath();
         ctx.roundRect(x, y, barWidth, barHeight, 1);
@@ -278,7 +279,7 @@ export function CapsulePanel() {
           .filter(Boolean)
           .join(" ")}
       >
-        <div className="max-w-[340px]">
+        <div className="max-w-[360px]">
           {/* Recording */}
           {isRecording && (
             <div className="flex items-center gap-2.5">

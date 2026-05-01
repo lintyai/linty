@@ -10,11 +10,11 @@ const TOAST_ICONS: Record<ToastType, React.ReactNode> = {
   info: <Info size={13} className="text-info" />,
 };
 
-const TOAST_BORDER: Record<ToastType, string> = {
-  success: "border-success/15",
-  error: "border-error/15",
-  warning: "border-warning/15",
-  info: "border-info/15",
+const TOAST_STRIPE: Record<ToastType, string> = {
+  success: "bg-success",
+  error: "bg-error",
+  warning: "bg-warning",
+  info: "bg-info",
 };
 
 export function ToastContainer() {
@@ -23,35 +23,41 @@ export function ToastContainer() {
   if (!toasts.length) return null;
 
   return (
-    <div className="fixed right-3 top-14 z-50 flex flex-col gap-1.5 pointer-events-none">
+    <div className="fixed right-3 bottom-10 z-50 flex flex-col-reverse gap-2 pointer-events-none">
       {toasts.map((toast) => (
         <div
           key={toast.toastId}
           className={cn(
-            "animate-toast-in pointer-events-auto flex items-center gap-2 rounded-lg border px-3 py-2",
-            "bg-bg-elevated/95 backdrop-blur-xl shadow-lg",
-            "max-w-[280px]",
-            TOAST_BORDER[toast.type],
+            "animate-toast-in pointer-events-auto flex items-center gap-2.5 overflow-hidden",
+            "rounded-[var(--radius-md)] bg-bg-elevated/90 shadow-[var(--shadow-lg)] ring-1 ring-border-subtle",
+            "max-w-[300px]",
           )}
+          style={{
+            backdropFilter: "blur(16px) saturate(1.6)",
+            WebkitBackdropFilter: "blur(16px) saturate(1.6)",
+          }}
         >
-          {TOAST_ICONS[toast.type]}
-          <span className="flex-1 text-[11px] text-text-primary leading-snug">
-            {toast.message}
-          </span>
-          {toast.action && (
+          <div className={cn("w-[3px] self-stretch shrink-0", TOAST_STRIPE[toast.type])} />
+          <div className="flex items-center gap-2.5 py-2.5 pr-3">
+            {TOAST_ICONS[toast.type]}
+            <span className="flex-1 text-[11px] text-text-primary leading-snug">
+              {toast.message}
+            </span>
+            {toast.action && (
+              <button
+                onClick={toast.action.onClick}
+                className="shrink-0 text-[10px] font-medium text-accent hover:text-accent-soft transition-colors"
+              >
+                {toast.action.label}
+              </button>
+            )}
             <button
-              onClick={toast.action.onClick}
-              className="shrink-0 text-[10px] font-medium text-accent hover:text-accent-soft transition-colors"
+              onClick={() => removeToast(toast.toastId)}
+              className="shrink-0 text-text-muted hover:text-text-secondary transition-colors"
             >
-              {toast.action.label}
+              <X size={11} />
             </button>
-          )}
-          <button
-            onClick={() => removeToast(toast.toastId)}
-            className="shrink-0 text-text-muted hover:text-text-secondary transition-colors"
-          >
-            <X size={11} />
-          </button>
+          </div>
         </div>
       ))}
     </div>

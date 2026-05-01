@@ -37,44 +37,39 @@ export function TranscriptRow({
     <Tag
       onClick={onClick}
       className={cn(
-        "group relative flex w-full items-start gap-3 px-5 py-2.5 transition-colors duration-100",
-        onClick && "text-left",
-        selected ? "bg-bg-active" : "hover:bg-bg-hover",
+        "group relative flex w-full items-start gap-3 px-5 py-3 transition-all duration-100",
+        onClick && "text-left hover:translate-x-[1px]",
+        selected ? "bg-accent-glow" : "hover:bg-bg-hover",
         className,
       )}
     >
       {selected && (
-        <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-accent" />
+        <div className="absolute left-0 top-1 bottom-1 w-[2px] rounded-r-full bg-accent" />
       )}
 
-      <div className="flex flex-1 flex-col gap-1 min-w-0">
+      <div className="flex flex-1 flex-col gap-1.5 min-w-0">
         <p className="text-[13px] text-text-primary leading-snug truncate">
           {t.finalText}
         </p>
-        <div className="flex items-center gap-2 text-[11px] text-text-muted">
-          <span className="tabular-nums">{formatTime(t.timestamp)}</span>
-          <span className="text-border-subtle">·</span>
-          <span className="flex items-center gap-0.5">
-            {t.engine === "cloud" ? (
-              <Cloud size={10} />
-            ) : (
-              <Cpu size={10} />
-            )}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="inline-flex items-center gap-1 rounded-full bg-bg-hover px-2 py-0.5 text-[10px] text-text-muted">
+            {t.engine === "cloud" ? <Cloud size={9} /> : <Cpu size={9} />}
             {t.modelName}
           </span>
-          <span className="text-border-subtle">·</span>
-          <span>
-            {formatDuration(t.durationSeconds)} rec
-            {" · "}
-            {(t.processingTimeMs / 1000).toFixed(1)}s processed
+          <span className="inline-flex items-center rounded-full bg-bg-hover px-2 py-0.5 text-[10px] tabular-nums text-text-muted">
+            {formatTime(t.timestamp)}
           </span>
-          <span className="text-border-subtle">·</span>
-          <span>{t.wordCount} words</span>
+          <span className="inline-flex items-center rounded-full bg-bg-hover px-2 py-0.5 text-[10px] tabular-nums text-text-muted">
+            {formatDuration(t.durationSeconds)}
+          </span>
+          <span className="inline-flex items-center rounded-full bg-bg-hover px-2 py-0.5 text-[10px] tabular-nums text-text-muted">
+            {t.wordCount}w
+          </span>
         </div>
       </div>
 
       {actions && (
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 pt-0.5">
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-100 shrink-0 pt-0.5">
           {actions}
         </div>
       )}

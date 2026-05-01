@@ -5,9 +5,9 @@
   --color-bg-hover: rgba(255, 255, 255, 0.07);
   --color-border: rgba(255, 255, 255, 0.09);
   --color-border-subtle: rgba(255, 255, 255, 0.05);
-  --color-text-primary: rgba(255, 255, 255, 0.93);
-  --color-text-secondary: rgba(255, 255, 255, 0.63);
-  --color-text-muted: rgba(255, 255, 255, 0.42);
+  --color-text-primary: rgba(255, 255, 255, 0.95);
+  --color-text-secondary: rgba(255, 255, 255, 0.60);
+  --color-text-muted: rgba(255, 255, 255, 0.36);
   --color-accent: #e23535;
   --color-success: #30d158;
   --color-error: #ff453a;
@@ -43,40 +43,40 @@ body,
 .capsule-pill {
   display: flex;
   align-items: center;
-  padding: 7px 14px;
+  padding: 8px 16px;
   border-radius: 100px;
-  backdrop-filter: blur(40px) saturate(1.8);
-  -webkit-backdrop-filter: blur(40px) saturate(1.8);
-  background: rgba(28, 28, 30, 0.82);
+  backdrop-filter: blur(48px) saturate(2.0);
+  -webkit-backdrop-filter: blur(48px) saturate(2.0);
+  background: rgba(20, 20, 22, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.35),
-    0 0 0 0.5px rgba(255, 255, 255, 0.06) inset;
+    0 4px 20px rgba(0, 0, 0, 0.35),
+    0 0 0 0.5px rgba(255, 255, 255, 0.05) inset;
 }
 
 .capsule-recording {
-  border-color: rgba(226, 53, 53, 0.18);
+  border-color: rgba(226, 53, 53, 0.20);
   box-shadow:
-    0 2px 16px rgba(226, 53, 53, 0.12),
-    0 0 0 0.5px rgba(226, 53, 53, 0.08) inset;
+    0 4px 24px rgba(226, 53, 53, 0.15),
+    0 0 0 0.5px rgba(226, 53, 53, 0.10) inset;
 }
 
 .capsule-processing {
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.10);
 }
 
 .capsule-done {
-  border-color: rgba(48, 209, 88, 0.18);
+  border-color: rgba(48, 209, 88, 0.20);
   box-shadow:
-    0 2px 12px rgba(48, 209, 88, 0.1),
-    0 0 0 0.5px rgba(48, 209, 88, 0.06) inset;
+    0 4px 20px rgba(48, 209, 88, 0.12),
+    0 0 0 0.5px rgba(48, 209, 88, 0.08) inset;
 }
 
 .capsule-error {
-  border-color: rgba(255, 69, 58, 0.18);
+  border-color: rgba(255, 69, 58, 0.20);
   box-shadow:
-    0 2px 12px rgba(255, 69, 58, 0.1),
-    0 0 0 0.5px rgba(255, 69, 58, 0.06) inset;
+    0 4px 20px rgba(255, 69, 58, 0.12),
+    0 0 0 0.5px rgba(255, 69, 58, 0.08) inset;
 }
 
 /* ── Recording dot ── */
@@ -94,69 +94,39 @@ body,
 /* ── Animations ── */
 
 @keyframes capsule-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(12px) scale(0.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes capsule-out {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(4px) scale(0.96);
-  }
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(4px) scale(0.97); }
 }
 
 @keyframes rec-pulse {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.4;
-    transform: scale(0.85);
-  }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
 }
 
 @keyframes checkmark-draw {
-  0% {
-    stroke-dashoffset: 24;
-  }
-  100% {
-    stroke-dashoffset: 0;
-  }
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
 @keyframes capsule-text-appear {
-  from {
-    opacity: 0;
-    transform: translateX(3px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  from { opacity: 0; transform: translateX(4px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 .animate-capsule-in {
   animation: capsule-in 280ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
 }
 .animate-capsule-out {
-  animation: capsule-out 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: capsule-out 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 .animate-checkmark {
   stroke-dasharray: 24;
@@ -167,7 +137,7 @@ body,
   animation: spin 1s linear infinite;
 }
 .capsule-text-appear {
-  animation: capsule-text-appear 180ms ease-out forwards;
+  animation: capsule-text-appear 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {

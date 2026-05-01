@@ -22,8 +22,13 @@ export function StatusBar() {
       : "Ready";
 
   return (
-    <div className="flex h-[24px] shrink-0 items-center justify-between border-t border-border-subtle px-4 text-[11px]">
-      <div className="flex items-center gap-2">
+    <div
+      className={cn(
+        "flex h-[28px] shrink-0 items-center justify-between border-t border-border-subtle px-5 text-[11px] transition-colors duration-200",
+        isRecording && "bg-accent-glow",
+      )}
+    >
+      <div className="flex items-center gap-2.5">
         <div className="flex items-center gap-1 text-text-muted">
           {sttMode === "cloud" ? <Cloud size={11} /> : <Cpu size={11} />}
           <span>{sttMode === "cloud" ? "Cloud" : "Local"}</span>

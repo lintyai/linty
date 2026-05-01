@@ -38,7 +38,6 @@ function usePermissions() {
 
   useEffect(() => {
     poll();
-    // Stop polling once both permissions are granted
     if (permissions.microphone === "authorized" && permissions.accessibility) {
       return;
     }
@@ -46,7 +45,6 @@ function usePermissions() {
     return () => clearInterval(interval);
   }, [poll, permissions.microphone, permissions.accessibility]);
 
-  // Reinit fn key monitor when accessibility becomes granted
   useEffect(() => {
     if (permissions.accessibility) {
       reinitFnKeyMonitor().catch(console.error);
@@ -117,11 +115,11 @@ function PermissionRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3.5 px-4 py-3.5",
+        "flex items-center gap-3.5 px-4 py-4",
         !isLast && "border-b border-border-subtle",
       )}
     >
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-bg-elevated">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-bg-hover ring-1 ring-border-subtle">
         {icon}
       </div>
 
@@ -137,8 +135,8 @@ function PermissionRow({
           <button
             onClick={onGrant}
             className={cn(
-              "rounded-lg px-3 py-[5px] text-[12px] font-medium",
-              "bg-accent text-white",
+              "rounded-[var(--radius-sm)] px-3 py-[6px] text-[12px] font-medium",
+              "bg-accent text-white shadow-[var(--shadow-sm)]",
               "hover:bg-accent-soft active:scale-95",
               "transition-all duration-150",
             )}
@@ -151,8 +149,8 @@ function PermissionRow({
           <button
             onClick={onOpenSettings}
             className={cn(
-              "flex items-center gap-1 rounded-lg px-3 py-[5px] text-[12px] font-medium",
-              "bg-bg-elevated border border-border text-text-secondary",
+              "flex items-center gap-1 rounded-[var(--radius-sm)] px-3 py-[6px] text-[12px] font-medium",
+              "bg-bg-elevated ring-1 ring-border text-text-secondary shadow-[var(--shadow-sm)]",
               "hover:bg-bg-hover hover:text-text-primary active:scale-95",
               "transition-all duration-150",
             )}
@@ -182,30 +180,26 @@ export function SystemCheckPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Toolbar */}
       <div
         data-tauri-drag-region
-        className="flex h-[52px] shrink-0 items-center border-b border-border-subtle px-5"
+        className="flex h-[52px] shrink-0 items-center px-6"
       >
         <h1
-          className="text-[15px] font-semibold text-text-primary"
+          className="text-[16px] font-semibold text-text-primary tracking-[-0.01em]"
           data-tauri-drag-region
         >
           System Check
         </h1>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-5">
-        {/* Section label */}
-        <div className="mb-2.5">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="mb-3">
+          <span className="text-[12px] font-semibold uppercase tracking-wide text-text-muted">
             Permissions
           </span>
         </div>
 
-        {/* Permission cards */}
-        <div className="rounded-xl border border-border-subtle bg-bg-secondary overflow-hidden">
+        <div className="rounded-[var(--radius-md)] bg-bg-elevated shadow-[var(--shadow-sm)] ring-1 ring-border-subtle overflow-hidden">
           <PermissionRow
             icon={<Mic size={15} className="text-text-secondary" />}
             label="Microphone Access"
@@ -224,14 +218,12 @@ export function SystemCheckPage() {
           />
         </div>
 
-        {/* Footer note */}
         <p className="mt-3 text-[11px] text-text-muted">
           Permissions are checked every 3 seconds.
         </p>
 
-        {/* Microphone Test */}
-        <div className="mt-6 mb-2.5">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
+        <div className="mt-8 mb-3">
+          <span className="text-[12px] font-semibold uppercase tracking-wide text-text-muted">
             Microphone Test
           </span>
         </div>
@@ -241,7 +233,6 @@ export function SystemCheckPage() {
   );
 }
 
-/* ── Recording Test Widget ── */
 function RecordingTestWidget() {
   const {
     isRecording,
@@ -276,7 +267,6 @@ function RecordingTestWidget() {
     }
   }, [isRecording, isIdle, startRecording, handleStopAndProcess]);
 
-  // Auto-reset after done/error
   useEffect(() => {
     if (isDone || isError) {
       const timer = setTimeout(resetTranscription, 5000);
@@ -291,19 +281,19 @@ function RecordingTestWidget() {
   };
 
   return (
-    <div className="rounded-xl border border-border-subtle bg-bg-secondary overflow-hidden">
-      <div className="px-4 py-3.5">
-        <div className="flex items-center gap-3">
+    <div className="rounded-[var(--radius-md)] bg-bg-elevated shadow-[var(--shadow-sm)] ring-1 ring-border-subtle overflow-hidden">
+      <div className="px-4 py-4">
+        <div className="flex items-center gap-3.5">
           <button
             onClick={handleToggle}
             disabled={isProcessing}
             className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200",
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-all duration-200",
               isRecording
-                ? "bg-accent text-white shadow-[0_0_12px_var(--color-accent-glow-strong)]"
+                ? "bg-accent text-white shadow-[0_0_16px_var(--color-accent-glow-strong)]"
                 : isProcessing
                   ? "bg-bg-hover text-text-muted cursor-not-allowed"
-                  : "bg-bg-hover border border-border text-text-secondary hover:bg-bg-active hover:text-text-primary",
+                  : "bg-bg-hover ring-1 ring-border text-text-secondary hover:bg-bg-active hover:text-text-primary",
               !isRecording && !isProcessing && "active:scale-95",
             )}
           >
@@ -312,7 +302,7 @@ function RecordingTestWidget() {
             ) : isProcessing ? (
               <Loader2 size={14} className="animate-spin" />
             ) : (
-              <Mic size={15} />
+              <Mic size={16} />
             )}
           </button>
 

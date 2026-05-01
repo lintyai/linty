@@ -1,30 +1,32 @@
 @import "tailwindcss";
 
 @theme {
-  /* ── Surfaces (solid dark palette — macOS native) ── */
-  --color-bg: #1e1e1e;
-  --color-bg-secondary: #171717;
-  --color-bg-elevated: #282828;
-  --color-bg-hover: #2e2e2e;
-  --color-bg-input: #141414;
-  --color-bg-active: #333333;
+  /* ── Surfaces (6-layer depth hierarchy — premium dark) ── */
+  --color-bg-canvas: #0d0d0d;
+  --color-bg: #141414;
+  --color-bg-secondary: #1a1a1a;
+  --color-bg-elevated: #222222;
+  --color-bg-hover: #2a2a2a;
+  --color-bg-input: #111111;
+  --color-bg-active: #303030;
 
-  /* ── Borders ── */
-  --color-border: #3a3a3a;
-  --color-border-subtle: #2c2c2c;
-  --color-border-focus: #505050;
+  /* ── Borders (subtle, let shadows do the work) ── */
+  --color-border: rgba(255, 255, 255, 0.09);
+  --color-border-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-focus: rgba(255, 255, 255, 0.16);
 
-  /* ── Text (macOS-native opacity levels — boosted for web rendering) ── */
-  --color-text-primary: rgba(255, 255, 255, 0.93);
-  --color-text-secondary: rgba(255, 255, 255, 0.63);
-  --color-text-muted: rgba(255, 255, 255, 0.42);
+  /* ── Text (refined opacity levels) ── */
+  --color-text-primary: rgba(255, 255, 255, 0.95);
+  --color-text-secondary: rgba(255, 255, 255, 0.60);
+  --color-text-muted: rgba(255, 255, 255, 0.36);
+  --color-text-ghost: rgba(255, 255, 255, 0.20);
   --color-text-inverted: rgba(0, 0, 0, 0.88);
 
-  /* ── Accent ── */
+  /* ── Accent (signature recording red) ── */
   --color-accent: #e23535;
-  --color-accent-soft: #c42d2d;
-  --color-accent-glow: rgba(226, 53, 53, 0.10);
-  --color-accent-glow-strong: rgba(226, 53, 53, 0.22);
+  --color-accent-soft: #ff4d4d;
+  --color-accent-glow: rgba(226, 53, 53, 0.12);
+  --color-accent-glow-strong: rgba(226, 53, 53, 0.24);
 
   /* ── Semantic (macOS system colors) ── */
   --color-success: #30d158;
@@ -36,41 +38,59 @@
   --color-info: #0a84ff;
   --color-info-glow: rgba(10, 132, 255, 0.10);
 
+  /* ── Shadows (elevation via light, not borders) ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.15);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2), 0 1px 4px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.25), 0 2px 8px rgba(0, 0, 0, 0.15);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.2);
+
+  /* ── Radius scale ── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* ── Motion ── */
+  --ease-spring: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-expo-out: cubic-bezier(0.16, 1, 0.3, 1);
+
   /* ── Utility ── */
   --color-scrollbar: rgba(255, 255, 255, 0.06);
-  --color-scrollbar-hover: rgba(255, 255, 255, 0.12);
+  --color-scrollbar-hover: rgba(255, 255, 255, 0.14);
   --color-shadow: rgba(0, 0, 0, 0.5);
   --color-shimmer: rgba(255, 255, 255, 0.04);
-  --color-dropdown-bg: #1c1c1e;
+  --color-dropdown-bg: #1a1a1c;
   --color-dropdown-active: rgba(255, 255, 255, 0.10);
   --color-dropdown-hover: rgba(255, 255, 255, 0.05);
 
-  /* ── Sidebar ── */
+  /* ── Layout ── */
   --sidebar-width: 200px;
 }
 
 /* ── Light theme overrides ── */
 :root[data-theme="light"] {
-  --color-bg: #f5f5f5;
-  --color-bg-secondary: #ebebeb;
+  --color-bg-canvas: #eeeef2;
+  --color-bg: #f2f2f7;
+  --color-bg-secondary: #e8e8ed;
   --color-bg-elevated: #ffffff;
-  --color-bg-hover: #e5e5e5;
-  --color-bg-input: #e0e0e0;
-  --color-bg-active: #d9d9d9;
+  --color-bg-hover: #f0f0f5;
+  --color-bg-input: #e2e2ea;
+  --color-bg-active: #dddde5;
 
-  --color-border: #d1d1d1;
-  --color-border-subtle: #e0e0e0;
-  --color-border-focus: #a0a0a0;
+  --color-border: rgba(0, 0, 0, 0.10);
+  --color-border-subtle: rgba(0, 0, 0, 0.06);
+  --color-border-focus: rgba(0, 0, 0, 0.22);
 
   --color-text-primary: rgba(0, 0, 0, 0.88);
-  --color-text-secondary: rgba(0, 0, 0, 0.55);
-  --color-text-muted: rgba(0, 0, 0, 0.38);
-  --color-text-inverted: rgba(255, 255, 255, 0.93);
+  --color-text-secondary: rgba(0, 0, 0, 0.52);
+  --color-text-muted: rgba(0, 0, 0, 0.32);
+  --color-text-ghost: rgba(0, 0, 0, 0.16);
+  --color-text-inverted: rgba(255, 255, 255, 0.95);
 
   --color-accent: #d42a2a;
-  --color-accent-soft: #b82525;
+  --color-accent-soft: #e84444;
   --color-accent-glow: rgba(212, 42, 42, 0.08);
-  --color-accent-glow-strong: rgba(212, 42, 42, 0.16);
+  --color-accent-glow-strong: rgba(212, 42, 42, 0.18);
 
   --color-success: #248a3d;
   --color-success-glow: rgba(36, 138, 61, 0.08);
@@ -81,9 +101,14 @@
   --color-info: #0071e3;
   --color-info-glow: rgba(0, 113, 227, 0.08);
 
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 4px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.10), 0 4px 12px rgba(0, 0, 0, 0.08);
+
   --color-scrollbar: rgba(0, 0, 0, 0.08);
-  --color-scrollbar-hover: rgba(0, 0, 0, 0.16);
-  --color-shadow: rgba(0, 0, 0, 0.12);
+  --color-scrollbar-hover: rgba(0, 0, 0, 0.18);
+  --color-shadow: rgba(0, 0, 0, 0.10);
   --color-shimmer: rgba(0, 0, 0, 0.03);
   --color-dropdown-bg: #ffffff;
   --color-dropdown-active: rgba(0, 0, 0, 0.06);
@@ -106,7 +131,7 @@ body,
   user-select: none;
   -webkit-user-select: none;
   font-size: 13px;
-  line-height: 1.53846;  /* 20px / 13px — matches macOS body line-height */
+  line-height: 1.53846;
   letter-spacing: -0.003em;
 }
 
@@ -140,151 +165,96 @@ label {
 
 /* ── Selection ── */
 ::selection {
-  background: rgba(226, 53, 53, 0.25);
+  background: rgba(226, 53, 53, 0.30);
 }
 
 /* ── Animations ── */
 
 @keyframes pulse-ring {
-  0% {
-    transform: scale(1);
-    opacity: 0.4;
-  }
-  100% {
-    transform: scale(2);
-    opacity: 0;
-  }
+  0% { transform: scale(1); opacity: 0.4; }
+  100% { transform: scale(2); opacity: 0; }
 }
 
 @keyframes pulse-ring-slow {
-  0% {
-    transform: scale(1);
-    opacity: 0.2;
-  }
-  100% {
-    transform: scale(2.5);
-    opacity: 0;
-  }
+  0% { transform: scale(1); opacity: 0.2; }
+  100% { transform: scale(2.5); opacity: 0; }
 }
 
 @keyframes breathe {
-  0%,
-  100% {
-    opacity: 0.5;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.04);
-  }
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.04); }
 }
 
 @keyframes spin-slow {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
 @keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes slide-down {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes checkmark-draw {
-  0% {
-    stroke-dashoffset: 24;
-  }
-  100% {
-    stroke-dashoffset: 0;
-  }
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
 }
 
 @keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 @keyframes page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes capsule-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(12px) scale(0.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes capsule-out {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(4px) scale(0.98);
-  }
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(4px) scale(0.97); }
 }
 
 @keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes scale-bounce {
+  0% { transform: scale(0.9); }
+  60% { transform: scale(1.05); }
+  100% { transform: scale(1); }
 }
 
 .animate-pulse-ring {
-  animation: pulse-ring 1.4s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  animation: pulse-ring 1.4s var(--ease-spring) infinite;
 }
 .animate-pulse-ring-slow {
-  animation: pulse-ring-slow 2s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  animation: pulse-ring-slow 2s var(--ease-spring) infinite;
 }
 .animate-breathe {
   animation: breathe 2.4s ease-in-out infinite;
@@ -292,27 +262,23 @@ label {
 .animate-spin-slow {
   animation: spin-slow 1.8s linear infinite;
 }
-@keyframes scale-in {
-  from {
-    opacity: 0;
-    transform: scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
 .animate-fade-in {
-  animation: fade-in 180ms ease-out forwards;
+  animation: fade-in 180ms var(--ease-expo-out) forwards;
 }
 .animate-scale-in {
-  animation: scale-in 200ms ease-out forwards;
+  animation: scale-in 200ms var(--ease-spring) forwards;
+}
+.animate-scale-bounce {
+  animation: scale-bounce 400ms var(--ease-spring) forwards;
 }
 .animate-slide-up {
-  animation: slide-up 220ms ease-out forwards;
+  animation: slide-up 250ms var(--ease-spring) forwards;
 }
 .animate-slide-down {
-  animation: slide-down 220ms ease-out forwards;
+  animation: slide-down 220ms var(--ease-spring) forwards;
+}
+.animate-slide-in-right {
+  animation: slide-in-right 220ms var(--ease-spring) forwards;
 }
 .animate-checkmark {
   stroke-dasharray: 24;
@@ -330,16 +296,16 @@ label {
   animation: shimmer 1.5s ease-in-out infinite;
 }
 .animate-page-enter {
-  animation: page-enter 200ms ease-out forwards;
+  animation: page-enter 220ms var(--ease-expo-out) forwards;
 }
 .animate-capsule-in {
-  animation: capsule-in 250ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  animation: capsule-in 280ms var(--ease-spring) forwards;
 }
 .animate-capsule-out {
-  animation: capsule-out 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: capsule-out 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 .animate-toast-in {
-  animation: toast-in 250ms ease-out forwards;
+  animation: toast-in 280ms var(--ease-spring) forwards;
 }
 
 /* ── Reduce motion ── */
@@ -351,8 +317,11 @@ label {
     animation: none;
   }
   .animate-fade-in,
+  .animate-scale-in,
+  .animate-scale-bounce,
   .animate-slide-up,
   .animate-slide-down,
+  .animate-slide-in-right,
   .animate-page-enter,
   .animate-capsule-in,
   .animate-capsule-out,

@@ -43,10 +43,10 @@ export function SettingsPage() {
       {/* Toolbar */}
       <div
         data-tauri-drag-region
-        className="flex h-[52px] shrink-0 items-center border-b border-border-subtle px-5"
+        className="flex h-[52px] shrink-0 items-center px-6"
       >
         <h1
-          className="text-[15px] font-semibold text-text-primary"
+          className="text-[16px] font-semibold text-text-primary tracking-[-0.01em]"
           data-tauri-drag-region
         >
           Settings
@@ -55,20 +55,31 @@ export function SettingsPage() {
 
       {/* All sections stacked */}
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="mx-auto max-w-[480px] flex flex-col gap-8">
-          <GeneralSection />
-          <AudioSection />
-          <ModelsSection />
-          <LanguageSection />
-          <AppearanceSection />
-          <PrivacySection />
+        <div className="mx-auto max-w-[480px] flex flex-col gap-10">
+          <div className="animate-slide-up" style={{ animationDelay: "0ms", animationFillMode: "both" }}>
+            <GeneralSection />
+          </div>
+          <div className="animate-slide-up" style={{ animationDelay: "40ms", animationFillMode: "both" }}>
+            <AudioSection />
+          </div>
+          <div className="animate-slide-up" style={{ animationDelay: "80ms", animationFillMode: "both" }}>
+            <ModelsSection />
+          </div>
+          <div className="animate-slide-up" style={{ animationDelay: "120ms", animationFillMode: "both" }}>
+            <LanguageSection />
+          </div>
+          <div className="animate-slide-up" style={{ animationDelay: "160ms", animationFillMode: "both" }}>
+            <AppearanceSection />
+          </div>
+          <div className="animate-slide-up" style={{ animationDelay: "200ms", animationFillMode: "both" }}>
+            <PrivacySection />
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-/* ═══ General ═══ */
 function GeneralSection() {
   const { correctionEnabled, correctionPrompt, saveCorrectionEnabled, saveCorrectionPrompt } = useSettings();
   const [correctionInput, setCorrectionInput] = useState(correctionPrompt);
@@ -127,10 +138,10 @@ function GeneralSection() {
                 rows={5}
                 spellCheck={false}
                 className={cn(
-                  "w-full rounded-lg border border-border bg-bg-input px-3 py-2",
+                  "w-full rounded-[var(--radius-sm)] bg-bg-input px-3 py-2.5",
                   "text-[13px] text-text-primary placeholder:text-text-muted",
-                  "outline-none transition-all duration-150 resize-none",
-                  "focus:border-border-focus focus:bg-bg-elevated",
+                  "outline-none ring-1 ring-border-subtle transition-all duration-150 resize-none",
+                  "focus:ring-2 focus:ring-accent/20 focus:bg-bg-elevated",
                 )}
               />
               <span className="text-[11px] text-text-muted leading-snug">
@@ -152,7 +163,6 @@ function GeneralSection() {
   );
 }
 
-/* ═══ Audio ═══ */
 function AudioSection() {
   return (
     <div className="flex flex-col gap-4">
@@ -175,7 +185,6 @@ function AudioSection() {
   );
 }
 
-/* ═══ Models ═══ */
 function ModelsSection() {
   const { groqApiKey, sttMode, whisperPrompt, saveGroqApiKey, saveSttMode, saveWhisperPrompt } = useSettings();
   const {
@@ -222,7 +231,6 @@ function ModelsSection() {
         className="self-start"
       />
 
-      {/* Cloud settings */}
       {sttMode === "cloud" && (
         <div className="flex flex-col gap-4 animate-fade-in">
           <SectionCard>
@@ -244,10 +252,10 @@ function ModelsSection() {
                     spellCheck={false}
                     autoComplete="off"
                     className={cn(
-                      "w-full rounded-lg border border-border bg-bg-input px-3 py-[7px] pr-9",
+                      "w-full rounded-[var(--radius-sm)] bg-bg-input px-3 py-[7px] pr-9",
                       "text-[13px] text-text-primary placeholder:text-text-muted",
-                      "outline-none transition-all duration-150",
-                      "focus:border-border-focus focus:bg-bg-elevated",
+                      "outline-none ring-1 ring-border-subtle transition-all duration-150",
+                      "focus:ring-2 focus:ring-accent/20 focus:bg-bg-elevated",
                     )}
                   />
                   <button
@@ -283,10 +291,10 @@ function ModelsSection() {
                   spellCheck={false}
                   placeholder="e.g., Linty, Tauri, React, TypeScript..."
                   className={cn(
-                    "w-full rounded-lg border border-border bg-bg-input px-3 py-2",
+                    "w-full rounded-[var(--radius-sm)] bg-bg-input px-3 py-2.5",
                     "text-[13px] text-text-primary placeholder:text-text-muted",
-                    "outline-none transition-all duration-150 resize-none",
-                    "focus:border-border-focus focus:bg-bg-elevated",
+                    "outline-none ring-1 ring-border-subtle transition-all duration-150 resize-none",
+                    "focus:ring-2 focus:ring-accent/20 focus:bg-bg-elevated",
                   )}
                 />
                 <span className="text-[11px] text-text-muted leading-snug">
@@ -301,7 +309,7 @@ function ModelsSection() {
               label="Transcription model"
               description="Whisper Large V3 via Groq"
               right={
-                <span className="flex items-center gap-1.5 text-[12px] text-text-secondary bg-bg-hover rounded-md px-2.5 py-1">
+                <span className="flex items-center gap-1.5 text-[12px] text-text-secondary bg-bg-hover rounded-[var(--radius-sm)] px-2.5 py-1">
                   <Cloud size={11} />
                   whisper-large-v3
                 </span>
@@ -309,7 +317,7 @@ function ModelsSection() {
             />
           </SectionCard>
 
-          <div className="flex items-start gap-2.5 rounded-[10px] bg-info-glow border border-info/10 px-4 py-3">
+          <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] bg-info-glow/50 ring-1 ring-info/8 px-4 py-3">
             <Cloud size={13} className="text-info shrink-0 mt-px" />
             <p className="text-[12px] text-text-secondary leading-relaxed">
               Audio is sent to Groq API for transcription. Processing is fast (~1-2s) with a free tier available.
@@ -318,11 +326,10 @@ function ModelsSection() {
         </div>
       )}
 
-      {/* Local settings */}
       {sttMode === "local" && (
         <div className="flex flex-col gap-4 animate-fade-in">
           {!isLocalAvailable ? (
-            <div className="flex items-start gap-2.5 rounded-[10px] bg-warning-glow border border-warning/10 px-4 py-3">
+            <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] bg-warning-glow/50 ring-1 ring-warning/8 px-4 py-3">
               <HardDrive size={13} className="text-warning shrink-0 mt-px" />
               <div className="flex flex-col gap-1">
                 <span className="text-[13px] font-medium text-text-primary">
@@ -350,7 +357,7 @@ function ModelsSection() {
                       <div
                         key={model.filename}
                         className={cn(
-                          "flex items-center justify-between px-4 py-3",
+                          "flex items-center justify-between px-4 py-3.5",
                           i < models.length - 1 && "border-b border-border-subtle",
                         )}
                       >
@@ -365,7 +372,7 @@ function ModelsSection() {
 
                         {isThisDownloading ? (
                           <div className="flex items-center gap-2.5">
-                            <div className="h-1.5 w-20 overflow-hidden rounded-full bg-border">
+                            <div className="h-1.5 w-20 overflow-hidden rounded-full bg-bg-active">
                               <div
                                 className="h-full rounded-full bg-accent transition-all duration-300"
                                 style={{ width: `${downloadProgress}%` }}
@@ -393,8 +400,8 @@ function ModelsSection() {
                               }}
                               disabled={loadingModel !== null}
                               className={cn(
-                                "flex h-[30px] items-center gap-1.5 rounded-md border border-success/20 px-3 text-[12px] font-medium text-success",
-                                "hover:bg-success/8 active:scale-95 transition-all duration-150",
+                                "flex h-[30px] items-center gap-1.5 rounded-[var(--radius-sm)] px-3 text-[12px] font-medium text-success",
+                                "ring-1 ring-success/20 hover:bg-success/8 active:scale-95 transition-all duration-150",
                                 "disabled:cursor-not-allowed disabled:opacity-40",
                               )}
                             >
@@ -411,8 +418,8 @@ function ModelsSection() {
                             onClick={() => downloadModel(model)}
                             disabled={isDownloading}
                             className={cn(
-                              "flex h-[30px] items-center gap-1.5 rounded-md border border-border px-3 text-[12px] font-medium text-text-secondary",
-                              "hover:bg-bg-hover hover:text-text-primary active:scale-95 transition-all duration-150",
+                              "flex h-[30px] items-center gap-1.5 rounded-[var(--radius-sm)] px-3 text-[12px] font-medium text-text-secondary",
+                              "ring-1 ring-border hover:bg-bg-hover hover:text-text-primary active:scale-95 transition-all duration-150",
                               "disabled:cursor-not-allowed disabled:opacity-40",
                             )}
                           >
@@ -426,7 +433,7 @@ function ModelsSection() {
                 </div>
               </SectionCard>
 
-              <div className="flex items-start gap-2.5 rounded-[10px] bg-success-glow border border-success/10 px-4 py-3">
+              <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] bg-success-glow/50 ring-1 ring-success/8 px-4 py-3">
                 <Cpu size={13} className="text-success shrink-0 mt-px" />
                 <p className="text-[12px] text-text-secondary leading-relaxed">
                   Audio stays on your device. Processing takes ~2-5s depending on model size and hardware.
@@ -439,8 +446,6 @@ function ModelsSection() {
     </div>
   );
 }
-
-/* ═══ Language ═══ */
 
 const LANGUAGES = [
   { code: "auto", label: "Auto-detect" },
@@ -473,7 +478,7 @@ function LanguageSection() {
       <SectionHeader title="Language" />
 
       <SectionCard>
-        <div className="flex items-center justify-between px-4 py-3">
+        <div className="flex items-center justify-between px-4 py-3.5">
           <div className="flex flex-col gap-0.5 min-w-0">
             <span className="text-[13px] text-text-primary">Transcription language</span>
             <span className="text-[12px] text-text-muted leading-snug">
@@ -485,10 +490,10 @@ function LanguageSection() {
               value={transcriptionLanguage}
               onChange={(e) => saveTranscriptionLanguage(e.target.value)}
               className={cn(
-                "appearance-none rounded-lg border border-border bg-bg-input pl-3 pr-8 py-[7px]",
+                "appearance-none rounded-[var(--radius-sm)] bg-bg-input pl-3 pr-8 py-[7px]",
                 "text-[13px] text-text-primary",
-                "outline-none transition-all duration-150 cursor-pointer",
-                "focus:border-border-focus focus:bg-bg-elevated",
+                "outline-none ring-1 ring-border-subtle transition-all duration-150 cursor-pointer",
+                "focus:ring-2 focus:ring-accent/20 focus:bg-bg-elevated",
               )}
             >
               {LANGUAGES.map((lang) => (
@@ -516,7 +521,7 @@ function LanguageSection() {
         </SectionCard>
       )}
 
-      <div className="flex items-start gap-2.5 rounded-[10px] bg-bg-elevated border border-border-subtle px-4 py-3">
+      <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] bg-bg-elevated ring-1 ring-border-subtle px-4 py-3">
         <Languages size={13} className="text-text-muted shrink-0 mt-px" />
         <p className="text-[12px] text-text-secondary leading-relaxed">
           {transcriptionLanguage === "auto"
@@ -530,7 +535,6 @@ function LanguageSection() {
   );
 }
 
-/* ═══ Privacy ═══ */
 function PrivacySection() {
   return (
     <div className="flex flex-col gap-4">
@@ -565,7 +569,6 @@ function PrivacySection() {
   );
 }
 
-/* ═══ Appearance ═══ */
 function AppearanceSection() {
   const { theme, saveTheme } = useSettings();
 
@@ -589,10 +592,9 @@ function AppearanceSection() {
         <SettingRow
           label="Accent color"
           description="Used for recording indicator and highlights"
-          right={<div className="h-5 w-5 rounded-full bg-accent border border-accent-soft" />}
+          right={<div className="h-5 w-5 rounded-full bg-accent shadow-[0_0_0_2px_var(--color-bg-elevated),0_0_0_3px_var(--color-accent)]" />}
         />
       </SectionCard>
     </div>
   );
 }
-

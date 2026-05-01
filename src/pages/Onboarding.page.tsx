@@ -36,7 +36,7 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
       {/* Drag region */}
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-20 h-[52px]" />
 
-      <div className="w-full max-w-[420px] px-6">
+      <div className="w-full max-w-[440px] px-6">
         {step === "welcome" && <WelcomeStep onNext={() => setStep("microphone")} />}
         {step === "microphone" && (
           <MicrophoneStep onNext={() => setStep("accessibility")} />
@@ -56,14 +56,14 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
         {step === "done" && <DoneStep onComplete={onComplete} />}
 
         {/* Progress dots */}
-        <div className="mt-8 flex items-center justify-center gap-2">
+        <div className="mt-10 flex items-center justify-center gap-2">
           {PROGRESS_STEPS.map((s) => (
             <div
               key={s}
               className={cn(
                 "h-1.5 rounded-full transition-all duration-300",
                 s === activeProgressStep
-                  ? "w-6 bg-accent"
+                  ? "w-8 bg-accent"
                   : "w-1.5 bg-bg-active",
               )}
             />
@@ -79,14 +79,14 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
 function WelcomeStep({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col items-center text-center animate-page-enter">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/15 mb-5">
-        <Mic size={28} className="text-accent" />
+      <div className="flex h-20 w-20 items-center justify-center rounded-[var(--radius-xl)] bg-gradient-to-b from-accent/15 to-accent/5 mb-6 shadow-[0_0_40px_var(--color-accent-glow)]">
+        <Mic size={32} className="text-accent" />
       </div>
 
-      <h1 className="text-[22px] font-bold text-text-primary mb-2">
+      <h1 className="text-[28px] font-bold text-text-primary mb-2 tracking-[-0.02em]">
         Welcome to Linty
       </h1>
-      <p className="text-[14px] text-text-secondary leading-relaxed mb-8">
+      <p className="text-[15px] text-text-secondary leading-[1.7] mb-10">
         Voice-to-text that works anywhere on your Mac.
         <br />
         We need a couple of permissions to get started.
@@ -95,9 +95,9 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       <button
         onClick={onNext}
         className={cn(
-          "flex items-center gap-2 rounded-xl px-6 py-2.5 text-[14px] font-semibold",
-          "bg-accent text-white",
-          "hover:bg-accent-soft active:scale-[0.97]",
+          "flex items-center justify-center gap-2 rounded-[var(--radius-lg)] min-w-[200px] px-8 py-3 text-[15px] font-semibold",
+          "bg-accent text-white shadow-[var(--shadow-md)]",
+          "hover:bg-accent-soft hover:scale-[1.02] active:scale-[0.97]",
           "transition-all duration-150",
         )}
       >
@@ -153,20 +153,20 @@ function MicrophoneStep({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col items-center text-center animate-page-enter">
       <div className={cn(
-        "flex h-16 w-16 items-center justify-center rounded-2xl mb-5 transition-colors duration-300",
-        status === "granted" ? "bg-success/15" : "bg-info/15",
+        "flex h-20 w-20 items-center justify-center rounded-[var(--radius-xl)] mb-6 transition-all duration-300",
+        status === "granted" ? "bg-gradient-to-b from-success/15 to-success/5 shadow-[0_0_40px_var(--color-success-glow)]" : "bg-gradient-to-b from-info/15 to-info/5",
       )}>
         {status === "granted" ? (
-          <CheckCircle2 size={28} className="text-success" />
+          <CheckCircle2 size={32} className="text-success animate-scale-bounce" />
         ) : (
-          <Mic size={28} className="text-info" />
+          <Mic size={32} className="text-info" />
         )}
       </div>
 
-      <h1 className="text-[22px] font-bold text-text-primary mb-2">
+      <h1 className="text-[28px] font-bold text-text-primary mb-2 tracking-[-0.02em]">
         Microphone Access
       </h1>
-      <p className="text-[14px] text-text-secondary leading-relaxed mb-8">
+      <p className="text-[15px] text-text-secondary leading-[1.7] mb-10">
         Linty needs your microphone to capture speech for transcription.
       </p>
 
@@ -192,9 +192,9 @@ function MicrophoneStep({ onNext }: { onNext: () => void }) {
           <button
             onClick={() => openSystemSettings("microphone")}
             className={cn(
-              "flex items-center gap-1.5 rounded-xl px-5 py-2 text-[13px] font-medium",
-              "bg-accent text-white",
-              "hover:bg-accent-soft active:scale-[0.97]",
+              "flex items-center gap-1.5 rounded-[var(--radius-lg)] min-w-[200px] justify-center px-6 py-3 text-[14px] font-semibold",
+              "bg-accent text-white shadow-[var(--shadow-md)]",
+              "hover:bg-accent-soft hover:scale-[1.02] active:scale-[0.97]",
               "transition-all duration-150",
             )}
           >
@@ -267,20 +267,20 @@ function AccessibilityStep({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col items-center text-center animate-page-enter">
       <div className={cn(
-        "flex h-16 w-16 items-center justify-center rounded-2xl mb-5 transition-colors duration-300",
-        status === "granted" ? "bg-success/15" : "bg-info/15",
+        "flex h-20 w-20 items-center justify-center rounded-[var(--radius-xl)] mb-6 transition-all duration-300",
+        status === "granted" ? "bg-gradient-to-b from-success/15 to-success/5 shadow-[0_0_40px_var(--color-success-glow)]" : "bg-gradient-to-b from-info/15 to-info/5",
       )}>
         {status === "granted" ? (
-          <CheckCircle2 size={28} className="text-success" />
+          <CheckCircle2 size={32} className="text-success animate-scale-bounce" />
         ) : (
-          <Shield size={28} className="text-info" />
+          <Shield size={32} className="text-info" />
         )}
       </div>
 
-      <h1 className="text-[22px] font-bold text-text-primary mb-2">
+      <h1 className="text-[28px] font-bold text-text-primary mb-2 tracking-[-0.02em]">
         Accessibility Permission
       </h1>
-      <p className="text-[14px] text-text-secondary leading-relaxed mb-8">
+      <p className="text-[15px] text-text-secondary leading-[1.7] mb-10">
         Required for the fn key push-to-talk shortcut and auto-pasting transcriptions.
       </p>
 
@@ -319,8 +319,8 @@ function AccessibilityStep({ onNext }: { onNext: () => void }) {
               openSystemSettings("accessibility")
             }
             className={cn(
-              "flex items-center gap-1.5 rounded-xl px-5 py-2 text-[13px] font-medium",
-              "bg-bg-elevated border border-border text-text-secondary",
+              "flex items-center gap-1.5 rounded-[var(--radius-lg)] px-6 py-2.5 text-[13px] font-medium",
+              "bg-bg-elevated ring-1 ring-border text-text-secondary shadow-[var(--shadow-sm)]",
               "hover:bg-bg-hover hover:text-text-primary active:scale-[0.97]",
               "transition-all duration-150",
             )}
@@ -483,22 +483,22 @@ function ModelDownloadStep({
   return (
     <div className="flex flex-col items-center text-center animate-page-enter">
       <div className={cn(
-        "flex h-16 w-16 items-center justify-center rounded-2xl mb-5 transition-colors duration-300",
-        status === "ready" ? "bg-success/15" : status === "error" ? "bg-error/15" : "bg-accent/15",
+        "flex h-20 w-20 items-center justify-center rounded-[var(--radius-xl)] mb-6 transition-all duration-300",
+        status === "ready" ? "bg-gradient-to-b from-success/15 to-success/5 shadow-[0_0_40px_var(--color-success-glow)]" : status === "error" ? "bg-gradient-to-b from-error/15 to-error/5" : "bg-gradient-to-b from-accent/15 to-accent/5",
       )}>
         {status === "ready" ? (
-          <CheckCircle2 size={28} className="text-success" />
+          <CheckCircle2 size={32} className="text-success animate-scale-bounce" />
         ) : status === "error" ? (
-          <AlertCircle size={28} className="text-error" />
+          <AlertCircle size={32} className="text-error" />
         ) : (
-          <Download size={28} className="text-accent" />
+          <Download size={32} className="text-accent" />
         )}
       </div>
 
-      <h1 className="text-[22px] font-bold text-text-primary mb-2">
+      <h1 className="text-[28px] font-bold text-text-primary mb-2 tracking-[-0.02em]">
         {status === "ready" ? "Speech Engine Ready" : status === "loading" ? "Loading Model" : "Setting Up Speech Engine"}
       </h1>
-      <p className="text-[14px] text-text-secondary leading-relaxed mb-6">
+      <p className="text-[15px] text-text-secondary leading-[1.7] mb-6">
         {status === "downloading" && "Downloading the speech model so transcription works offline."}
         {status === "loading" && "Loading the model into memory..."}
         {status === "ready" && "Local transcription is ready to go."}
@@ -510,9 +510,9 @@ function ModelDownloadStep({
       {status === "downloading" && (
         <div className="w-full max-w-[300px] mb-4">
           <div className="flex items-center gap-3 mb-2">
-            <div className="flex-1 h-2 rounded-full bg-bg-active overflow-hidden">
+            <div className="flex-1 h-[5px] rounded-full bg-bg-active overflow-hidden">
               <div
-                className="h-full rounded-full bg-accent transition-all duration-300"
+                className="h-full rounded-full bg-accent transition-all duration-300 shadow-[0_0_8px_var(--color-accent-glow)]"
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -557,9 +557,9 @@ function ModelDownloadStep({
           <button
             onClick={() => model && startDownloadAndLoad(model)}
             className={cn(
-              "flex items-center gap-2 rounded-xl px-5 py-2 text-[13px] font-medium",
-              "bg-accent text-white",
-              "hover:bg-accent-soft active:scale-[0.97]",
+              "flex items-center gap-2 rounded-[var(--radius-lg)] min-w-[200px] justify-center px-6 py-3 text-[14px] font-semibold",
+              "bg-accent text-white shadow-[var(--shadow-md)]",
+              "hover:bg-accent-soft hover:scale-[1.02] active:scale-[0.97]",
               "transition-all duration-150",
             )}
           >
@@ -610,14 +610,14 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="flex flex-col items-center text-center animate-page-enter">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/15 mb-5">
-        <Cloud size={28} className="text-accent" />
+      <div className="flex h-20 w-20 items-center justify-center rounded-[var(--radius-xl)] bg-gradient-to-b from-accent/15 to-accent/5 mb-6">
+        <Cloud size={32} className="text-accent" />
       </div>
 
-      <h1 className="text-[22px] font-bold text-text-primary mb-2">
+      <h1 className="text-[28px] font-bold text-text-primary mb-2 tracking-[-0.02em]">
         Cloud Transcription
       </h1>
-      <p className="text-[14px] text-text-secondary leading-relaxed mb-6">
+      <p className="text-[15px] text-text-secondary leading-[1.7] mb-6">
         Linty uses Groq for fast cloud transcription. You'll need a free API key.
       </p>
 
@@ -649,9 +649,10 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="gsk_..."
             className={cn(
-              "w-full rounded-xl border border-border bg-bg-elevated pl-9 pr-10 py-2.5",
+              "w-full rounded-[var(--radius-lg)] bg-bg-elevated pl-9 pr-10 py-3",
               "text-[13px] text-text-primary placeholder:text-text-muted",
-              "focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent",
+              "outline-none ring-1 ring-border-subtle",
+              "focus:ring-2 focus:ring-accent/25",
               "transition-all duration-150",
             )}
           />
@@ -670,9 +671,9 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
         onClick={handleContinue}
         disabled={saving}
         className={cn(
-          "flex items-center gap-2 rounded-xl px-6 py-2.5 text-[14px] font-semibold",
-          "bg-accent text-white",
-          "hover:bg-accent-soft active:scale-[0.97]",
+          "flex items-center justify-center gap-2 rounded-[var(--radius-lg)] min-w-[200px] px-8 py-3 text-[15px] font-semibold",
+          "bg-accent text-white shadow-[var(--shadow-md)]",
+          "hover:bg-accent-soft hover:scale-[1.02] active:scale-[0.97]",
           "transition-all duration-150",
           "disabled:opacity-50 disabled:cursor-not-allowed",
         )}
@@ -701,14 +702,14 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
 function DoneStep({ onComplete }: { onComplete: () => void }) {
   return (
     <div className="flex flex-col items-center text-center animate-page-enter">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-success/15 mb-5">
-        <CheckCircle2 size={28} className="text-success" />
+      <div className="flex h-20 w-20 items-center justify-center rounded-[var(--radius-xl)] bg-gradient-to-b from-success/15 to-success/5 mb-6 shadow-[0_0_40px_var(--color-success-glow)]">
+        <CheckCircle2 size={32} className="text-success animate-scale-bounce" />
       </div>
 
-      <h1 className="text-[22px] font-bold text-text-primary mb-2">
+      <h1 className="text-[28px] font-bold text-text-primary mb-2 tracking-[-0.02em]">
         You're All Set
       </h1>
-      <p className="text-[14px] text-text-secondary leading-relaxed mb-8">
+      <p className="text-[15px] text-text-secondary leading-[1.7] mb-10">
         Hold the <span className="font-medium text-text-primary">fn</span> key anywhere to start recording.
         <br />
         Release to transcribe and auto-paste.
@@ -717,9 +718,9 @@ function DoneStep({ onComplete }: { onComplete: () => void }) {
       <button
         onClick={onComplete}
         className={cn(
-          "flex items-center gap-2 rounded-xl px-6 py-2.5 text-[14px] font-semibold",
-          "bg-accent text-white",
-          "hover:bg-accent-soft active:scale-[0.97]",
+          "flex items-center justify-center gap-2 rounded-[var(--radius-lg)] min-w-[200px] px-8 py-3 text-[15px] font-semibold",
+          "bg-accent text-white shadow-[var(--shadow-md)]",
+          "hover:bg-accent-soft hover:scale-[1.02] active:scale-[0.97]",
           "transition-all duration-150",
         )}
       >

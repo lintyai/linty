@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Mic,
   Clock,
@@ -6,6 +6,8 @@ import {
   BarChart3,
   FileText,
   ArrowRight,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useAppStore } from "@/store/app.store";
@@ -62,7 +64,31 @@ export function DashboardPage() {
     stats.total > 0 ? Math.round((stats.localCount / stats.total) * 100) : 0;
   const cloudPct = stats.total > 0 ? 100 - localPct : 0;
 
-  // Bar chart data — last 7 days
+  const todayStats = useMemo(() => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+
+    const todayCount = allTranscripts.filter(
+      (t) => t.timestamp >= todayStart.getTime(),
+    ).length;
+    const yesterdayCount = allTranscripts.filter(
+      (t) =>
+        t.timestamp >= yesterdayStart.getTime() &&
+        t.timestamp < todayStart.getTime(),
+    ).length;
+
+    const delta =
+      yesterdayCount > 0
+        ? Math.round(((todayCount - yesterdayCount) / yesterdayCount) * 100)
+        : todayCount > 0
+          ? 100
+          : 0;
+
+    return { todayCount, delta };
+  }, [allTranscripts]);
+
   const dayBuckets: { label: string; count: number }[] = [];
   for (let i = 6; i >= 0; i--) {
     const dayStart = new Date(now);
@@ -86,10 +112,10 @@ export function DashboardPage() {
       <div className="flex h-full flex-col">
         <div
           data-tauri-drag-region
-          className="flex h-[52px] shrink-0 items-center border-b border-border-subtle px-5"
+          className="flex h-[52px] shrink-0 items-center px-6"
         >
           <h1
-            className="text-[15px] font-semibold text-text-primary"
+            className="text-[16px] font-semibold text-text-primary tracking-[-0.01em]"
             data-tauri-drag-region
           >
             Dashboard
@@ -110,24 +136,24 @@ export function DashboardPage() {
       {/* Toolbar */}
       <div
         data-tauri-drag-region
-        className="flex h-[52px] shrink-0 items-center justify-between border-b border-border-subtle px-5"
+        className="flex h-[52px] shrink-0 items-center justify-between px-6"
       >
         <h1
-          className="text-[15px] font-semibold text-text-primary"
+          className="text-[16px] font-semibold text-text-primary tracking-[-0.01em]"
           data-tauri-drag-region
         >
           Dashboard
         </h1>
-        <div className="flex gap-px rounded-lg bg-bg-input p-[3px] border border-border-subtle">
+        <div className="flex gap-px rounded-[var(--radius-sm)] bg-bg-input p-[3px] ring-1 ring-border-subtle">
           {(["7d", "30d", "all"] as Period[]).map((p) => (
             <button
               key={p}
               onClick={() => setPeriod(p)}
               className={cn(
-                "rounded-[6px] px-3 py-[5px] text-[12px] font-medium transition-all duration-150",
+                "rounded-[5px] px-3 py-[5px] text-[12px] font-medium transition-all duration-150",
                 period === p
-                  ? "bg-bg-elevated text-text-primary border border-border shadow-sm"
-                  : "text-text-muted border border-transparent hover:text-text-secondary",
+                  ? "bg-bg-elevated text-text-primary shadow-[var(--shadow-sm)] ring-1 ring-border"
+                  : "text-text-muted hover:text-text-secondary",
               )}
             >
               {p === "7d" ? "7 days" : p === "30d" ? "30 days" : "All time"}
@@ -138,44 +164,69 @@ export function DashboardPage() {
 
       {/* Content */}
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex flex-col gap-3 shrink-0 px-5 pt-4 pb-3">
-          {/* Stat cards */}
-          <div className="grid grid-cols-4 gap-2.5">
+        <div className="flex flex-col gap-3.5 shrink-0 px-6 pt-4 pb-3">
+          {/* Hero metric + stat cards row */}
+          <div className="grid grid-cols-5 gap-3">
+            {/* Hero: Today's count */}
+            <div
+              className="col-span-1 rounded-[var(--radius-md)] bg-bg-elevated shadow-[var(--shadow-sm)] ring-1 ring-border-subtle p-4 flex flex-col justify-between animate-slide-up"
+              style={{ animationFillMode: "both" }}
+            >
+              <span className="text-[11px] font-medium text-text-muted uppercase tracking-wide">
+                Today
+              </span>
+              <div className="mt-1">
+                <span className="text-[36px] font-bold text-text-primary leading-none tracking-tight tabular-nums">
+                  {todayStats.todayCount}
+                </span>
+                {todayStats.delta !== 0 && (
+                  <div className={cn(
+                    "flex items-center gap-0.5 mt-1 text-[11px] font-medium",
+                    todayStats.delta > 0 ? "text-success" : "text-error",
+                  )}>
+                    {todayStats.delta > 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                    {todayStats.delta > 0 ? "+" : ""}{todayStats.delta}%
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Stat cards */}
             <StatCard
               icon={<Mic size={13} />}
               iconColor="accent"
               value={stats.total.toString()}
               label="Transcriptions"
-              delay={0}
+              delay={1}
             />
             <StatCard
               icon={<Clock size={13} />}
               iconColor="info"
               value={formatDuration(stats.totalRecording)}
               label="Recorded"
-              delay={1}
+              delay={2}
             />
             <StatCard
               icon={<Zap size={13} />}
               iconColor="warning"
               value={stats.avgSpeed > 0 ? `${stats.avgSpeed.toFixed(1)}s` : "—"}
               label="Avg speed"
-              delay={2}
+              delay={3}
             />
             <StatCard
               icon={<FileText size={13} />}
               iconColor="success"
               value={formatNumber(stats.totalWords)}
               label="Words"
-              delay={3}
+              delay={4}
             />
           </div>
 
           {/* Charts row */}
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-2 gap-3">
             {/* Bar chart */}
-            <div className="rounded-xl bg-bg-elevated border border-border-subtle p-4 flex flex-col">
-              <h3 className="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-3">
+            <div className="rounded-[var(--radius-md)] bg-bg-elevated shadow-[var(--shadow-sm)] ring-1 ring-border-subtle p-4 flex flex-col">
+              <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-3">
                 Usage trend
               </h3>
               <div className="flex items-end gap-1.5 flex-1 min-h-0">
@@ -195,11 +246,11 @@ export function DashboardPage() {
                         )}
                         <div
                           className={cn(
-                            "w-full max-w-[22px] rounded-[4px] transition-all duration-300",
+                            "w-full max-w-[22px] rounded-t-[3px] rounded-b-[1px] transition-all duration-300",
                             isToday
                               ? "bg-accent"
                               : bucket.count > 0
-                                ? "bg-accent/50"
+                                ? "bg-accent/40"
                                 : "bg-border-subtle",
                           )}
                           style={{ height: `${barPct}%` }}
@@ -222,8 +273,8 @@ export function DashboardPage() {
             </div>
 
             {/* Engine split */}
-            <div className="rounded-xl bg-bg-elevated border border-border-subtle p-4 flex flex-col">
-              <h3 className="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-3">
+            <div className="rounded-[var(--radius-md)] bg-bg-elevated shadow-[var(--shadow-sm)] ring-1 ring-border-subtle p-4 flex flex-col">
+              <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-wide mb-3">
                 Engine split
               </h3>
               <div className="flex items-center gap-4 flex-1 min-h-0">
@@ -273,7 +324,7 @@ export function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-2.5 flex-1 min-w-0">
+                <div className="flex flex-col gap-3 flex-1 min-w-0">
                   <EngineRow
                     color="success"
                     label="Local"
@@ -290,14 +341,13 @@ export function DashboardPage() {
               </div>
             </div>
           </div>
-
         </div>
 
-        {/* Activity — scrollable */}
-        <div className="flex-1 flex flex-col min-h-0 mx-5 mb-4 rounded-xl bg-bg-elevated border border-border-subtle">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-subtle shrink-0">
-            <h3 className="text-[11px] font-medium text-text-muted uppercase tracking-wide">
-              Activity
+        {/* Activity */}
+        <div className="flex-1 flex flex-col min-h-0 px-6 pb-4">
+          <div className="flex items-center justify-between py-2.5 shrink-0">
+            <h3 className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">
+              Recent Activity
             </h3>
             <button
               onClick={() => setCurrentView("history")}
@@ -307,7 +357,7 @@ export function DashboardPage() {
               <ArrowRight size={11} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto flex flex-col">
+          <div className="flex-1 overflow-y-auto rounded-[var(--radius-md)] bg-bg-elevated shadow-[var(--shadow-sm)] ring-1 ring-border-subtle">
             {filtered.length === 0 ? (
               <EmptyState
                 icon={<Clock size={22} />}
@@ -362,18 +412,18 @@ function StatCard({
 }) {
   return (
     <div
-      className="rounded-xl bg-bg-elevated border border-border-subtle p-3 animate-slide-up"
-      style={{ animationDelay: `${delay * 50}ms`, animationFillMode: "both" }}
+      className="rounded-[var(--radius-md)] bg-bg-elevated shadow-[var(--shadow-sm)] ring-1 ring-border-subtle p-3.5 animate-slide-up"
+      style={{ animationDelay: `${delay * 40}ms`, animationFillMode: "both" }}
     >
       <div
         className={cn(
-          "flex h-6 w-6 items-center justify-center rounded-lg mb-2",
+          "flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)] mb-2.5",
           iconColorMap[iconColor],
         )}
       >
         {icon}
       </div>
-      <div className="text-[18px] font-semibold text-text-primary tracking-tight leading-none mb-0.5 tabular-nums">
+      <div className="text-[18px] font-semibold text-text-primary tracking-tight leading-none mb-1 tabular-nums">
         {value}
       </div>
       <div className="text-[11px] text-text-muted">{label}</div>
@@ -394,7 +444,7 @@ function EngineRow({
 }) {
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-[12px] text-text-secondary font-medium">
           <span

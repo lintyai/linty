@@ -8,6 +8,7 @@ import {
   Timer,
   Cloud,
   Cpu,
+  Copy,
 } from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useHistory } from "@/hooks/useHistory.hook";
@@ -45,6 +46,16 @@ function groupByDate(
   return Array.from(groups.entries()).map(([date, items]) => ({ date, items }));
 }
 
+function MetricPill({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-full bg-bg-hover px-2.5 py-1 text-[10px]">
+      <span className="text-text-muted">{icon}</span>
+      <span className="text-text-muted">{label}</span>
+      <span className="font-medium tabular-nums text-text-secondary">{value}</span>
+    </div>
+  );
+}
+
 export function HistoryPage() {
   const {
     transcripts,
@@ -80,10 +91,10 @@ export function HistoryPage() {
       {/* Toolbar */}
       <div
         data-tauri-drag-region
-        className="flex h-[52px] shrink-0 items-center justify-between border-b border-border-subtle px-5"
+        className="flex h-[52px] shrink-0 items-center justify-between px-6"
       >
         <h1
-          className="text-[15px] font-semibold text-text-primary"
+          className="text-[16px] font-semibold text-text-primary tracking-[-0.01em]"
           data-tauri-drag-region
         >
           History
@@ -101,10 +112,10 @@ export function HistoryPage() {
               placeholder="Search..."
               spellCheck={false}
               className={cn(
-                "w-[180px] rounded-lg border border-border-subtle bg-bg-elevated/50 py-[5px] pl-[30px]",
+                "w-[180px] rounded-[var(--radius-sm)] bg-bg-elevated/60 py-[6px] pl-[30px]",
                 "text-[12px] text-text-primary placeholder:text-text-muted",
-                "outline-none transition-all duration-150",
-                "focus:border-border-focus focus:bg-bg-elevated focus:w-[220px]",
+                "outline-none ring-1 ring-border-subtle transition-all duration-200",
+                "focus:ring-border-focus focus:bg-bg-elevated focus:w-[220px]",
                 searchQuery ? "pr-7" : "pr-2.5",
               )}
             />
@@ -146,8 +157,15 @@ export function HistoryPage() {
           ) : (
             groups.map((group) => (
               <div key={group.date}>
-                <div className="sticky top-0 z-10 bg-bg-secondary/80 backdrop-blur-sm px-5 py-1.5 border-b border-border-subtle">
-                  <span className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
+                <div
+                  className="sticky top-0 z-10 px-5 py-2 border-b border-border-subtle"
+                  style={{
+                    background: "var(--color-bg-secondary)",
+                    backdropFilter: "blur(8px) saturate(1.4)",
+                    WebkitBackdropFilter: "blur(8px) saturate(1.4)",
+                  }}
+                >
+                  <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">
                     {group.date}
                   </span>
                 </div>
@@ -174,18 +192,23 @@ export function HistoryPage() {
 
         {/* Detail panel */}
         {selectedTranscript && (
-          <div className="flex-1 flex flex-col min-w-0 animate-fade-in">
-            {/* Close button */}
-            <div className="flex items-center justify-end border-b border-border-subtle px-4 py-2">
+          <div className="flex-1 flex flex-col min-w-0 animate-slide-in-right">
+            <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2.5">
+              <button
+                onClick={handleCopyContent}
+                className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+              >
+                <Copy size={11} />
+                Click to copy
+              </button>
               <button
                 onClick={() => setSelectedTranscriptId(null)}
-                className="flex h-6 w-6 items-center justify-center rounded-md text-text-muted hover:bg-bg-hover hover:text-text-secondary transition-all"
+                className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] text-text-muted hover:bg-bg-hover hover:text-text-secondary transition-all"
               >
                 <X size={13} />
               </button>
             </div>
 
-            {/* Detail content — click to copy */}
             <div
               onClick={handleCopyContent}
               className="flex-1 overflow-y-auto p-5 space-y-4 cursor-pointer rounded-md transition-colors duration-150 hover:bg-bg-elevated/30 active:bg-bg-elevated/50"
@@ -195,7 +218,7 @@ export function HistoryPage() {
                   <div>
                     <div className="flex items-center gap-1.5 mb-2">
                       <Mic size={12} className="text-text-muted" />
-                      <span className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
+                      <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">
                         Dictated
                       </span>
                     </div>
@@ -211,7 +234,7 @@ export function HistoryPage() {
                     selectedTranscript.finalText && (
                     <div className="flex items-center gap-1.5 mb-2">
                       <Sparkles size={12} className="text-accent" />
-                      <span className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
+                      <span className="text-[11px] font-semibold tracking-wide text-text-muted uppercase">
                         Corrected
                       </span>
                     </div>
@@ -223,57 +246,24 @@ export function HistoryPage() {
             </div>
 
             {/* Metrics footer */}
-            <div className="flex flex-wrap items-center gap-3 border-t border-border-subtle px-4 py-2.5">
-              <div className="flex items-center gap-1.5 text-[11px] font-medium text-text-secondary">
-                {selectedTranscript.engine === "cloud" ? (
-                  <Cloud size={10} className="text-text-muted" />
-                ) : (
-                  <Cpu size={10} className="text-text-muted" />
-                )}
-                {selectedTranscript.modelName}
-              </div>
-              <span className="text-border-subtle text-[11px]">/</span>
-              <div className="flex items-center gap-1.5">
-                <Mic size={11} className="text-text-muted" />
-                <span className="text-[11px] text-text-muted">Rec</span>
-                <span className="text-[11px] font-medium tabular-nums text-text-secondary">
-                  {selectedTranscript.durationSeconds < 60
-                    ? `${selectedTranscript.durationSeconds.toFixed(1)}s`
-                    : `${Math.floor(selectedTranscript.durationSeconds / 60)}:${Math.floor(selectedTranscript.durationSeconds % 60).toString().padStart(2, "0")}`}
-                </span>
-              </div>
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-border-subtle px-4 py-3">
+              <MetricPill
+                icon={selectedTranscript.engine === "cloud" ? <Cloud size={9} /> : <Cpu size={9} />}
+                label=""
+                value={selectedTranscript.modelName}
+              />
+              <MetricPill icon={<Mic size={9} />} label="Rec" value={
+                selectedTranscript.durationSeconds < 60
+                  ? `${selectedTranscript.durationSeconds.toFixed(1)}s`
+                  : `${Math.floor(selectedTranscript.durationSeconds / 60)}:${Math.floor(selectedTranscript.durationSeconds % 60).toString().padStart(2, "0")}`
+              } />
               {selectedTranscript.sttTimeMs != null && (
-                <>
-                  <span className="text-border-subtle text-[11px]">/</span>
-                  <div className="flex items-center gap-1.5">
-                    <Zap size={11} className="text-text-muted" />
-                    <span className="text-[11px] text-text-muted">STT</span>
-                    <span className="text-[11px] font-medium tabular-nums text-text-secondary">
-                      {(selectedTranscript.sttTimeMs / 1000).toFixed(1)}s
-                    </span>
-                  </div>
-                </>
+                <MetricPill icon={<Zap size={9} />} label="STT" value={`${(selectedTranscript.sttTimeMs / 1000).toFixed(1)}s`} />
               )}
               {selectedTranscript.correctionTimeMs != null && selectedTranscript.correctionTimeMs > 0 && (
-                <>
-                  <span className="text-border-subtle text-[11px]">/</span>
-                  <div className="flex items-center gap-1.5">
-                    <Wand2 size={11} className="text-text-muted" />
-                    <span className="text-[11px] text-text-muted">LLM</span>
-                    <span className="text-[11px] font-medium tabular-nums text-text-secondary">
-                      {(selectedTranscript.correctionTimeMs / 1000).toFixed(1)}s
-                    </span>
-                  </div>
-                </>
+                <MetricPill icon={<Wand2 size={9} />} label="LLM" value={`${(selectedTranscript.correctionTimeMs / 1000).toFixed(1)}s`} />
               )}
-              <span className="text-border-subtle text-[11px]">/</span>
-              <div className="flex items-center gap-1.5">
-                <Timer size={11} className="text-text-muted" />
-                <span className="text-[11px] text-text-muted">Total</span>
-                <span className="text-[11px] font-medium tabular-nums text-text-secondary">
-                  {(selectedTranscript.processingTimeMs / 1000).toFixed(1)}s
-                </span>
-              </div>
+              <MetricPill icon={<Timer size={9} />} label="Total" value={`${(selectedTranscript.processingTimeMs / 1000).toFixed(1)}s`} />
             </div>
           </div>
         )}
