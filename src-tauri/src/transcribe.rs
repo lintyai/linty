@@ -368,13 +368,6 @@ pub struct ModelInfo {
 pub fn available_models() -> Vec<ModelInfo> {
     vec![
         ModelInfo {
-            name: "Medium (1.5 GB)".into(),
-            filename: "ggml-medium.bin".into(),
-            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin".into(),
-            size_mb: 1500,
-            description: "High accuracy, great for technical or multilingual speech".into(),
-        },
-        ModelInfo {
             name: "Large Turbo Q5 (574 MB) ★ Recommended".into(),
             filename: "ggml-large-v3-turbo-q5_0.bin".into(),
             url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin".into(),
