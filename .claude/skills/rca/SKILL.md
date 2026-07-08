@@ -382,6 +382,7 @@ EOF
 - Panel may not be visible if created before window server is ready
 
 ### General
+- For heat/overload/slowness reports, FIRST check whether Linty is actually the consumer: `ps -eo pid,pcpu,etime,comm | sort -rk2 | head` — users attribute system-wide symptoms to whichever app they just interacted with. Sample Linty (`sample <pid> 10`) to confirm or rule out before reading code.
 - When user provides a screenshot, analyze what IS visible vs what ISN'T to narrow scope
 - `yarn tauri dev` gives the richest debug output — use it for reproduction
 - Check `src-tauri/Cargo.toml` for feature flags — `local-stt` gates whisper-rs
