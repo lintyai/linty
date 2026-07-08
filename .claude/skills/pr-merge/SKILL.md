@@ -96,6 +96,8 @@ gh pr checks <PR_NUMBER> --repo lintyai/linty
 
 If any checks are still running, wait and re-check (up to 2 retries with 30s between). If checks fail, **block merge** and report which checks failed.
 
+**Note**: This repo runs CI (`Build macOS DMG`) only on pushes to `main` — PR branches report "no checks reported" (gh exits 1). Treat that as pass, rely on the local `yarn build` + `cargo check` validation from `/ship`/`/pr-resolve`, and note it in the pre-merge checklist. After merging, verify the workflow started on `main` (`gh run list --branch main`).
+
 ---
 
 ## Phase 2: Merge Decision
