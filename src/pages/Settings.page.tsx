@@ -37,6 +37,14 @@ const ENGINE_SEGMENTS = [
   { value: "cloud" as SttMode, label: "Cloud", icon: <Cloud size={13} /> },
 ];
 
+const IDLE_UNLOAD_OPTIONS = [
+  { value: 0, label: "Never" },
+  { value: 5, label: "After 5 minutes" },
+  { value: 15, label: "After 15 minutes" },
+  { value: 30, label: "After 30 minutes" },
+  { value: 60, label: "After 1 hour" },
+];
+
 export function SettingsPage() {
   return (
     <div className="flex h-full flex-col">
@@ -177,7 +185,16 @@ function AudioSection() {
 
 /* ═══ Models ═══ */
 function ModelsSection() {
-  const { groqApiKey, sttMode, whisperPrompt, saveGroqApiKey, saveSttMode, saveWhisperPrompt } = useSettings();
+  const {
+    groqApiKey,
+    sttMode,
+    whisperPrompt,
+    saveGroqApiKey,
+    saveSttMode,
+    saveWhisperPrompt,
+    modelIdleUnloadMinutes,
+    saveModelIdleUnloadMinutes,
+  } = useSettings();
   const {
     models,
     downloadedModels,
@@ -299,11 +316,11 @@ function ModelsSection() {
           <SectionCard>
             <SettingRow
               label="Transcription model"
-              description="Whisper Large V3 via Groq"
+              description="Whisper Large V3 Turbo via Groq (translation uses Large V3)"
               right={
                 <span className="flex items-center gap-1.5 text-[12px] text-text-secondary bg-bg-hover rounded-md px-2.5 py-1">
                   <Cloud size={11} />
-                  whisper-large-v3
+                  whisper-large-v3-turbo
                 </span>
               }
             />
@@ -423,6 +440,39 @@ function ModelsSection() {
                       </div>
                     );
                   })}
+                </div>
+              </SectionCard>
+
+              <SectionCard>
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <span className="text-[13px] text-text-primary">Unload model when idle</span>
+                    <span className="text-[12px] text-text-muted leading-snug">
+                      Frees memory after inactivity — reloads automatically on next dictation
+                    </span>
+                  </div>
+                  <div className="shrink-0 ml-4 relative">
+                    <select
+                      value={modelIdleUnloadMinutes}
+                      onChange={(e) => saveModelIdleUnloadMinutes(Number(e.target.value))}
+                      className={cn(
+                        "appearance-none rounded-lg border border-border bg-bg-input pl-3 pr-8 py-[7px]",
+                        "text-[13px] text-text-primary",
+                        "outline-none transition-all duration-150 cursor-pointer",
+                        "focus:border-border-focus focus:bg-bg-elevated",
+                      )}
+                    >
+                      {IDLE_UNLOAD_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      size={13}
+                      className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted"
+                    />
+                  </div>
                 </div>
               </SectionCard>
 

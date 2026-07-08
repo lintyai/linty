@@ -9,6 +9,9 @@ const TICK_INTERVAL_SECS: u64 = 2;
 const MAX_CALLBACKS_PER_SEC: u64 = 1000;
 /// Maximum recording duration before auto-stop (5 minutes).
 const MAX_RECORDING_DURATION_SECS: u64 = 5 * 60;
+/// Re-check fn-key monitor liveness every N ticks (15 × 2s = 30s).
+#[cfg(target_os = "macos")]
+const MONITOR_CHECK_EVERY_TICKS: u64 = 15;
 
 pub fn start(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -22,9 +25,27 @@ pub fn start(app: tauri::AppHandle) {
         };
 
         let mut consecutive_high_ticks: u32 = 0;
+        #[cfg(target_os = "macos")]
+        let mut tick_count: u64 = 0;
 
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(TICK_INTERVAL_SECS)).await;
+
+            // ── Check 0: fn-key monitor liveness ──
+            // If monitor creation failed (e.g., a wake reinit fired before the
+            // window server was ready), the fn key stays dead until the next
+            // wake. Retry from the main thread — NSEvent APIs are main-thread-only.
+            // No-ops instantly while the monitor is active.
+            #[cfg(target_os = "macos")]
+            {
+                tick_count += 1;
+                if tick_count % MONITOR_CHECK_EVERY_TICKS == 0 {
+                    let app_clone = app.clone();
+                    let _ = app.run_on_main_thread(move || {
+                        crate::fnkey::reinit_monitor_if_needed(app_clone);
+                    });
+                }
+            }
 
             // ── Check 1: Callback rate ──
             let count = state
@@ -65,6 +86,39 @@ pub fn start(app: tauri::AppHandle) {
                     );
                     recover(&app, &state, "Recording exceeded maximum duration").await;
                     continue;
+                }
+            }
+
+            // ── Check 3: idle model unload (local STT) ──
+            // The whisper model keeps 0.6–3.1 GB resident. Drop it after the
+            // user-configured idle time (Settings; 0 = never); transcribe_buffer
+            // reloads it transparently on the next dictation. An in-flight
+            // inference is safe — it holds its own Arc clone.
+            #[cfg(feature = "local-stt")]
+            {
+                let unload_secs = state.model_idle_unload_secs.load(Ordering::Relaxed);
+                let last_used = state.whisper_last_used_at.load(Ordering::Relaxed);
+                if unload_secs > 0 && last_used > 0 {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let idle_secs = now.saturating_sub(last_used) / 1000;
+                    if idle_secs > unload_secs {
+                        let unloaded = state
+                            .whisper_ctx
+                            .lock()
+                            .map(|mut guard| guard.take().is_some())
+                            .unwrap_or(false);
+                        state.whisper_last_used_at.store(0, Ordering::Relaxed);
+                        if unloaded {
+                            eprintln!(
+                                "[watchdog] Whisper model idle for {}min — unloaded to free memory",
+                                idle_secs / 60
+                            );
+                            let _ = app.emit("model-idle-unloaded", ());
+                        }
+                    }
                 }
             }
         }

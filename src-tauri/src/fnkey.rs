@@ -9,15 +9,24 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
+/// Truncate the diagnostic log once it exceeds this size — it must never grow unbounded.
+const LOG_MAX_BYTES: u64 = 1024 * 1024;
+
 fn log(msg: &str) {
     eprintln!("{}", msg);
     if let Ok(home) = std::env::var("HOME") {
         let path = format!("{}/linty-fnkey.log", home);
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-        {
+        let rotate = std::fs::metadata(&path)
+            .map(|m| m.len() > LOG_MAX_BYTES)
+            .unwrap_or(false);
+        let mut opts = std::fs::OpenOptions::new();
+        opts.create(true);
+        if rotate {
+            opts.write(true).truncate(true);
+        } else {
+            opts.append(true);
+        }
+        if let Ok(mut f) = opts.open(&path) {
             let _ = writeln!(f, "{}", msg);
         }
     }
@@ -281,20 +290,20 @@ pub fn setup_fn_key_monitor(app: AppHandle) {
     init_monitor(app);
 }
 
-/// Re-initialize the fn key monitor after accessibility is granted.
-/// Called from the frontend after onboarding completes.
+/// Re-initialize the fn key monitor if it isn't running.
+/// Called from the frontend after onboarding completes and periodically by the
+/// watchdog as a self-healing net (must run on the main thread — NSEvent API).
 pub fn reinit_monitor_if_needed(app: AppHandle) {
+    // Fast path — monitor healthy; stay silent (this is polled by the watchdog).
+    if MONITOR_ACTIVE.load(Ordering::SeqCst) {
+        return;
+    }
+
     let ax_trusted = unsafe { AXIsProcessTrusted() };
     log(&format!("[fnkey] reinit: AXIsProcessTrusted = {}", ax_trusted));
 
     if !ax_trusted {
         log("[fnkey] reinit: Still not trusted — cannot start monitor");
-        return;
-    }
-
-    let already_active = MONITOR_ACTIVE.load(Ordering::SeqCst);
-    if already_active {
-        log("[fnkey] reinit: Monitor already active — skipping");
         return;
     }
 
@@ -369,8 +378,23 @@ fn teardown_monitors() {
     MONITOR_ACTIVE.store(false, Ordering::SeqCst);
 }
 
+/// Epoch millis of the last force reinit — debounces the redundant triggers a
+/// single wake produces (system-wake observer, screen-wake observer, frontend).
+static LAST_FORCE_REINIT_MS: AtomicU64 = AtomicU64::new(0);
+const FORCE_REINIT_DEBOUNCE_MS: u64 = 2000;
+
 /// Tear down existing monitors and re-initialize. Called on system wake.
 pub fn force_reinit_monitor(app: AppHandle) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let last = LAST_FORCE_REINIT_MS.load(Ordering::SeqCst);
+    if now.saturating_sub(last) < FORCE_REINIT_DEBOUNCE_MS {
+        log("[fnkey] force_reinit skipped (debounced)");
+        return;
+    }
+    LAST_FORCE_REINIT_MS.store(now, Ordering::SeqCst);
     log("[fnkey] force_reinit — tearing down and re-creating monitors");
     teardown_monitors();
     init_monitor(app);

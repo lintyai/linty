@@ -166,8 +166,16 @@ pub async fn transcribe_cloud(
         .mime_str("audio/wav")
         .map_err(|e| e.to_string())?;
 
+    // Turbo is ~3x cheaper and faster on Groq with comparable accuracy, but it
+    // does not support the translations endpoint — use large-v3 when translating.
+    let model = if translate {
+        "whisper-large-v3"
+    } else {
+        "whisper-large-v3-turbo"
+    };
+
     let mut form = multipart::Form::new()
-        .text("model", "whisper-large-v3")
+        .text("model", model)
         .text("response_format", "json")
         .part("file", file_part);
 

@@ -29,6 +29,46 @@ struct StopResult {
     duration_secs: f64,
 }
 
+fn now_epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Load a whisper model from the app models dir on a blocking thread.
+/// Never call this on the main thread path — the read + Metal init takes seconds.
+#[cfg(feature = "local-stt")]
+async fn load_whisper_ctx(
+    app: &tauri::AppHandle,
+    filename: &str,
+) -> Result<whisper_rs::WhisperContext, String> {
+    use whisper_rs::{WhisperContext, WhisperContextParameters};
+
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("No app data dir: {}", e))?;
+    let model_path = data_dir.join("models").join(filename);
+
+    if !model_path.exists() {
+        eprintln!("[stt] Model file not found: {}", model_path.display());
+        return Err(format!("Model not found: {}", model_path.display()));
+    }
+
+    eprintln!("[stt] Loading model from: {}", model_path.display());
+    let path_str = model_path.to_str().ok_or("Invalid path")?.to_string();
+
+    tokio::task::spawn_blocking(move || {
+        let mut ctx_params = WhisperContextParameters::default();
+        ctx_params.use_gpu(true);
+        WhisperContext::new_with_params(&path_str, ctx_params)
+            .map_err(|e| format!("Failed to load model: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 #[tauri::command]
 fn start_recording(
     app: tauri::AppHandle,
@@ -42,12 +82,12 @@ fn start_recording(
 
     // Record start timestamp and reset callback counter
     {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        let now = now_epoch_ms();
         state.recording_started_at.store(now, Ordering::Relaxed);
         state.audio_callback_count.store(0, Ordering::Relaxed);
+        // Touch the whisper idle clock — never unload the model mid-dictation.
+        #[cfg(feature = "local-stt")]
+        state.whisper_last_used_at.store(now, Ordering::Relaxed);
     }
 
     {
@@ -71,7 +111,7 @@ fn start_recording(
 }
 
 #[tauri::command]
-fn stop_recording(
+async fn stop_recording(
     _app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<StopResult, String> {
@@ -85,7 +125,9 @@ fn stop_recording(
         }
     }
 
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    // Let the audio thread drain in-flight callbacks — async so the main
+    // thread keeps servicing events (sync commands run on the main thread).
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // Zero-copy move: take samples out of audio buffer, place into recording state
     let samples = {
@@ -125,14 +167,35 @@ async fn transcribe_buffer(
 ) -> Result<String, String> {
     #[cfg(feature = "local-stt")]
     {
-        // Clone Arc<WhisperContext> BEFORE taking samples — if the model isn't loaded,
-        // we fail early and leave samples intact for a potential cloud fallback.
+        state
+            .whisper_last_used_at
+            .store(now_epoch_ms(), Ordering::Relaxed);
+
+        // Resolve the Arc<WhisperContext> BEFORE taking samples — if the model
+        // can't be loaded, we fail early and leave samples intact for a retry.
         let ctx = {
             let guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
-            guard
-                .as_ref()
-                .ok_or_else(|| "Whisper model not loaded".to_string())?
-                .clone()
+            guard.as_ref().cloned()
+        };
+        let ctx = match ctx {
+            Some(ctx) => ctx,
+            None => {
+                // Model absent — either never loaded, or unloaded by the
+                // watchdog after idle. Transparently reload the remembered one.
+                let filename = state
+                    .whisper_model_filename
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .clone();
+                let Some(filename) = filename else {
+                    return Err("Whisper model not loaded".to_string());
+                };
+                eprintln!("[cmd] transcribe_buffer: reloading idle-unloaded model {}", filename);
+                let ctx = Arc::new(load_whisper_ctx(&app, &filename).await?);
+                let mut guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
+                *guard = Some(Arc::clone(&ctx));
+                ctx
+            }
         };
 
         // Take samples from recording state (zero-copy move)
@@ -200,7 +263,9 @@ async fn transcribe_buffer_cloud(
     .await
 }
 
-#[tauri::command]
+// CGEvent posting is thread-safe — run off the main thread so the 50ms
+// pre-paste delay never blocks event processing.
+#[tauri::command(async)]
 fn paste_text() -> Result<(), String> {
     paste::simulate_paste()
 }
@@ -256,7 +321,10 @@ fn force_reinit_fn_key_monitor(app: tauri::AppHandle) {
 
 // ── Clipboard preservation commands (macOS: NSPasteboard, other: stub) ──
 
-#[tauri::command]
+// NSPasteboard is thread-safe (XPC-backed; cmd_restore already runs off-main
+// in the data-provider callback). Run these off the main thread — snapshotting
+// a large clipboard (screenshots, files) can take seconds and must not beachball.
+#[tauri::command(async)]
 fn snapshot_clipboard() {
     #[cfg(target_os = "macos")]
     {
@@ -264,7 +332,7 @@ fn snapshot_clipboard() {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn restore_clipboard() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -276,7 +344,7 @@ fn restore_clipboard() -> Result<(), String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn write_transient_text(text: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -389,7 +457,8 @@ async fn request_microphone() -> bool {
 
 // ── Reset all data ──
 
-#[tauri::command]
+// Deletes multi-GB model files — must not run on the main thread.
+#[tauri::command(async)]
 fn reset_all_data(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
     let data_dir = app
         .path()
@@ -426,6 +495,10 @@ fn reset_all_data(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> R
         if let Ok(mut ctx) = state.whisper_ctx.lock() {
             *ctx = None;
         }
+        if let Ok(mut name) = state.whisper_model_filename.lock() {
+            *name = None;
+        }
+        state.whisper_last_used_at.store(0, Ordering::Relaxed);
         eprintln!("[reset] Unloaded whisper model");
     }
     #[cfg(not(feature = "local-stt"))]
@@ -480,7 +553,7 @@ async fn download_model_file(
     Ok(dest.to_string_lossy().to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_model_file(app: tauri::AppHandle, filename: String) -> Result<(), String> {
     let data_dir = app
         .path()
@@ -514,7 +587,7 @@ fn cleanup_deprecated_models(app: &tauri::AppHandle) {
 }
 
 #[tauri::command]
-fn load_whisper_model(
+async fn load_whisper_model(
     #[allow(unused_variables)] app: tauri::AppHandle,
     #[allow(unused_variables)] state: tauri::State<'_, AppState>,
     #[allow(unused_variables)] filename: String,
@@ -522,34 +595,24 @@ fn load_whisper_model(
     eprintln!("[cmd] load_whisper_model: {}", filename);
     #[cfg(feature = "local-stt")]
     {
-        use whisper_rs::{WhisperContext, WhisperContextParameters};
-
-        let data_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| format!("No app data dir: {}", e))?;
-        let model_path = data_dir.join("models").join(&filename);
-
-        if !model_path.exists() {
-            eprintln!("[cmd] Model file not found: {}", model_path.display());
-            return Err(format!("Model not found: {}", model_path.display()));
+        let ctx = Arc::new(load_whisper_ctx(&app, &filename).await?);
+        {
+            let mut guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
+            *guard = Some(Arc::clone(&ctx));
         }
-
-        eprintln!("[cmd] Loading model from: {}", model_path.display());
-        let mut ctx_params = WhisperContextParameters::default();
-        ctx_params.use_gpu(true);
-
-        let ctx = WhisperContext::new_with_params(
-            model_path.to_str().ok_or("Invalid path")?,
-            ctx_params,
-        )
-        .map_err(|e| format!("Failed to load model: {}", e))?;
-
-        let mut guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
-        *guard = Some(Arc::new(ctx));
+        {
+            let mut name_guard = state
+                .whisper_model_filename
+                .lock()
+                .map_err(|e| e.to_string())?;
+            *name_guard = Some(filename.clone());
+        }
+        state
+            .whisper_last_used_at
+            .store(now_epoch_ms(), Ordering::Relaxed);
 
         // Warm up Metal GPU pipeline with a tiny silent inference
-        let ctx_clone = guard.as_ref().unwrap().clone();
+        let ctx_clone = ctx;
         std::thread::spawn(move || {
             eprintln!("[cmd] Warming up Whisper GPU pipeline...");
             let warmup_start = std::time::Instant::now();
@@ -577,6 +640,42 @@ fn load_whisper_model(
     }
     #[cfg(not(feature = "local-stt"))]
     Err("Local STT not available — rebuild with `local-stt` feature".into())
+}
+
+/// Remember which model to use for local STT WITHOUT loading it into memory.
+/// Used when the user's engine preference is Cloud — the model lazy-loads in
+/// transcribe_buffer if they switch to Local.
+#[tauri::command]
+fn register_whisper_model(
+    #[allow(unused_variables)] state: tauri::State<'_, AppState>,
+    #[allow(unused_variables)] filename: String,
+) -> Result<(), String> {
+    #[cfg(feature = "local-stt")]
+    {
+        eprintln!("[cmd] register_whisper_model: {} (lazy, not loaded)", filename);
+        let mut guard = state
+            .whisper_model_filename
+            .lock()
+            .map_err(|e| e.to_string())?;
+        *guard = Some(filename);
+    }
+    Ok(())
+}
+
+/// Configure after how many minutes of inactivity the local model is unloaded
+/// from memory (0 = never). Synced from the Settings UI on load and on change.
+#[tauri::command]
+fn set_model_idle_unload_minutes(
+    #[allow(unused_variables)] state: tauri::State<'_, AppState>,
+    #[allow(unused_variables)] minutes: u64,
+) {
+    #[cfg(feature = "local-stt")]
+    {
+        eprintln!("[cmd] set_model_idle_unload_minutes: {}", minutes);
+        state
+            .model_idle_unload_secs
+            .store(minutes * 60, Ordering::Relaxed);
+    }
 }
 
 #[tauri::command]
@@ -908,6 +1007,8 @@ pub fn run() {
             download_model_file,
             delete_model_file,
             is_local_stt_available,
+            set_model_idle_unload_minutes,
+            register_whisper_model,
             load_whisper_model,
             reset_all_data,
             capsule::show_capsule,
