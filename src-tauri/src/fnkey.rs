@@ -290,6 +290,10 @@ pub fn setup_fn_key_monitor(app: AppHandle) {
     init_monitor(app);
 }
 
+/// Whether the "not trusted" state has already been logged — the watchdog polls
+/// this fn every 30s, so log the state once per transition, not per poll.
+static NOT_TRUSTED_LOGGED: AtomicBool = AtomicBool::new(false);
+
 /// Re-initialize the fn key monitor if it isn't running.
 /// Called from the frontend after onboarding completes and periodically by the
 /// watchdog as a self-healing net (must run on the main thread — NSEvent API).
@@ -300,13 +304,16 @@ pub fn reinit_monitor_if_needed(app: AppHandle) {
     }
 
     let ax_trusted = unsafe { AXIsProcessTrusted() };
-    log(&format!("[fnkey] reinit: AXIsProcessTrusted = {}", ax_trusted));
 
     if !ax_trusted {
-        log("[fnkey] reinit: Still not trusted — cannot start monitor");
+        if !NOT_TRUSTED_LOGGED.swap(true, Ordering::SeqCst) {
+            log("[fnkey] reinit: accessibility not granted — monitor deferred (retrying silently)");
+        }
         return;
     }
 
+    NOT_TRUSTED_LOGGED.store(false, Ordering::SeqCst);
+    log("[fnkey] reinit: AXIsProcessTrusted = true");
     init_monitor(app);
 }
 

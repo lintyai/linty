@@ -39,6 +39,10 @@ pub struct AppState {
     /// Configurable from Settings; synced via set_model_idle_unload_minutes.
     #[cfg(feature = "local-stt")]
     pub model_idle_unload_secs: AtomicU64,
+    /// Serializes model loads — prevents a lazy reload racing an explicit load
+    /// and transiently holding two models in memory. tokio Mutex: held across await.
+    #[cfg(feature = "local-stt")]
+    pub whisper_load_lock: tokio::sync::Mutex<()>,
     /// Incremented by audio callback, read+reset by watchdog to detect runaway callbacks.
     pub audio_callback_count: Arc<AtomicU64>,
     /// Epoch millis when recording started, 0 when idle. Used by watchdog for max-duration check.
@@ -60,6 +64,8 @@ impl AppState {
             whisper_last_used_at: AtomicU64::new(0),
             #[cfg(feature = "local-stt")]
             model_idle_unload_secs: AtomicU64::new(DEFAULT_MODEL_IDLE_UNLOAD_SECS),
+            #[cfg(feature = "local-stt")]
+            whisper_load_lock: tokio::sync::Mutex::new(()),
             audio_callback_count: Arc::new(AtomicU64::new(0)),
             recording_started_at: AtomicU64::new(0),
         }

@@ -182,19 +182,32 @@ async fn transcribe_buffer(
             None => {
                 // Model absent — either never loaded, or unloaded by the
                 // watchdog after idle. Transparently reload the remembered one.
-                let filename = state
-                    .whisper_model_filename
+                // Serialize with other loads, then re-check — a concurrent
+                // load may have finished while we waited for the lock.
+                let _load_guard = state.whisper_load_lock.lock().await;
+                let already_loaded = state
+                    .whisper_ctx
                     .lock()
                     .map_err(|e| e.to_string())?
-                    .clone();
-                let Some(filename) = filename else {
-                    return Err("Whisper model not loaded".to_string());
-                };
-                eprintln!("[cmd] transcribe_buffer: reloading idle-unloaded model {}", filename);
-                let ctx = Arc::new(load_whisper_ctx(&app, &filename).await?);
-                let mut guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
-                *guard = Some(Arc::clone(&ctx));
-                ctx
+                    .as_ref()
+                    .cloned();
+                if let Some(ctx) = already_loaded {
+                    ctx
+                } else {
+                    let filename = state
+                        .whisper_model_filename
+                        .lock()
+                        .map_err(|e| e.to_string())?
+                        .clone();
+                    let Some(filename) = filename else {
+                        return Err("Whisper model not loaded".to_string());
+                    };
+                    eprintln!("[cmd] transcribe_buffer: reloading idle-unloaded model {}", filename);
+                    let ctx = Arc::new(load_whisper_ctx(&app, &filename).await?);
+                    let mut guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
+                    *guard = Some(Arc::clone(&ctx));
+                    ctx
+                }
             }
         };
 
@@ -595,6 +608,8 @@ async fn load_whisper_model(
     eprintln!("[cmd] load_whisper_model: {}", filename);
     #[cfg(feature = "local-stt")]
     {
+        // Serialize with transcribe_buffer's lazy reload — never two loads at once
+        let _load_guard = state.whisper_load_lock.lock().await;
         let ctx = Arc::new(load_whisper_ctx(&app, &filename).await?);
         {
             let mut guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
