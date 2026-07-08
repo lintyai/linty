@@ -17,6 +17,8 @@ export interface SettingsSlice {
   translateToEnglish: boolean;
   loadedModelFilename: string | null;
   selectedModelFilename: string | null;
+  /** Minutes of inactivity before the local model is unloaded (0 = never). */
+  modelIdleUnloadMinutes: number;
   settingsLoaded: boolean;
   setLoadedModelFilename: (filename: string | null) => void;
   setSelectedModelFilename: (filename: string | null) => void;
@@ -31,8 +33,11 @@ export interface SettingsSlice {
   setOnboardingComplete: (complete: boolean) => void;
   setTranscriptionLanguage: (language: string) => void;
   setTranslateToEnglish: (translate: boolean) => void;
+  setModelIdleUnloadMinutes: (minutes: number) => void;
   setSettingsLoaded: (loaded: boolean) => void;
 }
+
+export const DEFAULT_MODEL_IDLE_UNLOAD_MINUTES = 15;
 
 export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   groqApiKey: "",
@@ -48,6 +53,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   translateToEnglish: false,
   loadedModelFilename: null,
   selectedModelFilename: null,
+  modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
   settingsLoaded: false,
   setLoadedModelFilename: (loadedModelFilename) => set({ loadedModelFilename }),
   setSelectedModelFilename: (selectedModelFilename) => set({ selectedModelFilename }),
@@ -63,5 +69,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   setOnboardingComplete: (onboardingComplete) => set({ onboardingComplete }),
   setTranscriptionLanguage: (transcriptionLanguage) => set({ transcriptionLanguage }),
   setTranslateToEnglish: (translateToEnglish) => set({ translateToEnglish }),
+  setModelIdleUnloadMinutes: (modelIdleUnloadMinutes) => set({ modelIdleUnloadMinutes }),
   setSettingsLoaded: (settingsLoaded) => set({ settingsLoaded }),
 });

@@ -330,7 +330,9 @@ EOF
 | `src/services/` | Permissions, paste, correction services |
 | `src/components/` | Capsule, sidebar, waveform components |
 | `src-tauri/` | Rust backend |
-| `src-tauri/src/lib.rs` | App setup, state initialization |
+| `src-tauri/src/lib.rs` | App setup, Tauri command definitions (sync commands run on the MAIN thread — keep them light) |
+| `src-tauri/src/state.rs` | AppState struct (recording, audio buffer, whisper ctx, watchdog counters) |
+| `src-tauri/src/tray.rs` | Tray icon menu, engine selector, status tooltip |
 | `src-tauri/src/audio.rs` | cpal audio capture (16kHz mono) |
 | `src-tauri/src/transcribe.rs` | whisper-rs local + Groq cloud STT |
 | `src-tauri/src/fnkey.rs` | NSEvent fn key monitor |

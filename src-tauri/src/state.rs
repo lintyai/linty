@@ -1,6 +1,10 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::{mpsc, Arc, Mutex};
 
+/// Default idle time before the local whisper model is unloaded (15 minutes).
+#[cfg(feature = "local-stt")]
+pub const DEFAULT_MODEL_IDLE_UNLOAD_SECS: u64 = 15 * 60;
+
 #[derive(Default)]
 pub struct RecordingState {
     pub is_recording: bool,
@@ -23,6 +27,22 @@ pub struct AppState {
     /// Wrapped in Arc so we can clone it out of the mutex before blocking inference.
     #[cfg(feature = "local-stt")]
     pub whisper_ctx: Mutex<Option<Arc<whisper_rs::WhisperContext>>>,
+    /// Filename of the currently/last loaded model — lets transcribe_buffer
+    /// transparently reload after the watchdog's idle unload.
+    #[cfg(feature = "local-stt")]
+    pub whisper_model_filename: Mutex<Option<String>>,
+    /// Epoch millis of last whisper use (load/recording/transcription), 0 = never.
+    /// Read by the watchdog to unload the model after idle.
+    #[cfg(feature = "local-stt")]
+    pub whisper_last_used_at: AtomicU64,
+    /// Seconds of inactivity after which the model is unloaded (0 = never).
+    /// Configurable from Settings; synced via set_model_idle_unload_minutes.
+    #[cfg(feature = "local-stt")]
+    pub model_idle_unload_secs: AtomicU64,
+    /// Serializes model loads — prevents a lazy reload racing an explicit load
+    /// and transiently holding two models in memory. tokio Mutex: held across await.
+    #[cfg(feature = "local-stt")]
+    pub whisper_load_lock: tokio::sync::Mutex<()>,
     /// Incremented by audio callback, read+reset by watchdog to detect runaway callbacks.
     pub audio_callback_count: Arc<AtomicU64>,
     /// Epoch millis when recording started, 0 when idle. Used by watchdog for max-duration check.
@@ -38,6 +58,14 @@ impl AppState {
             audio_tx: Mutex::new(None),
             #[cfg(feature = "local-stt")]
             whisper_ctx: Mutex::new(None),
+            #[cfg(feature = "local-stt")]
+            whisper_model_filename: Mutex::new(None),
+            #[cfg(feature = "local-stt")]
+            whisper_last_used_at: AtomicU64::new(0),
+            #[cfg(feature = "local-stt")]
+            model_idle_unload_secs: AtomicU64::new(DEFAULT_MODEL_IDLE_UNLOAD_SECS),
+            #[cfg(feature = "local-stt")]
+            whisper_load_lock: tokio::sync::Mutex::new(()),
             audio_callback_count: Arc::new(AtomicU64::new(0)),
             recording_started_at: AtomicU64::new(0),
         }

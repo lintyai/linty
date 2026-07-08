@@ -85,16 +85,24 @@ export function useTranscription() {
 
       processingStartRef.current = Date.now();
 
-      // Determine effective STT mode
-      let effectiveMode = sttMode;
-      if (sttMode === "local") {
+      // Always honor the user's chosen engine — never silently switch modes.
+      const effectiveMode = sttMode;
+      if (effectiveMode === "local") {
+        let localAvailable = false;
         try {
-          const localAvailable = await invoke<boolean>("is_local_stt_available");
-          if (!localAvailable) {
-            effectiveMode = "cloud";
-          }
+          localAvailable = await invoke<boolean>("is_local_stt_available");
         } catch {
-          effectiveMode = "cloud";
+          localAvailable = false;
+        }
+        if (!localAvailable) {
+          const msg = "Local transcription isn't available in this build. Switch engine to Cloud in Settings.";
+          setError(msg);
+          emitCapsule("error", undefined, msg);
+          invoke("play_capsule_sound", { sound: "error" }).catch(() => {});
+          hideTimerRef.current = setTimeout(() => {
+            invoke("hide_capsule").catch(() => {});
+          }, 5000);
+          return;
         }
       }
 
@@ -114,26 +122,13 @@ export function useTranscription() {
 
         const sttStart = Date.now();
         if (effectiveMode === "local") {
-          try {
-            transcript = await invoke<string>("transcribe_buffer", {
-              prompt: whisperPrompt || null,
-              language: langParam,
-              translate: translateToEnglish,
-            });
-          } catch (localErr) {
-            const errMsg = String(localErr);
-            if (errMsg.includes("not loaded") && groqApiKey) {
-              transcript = await invoke<string>("transcribe_buffer_cloud", {
-                apiKey: groqApiKey,
-                prompt: whisperPrompt || null,
-                language: langParam,
-                translate: translateToEnglish,
-              });
-              effectiveMode = "cloud";
-            } else {
-              throw localErr;
-            }
-          }
+          // No cloud fallback — the user chose local; surface errors instead
+          // of silently sending audio to the cloud.
+          transcript = await invoke<string>("transcribe_buffer", {
+            prompt: whisperPrompt || null,
+            language: langParam,
+            translate: translateToEnglish,
+          });
         } else {
           transcript = await invoke<string>("transcribe_buffer_cloud", {
             apiKey: groqApiKey,
@@ -208,7 +203,9 @@ export function useTranscription() {
           engine: effectiveMode,
           modelName:
             effectiveMode === "cloud"
-              ? "Groq Whisper Large V3"
+              ? translateToEnglish
+                ? "Groq Whisper Large V3"
+                : "Groq Whisper Large V3 Turbo"
               : (loadedModelFilename && MODEL_LABELS[loadedModelFilename]) || "Local",
           durationSeconds: recordingDuration,
           processingTimeMs,
@@ -253,7 +250,10 @@ export function useTranscription() {
         if (clipboardDirty) {
           invoke("restore_clipboard").catch(() => {});
         }
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const rawMsg = err instanceof Error ? err.message : String(err);
+        const errMsg = rawMsg.includes("not loaded")
+          ? "No local model loaded — download a model in Settings, or switch engine to Cloud."
+          : rawMsg;
         setError(errMsg);
         emitCapsule("error", undefined, errMsg);
         invoke("play_capsule_sound", { sound: "error" }).catch(() => {});

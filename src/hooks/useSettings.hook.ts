@@ -1,6 +1,8 @@
 import { useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { load } from "@tauri-apps/plugin-store";
 import { useAppStore } from "@/store/app.store";
+import { DEFAULT_MODEL_IDLE_UNLOAD_MINUTES } from "@/store/slices/settings.slice";
 import type { SttMode, ThemePreference } from "@/store/slices/settings.slice";
 
 const STORE_PATH = "linty-settings.json";
@@ -19,6 +21,7 @@ async function getStore() {
         correctionPrompt: "",
         transcriptionLanguage: "auto",
         translateToEnglish: false,
+        modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
       },
       autoSave: true,
     });
@@ -47,6 +50,8 @@ export function useSettings() {
     setTranscriptionLanguage,
     setTranslateToEnglish,
     setSelectedModelFilename,
+    modelIdleUnloadMinutes,
+    setModelIdleUnloadMinutes,
     settingsLoaded,
     setSettingsLoaded,
   } = useAppStore();
@@ -66,6 +71,7 @@ export function useSettings() {
         const savedLanguage = await store.get<string>("transcriptionLanguage");
         const savedTranslate = await store.get<boolean>("translateToEnglish");
         const savedSelectedModel = await store.get<string>("selectedModelFilename");
+        const savedIdleUnload = await store.get<number>("modelIdleUnloadMinutes");
 
         if (key) setGroqApiKey(key);
         if (mode) setSttMode(mode);
@@ -80,13 +86,19 @@ export function useSettings() {
           setTranslateToEnglish(savedTranslate);
         if (savedSelectedModel) setSelectedModelFilename(savedSelectedModel);
 
+        // 0 is a valid value (never unload) — only fall back when unset
+        const idleUnload = savedIdleUnload ?? DEFAULT_MODEL_IDLE_UNLOAD_MINUTES;
+        setModelIdleUnloadMinutes(idleUnload);
+        // Sync the persisted preference into the Rust watchdog
+        invoke("set_model_idle_unload_minutes", { minutes: idleUnload }).catch(() => {});
+
         setSettingsLoaded(true);
       } catch (err) {
         console.error("Failed to load settings:", err);
         setSettingsLoaded(true);
       }
     })();
-  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setTranslateToEnglish, setSelectedModelFilename, setSettingsLoaded]);
+  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setTranslateToEnglish, setSelectedModelFilename, setModelIdleUnloadMinutes, setSettingsLoaded]);
 
   const saveGroqApiKey = useCallback(
     async (key: string) => {
@@ -178,6 +190,16 @@ export function useSettings() {
     [setSelectedModelFilename],
   );
 
+  const saveModelIdleUnloadMinutes = useCallback(
+    async (minutes: number) => {
+      setModelIdleUnloadMinutes(minutes);
+      invoke("set_model_idle_unload_minutes", { minutes }).catch(() => {});
+      const store = await getStore();
+      await store.set("modelIdleUnloadMinutes", minutes);
+    },
+    [setModelIdleUnloadMinutes],
+  );
+
   return {
     groqApiKey,
     sttMode,
@@ -198,6 +220,8 @@ export function useSettings() {
     saveTranscriptionLanguage,
     saveTranslateToEnglish,
     saveSelectedModelFilename,
+    modelIdleUnloadMinutes,
+    saveModelIdleUnloadMinutes,
     settingsLoaded,
   };
 }
