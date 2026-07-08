@@ -132,7 +132,7 @@ type(scope): short description
 
 Longer description if needed.
 
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -192,7 +192,7 @@ Explain why the issue occurred (omit this section for features)
 ---
 *Shipped by [`/ship`](https://github.com/lintyai/linty/blob/main/.claude/skills/ship/SKILL.md)*
 
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 EOF
 )"
 ```
