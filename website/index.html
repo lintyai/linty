@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Linty — You talk. It types. Voice to text for macOS</title>
+  <meta name="description" content="Hold the fn key and say it. Release, and your words are already pasted where your cursor is — in any app, transcribed privately on your Mac." />
+  <meta property="og:title" content="Linty — You talk. It types." />
+  <meta property="og:description" content="Voice to text for macOS. Hold fn, speak, release — your words land at your cursor. Private, on-device, free." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://linty.ai" />
+  <meta name="theme-color" content="#fafaf7" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230C0A09'/%3E%3Crect x='14' y='7' width='4' height='18' rx='1' fill='%23FFA02E'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://api.fontshare.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-display@500,600,700&f[]=general-sans@400,500,600&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <div class="cursor" aria-hidden="true">
+    <div class="cursor-tip"></div>
+  </div>
+
+  <header class="nav" id="top">
+    <div class="nav-inner">
+      <a class="wordmark" href="#top" aria-label="Linty home">linty<span class="wordmark-caret"></span></a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#privacy">Privacy</a>
+        <a href="https://github.com/lintyai/linty" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn btn-small" href="https://github.com/lintyai/linty/releases/latest" target="_blank" rel="noopener">Download</a>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ============ HERO ============ -->
+    <section class="hero">
+
+      <div class="container hero-inner">
+        <p class="eyebrow" data-reveal><span class="rec-dot" aria-hidden="true"></span>Voice to text for macOS</p>
+
+        <h1 class="display" data-caret-zone>
+          <span class="display-line" data-reveal style="--i:1">You talk.</span>
+          <span class="display-line display-line--accent">
+            <span id="typed-line" data-typed="It types.">It types.</span><span class="caret" aria-hidden="true"></span>
+          </span>
+        </h1>
+
+        <p class="hero-sub" data-reveal style="--i:2">
+          Hold the <kbd class="kbd-inline">fn</kbd> key and say it. Release, and your words are
+          already pasted where your cursor is — in any app, transcribed on your Mac.
+        </p>
+
+        <div class="hero-cta" data-reveal style="--i:3">
+          <a class="btn btn-primary" data-magnetic href="https://github.com/lintyai/linty/releases/latest" target="_blank" rel="noopener">
+            <svg width="17" height="20" viewBox="0 0 17 20" fill="currentColor" aria-hidden="true"><path d="M14.13 10.6c.02 2.68 2.35 3.57 2.37 3.58-.02.06-.37 1.27-1.22 2.52-.74 1.08-1.5 2.15-2.7 2.17-1.18.02-1.56-.7-2.91-.7-1.35 0-1.77.68-2.89.72-1.16.05-2.05-1.16-2.79-2.24C2.47 14.45 1.3 10.4 2.86 7.71c.77-1.34 2.15-2.19 3.65-2.21 1.14-.02 2.21.77 2.91.77.69 0 2-.95 3.38-.81.57.02 2.19.23 3.22 1.75-.08.05-1.92 1.12-1.89 3.39ZM11.9 3.99c.61-.74 1.02-1.77.91-2.79-.88.04-1.94.58-2.57 1.32-.57.65-1.06 1.7-.93 2.7.98.08 1.98-.5 2.59-1.23Z"/></svg>
+            Download for macOS
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/lintyai/linty" target="_blank" rel="noopener">View source</a>
+        </div>
+        <p class="hero-fine" data-reveal style="--i:4">Free &amp; open source · MIT · macOS 13+</p>
+
+        <!-- Interactive demo -->
+        <div class="demo" data-reveal style="--i:5">
+          <button class="keycap" id="demo-key" type="button" aria-pressed="false" aria-describedby="demo-hint">
+            <span class="keycap-glyph" aria-hidden="true">fn</span>
+            <svg class="keycap-globe" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
+          </button>
+          <div class="demo-field" id="demo-field">
+            <div class="demo-wave" id="demo-wave" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <p class="demo-text" id="demo-text" aria-live="polite"><span class="demo-placeholder" id="demo-hint">Hold the key — or your space bar — and speak</span></p>
+          </div>
+        </div>
+        <p class="demo-note" data-reveal style="--i:6">Live demo — your browser's speech engine, your mic. The app itself runs Whisper on your Mac.</p>
+      </div>
+
+      <div class="scroll-cue" aria-hidden="true"><span></span></div>
+    </section>
+
+    <!-- ============ MARQUEE ============ -->
+    <section class="marquee" aria-label="Works in every app">
+      <div class="marquee-track" id="marquee-track">
+        <div class="marquee-group">
+          <span>Works in Slack</span><em>✦</em><span>Mail</span><em>✦</em><span>Notes</span><em>✦</em><span>VS Code</span><em>✦</em><span>Safari</span><em>✦</em><span>Notion</span><em>✦</em><span>Figma</span><em>✦</em><span>Terminal</span><em>✦</em><span>Messages</span><em>✦</em><span>Chrome</span><em>✦</em><span>Obsidian</span><em>✦</em><span>Anywhere you can type</span><em>✦</em>
+        </div>
+        <div class="marquee-group" aria-hidden="true">
+          <span>Works in Slack</span><em>✦</em><span>Mail</span><em>✦</em><span>Notes</span><em>✦</em><span>VS Code</span><em>✦</em><span>Safari</span><em>✦</em><span>Notion</span><em>✦</em><span>Figma</span><em>✦</em><span>Terminal</span><em>✦</em><span>Messages</span><em>✦</em><span>Chrome</span><em>✦</em><span>Obsidian</span><em>✦</em><span>Anywhere you can type</span><em>✦</em>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HOW IT WORKS ============ -->
+    <section class="section" id="how">
+      <div class="container">
+        <p class="eyebrow" data-reveal>How it works</p>
+        <h2 class="section-title" data-reveal data-caret-zone>One key. Three beats.</h2>
+
+        <ol class="steps">
+          <li class="step" data-reveal>
+            <span class="step-num">01</span>
+            <div class="step-body">
+              <h3 class="step-title">Hold <kbd class="kbd-inline kbd-inline--lg">fn</kbd></h3>
+              <p>Recording starts the instant you press. No window to open, no app to switch to — a small capsule appears so you know it's listening.</p>
+            </div>
+          </li>
+          <li class="step" data-reveal>
+            <span class="step-num">02</span>
+            <div class="step-body">
+              <h3 class="step-title">Speak</h3>
+              <p>Say it the way you'd say it to a person. Ramble, pause, restart mid-sentence — Whisper sorts it out.</p>
+            </div>
+          </li>
+          <li class="step" data-reveal>
+            <span class="step-num">03</span>
+            <div class="step-body">
+              <h3 class="step-title">Release</h3>
+              <p>Your words are transcribed and pasted at your cursor before you've reached for the keyboard. Your clipboard is restored like nothing happened.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ============ STATS ============ -->
+    <section class="section stats-section">
+      <div class="container">
+        <div class="stats" data-reveal>
+          <div class="stat">
+            <span class="stat-num"><span data-count="130">0</span></span>
+            <span class="stat-label">words per minute — you, speaking</span>
+          </div>
+          <div class="stat">
+            <span class="stat-num stat-num--dim"><span data-count="40">0</span></span>
+            <span class="stat-label">words per minute — you, typing</span>
+          </div>
+          <div class="stat">
+            <span class="stat-num stat-num--accent">3×</span>
+            <span class="stat-label">faster, every message you send</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FEATURES ============ -->
+    <section class="section" id="features">
+      <div class="container">
+        <p class="eyebrow" data-reveal>Features</p>
+        <h2 class="section-title" data-reveal data-caret-zone>Built to disappear<br />into your Mac.</h2>
+
+        <div class="bento">
+          <article class="card card--wide" data-reveal>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-3.6 8-9V5.4L12 2 4 5.4V13c0 5.4 8 9 8 9Z"/></svg>
+            <h3>Private by default</h3>
+            <p>Transcription runs on your Mac with local Whisper models on the Metal GPU. Your voice is never uploaded, never stored where you can't see it. Airplane mode is a supported configuration.</p>
+          </article>
+          <article class="card" data-reveal>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>
+            <h3>Or go fast with cloud</h3>
+            <p>Flip one setting to transcribe with Groq when you want long recordings back in under a second.</p>
+          </article>
+          <article class="card" data-reveal>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 22h-1a4 4 0 0 1-4-4V6a4 4 0 0 1 4-4h1M7 22h1a4 4 0 0 0 4-4V6a4 4 0 0 0-4-4H7"/></svg>
+            <h3>Pastes at your cursor</h3>
+            <p>No copy-paste dance. Text lands exactly where you were typing, and your clipboard is snapshotted and restored.</p>
+          </article>
+          <article class="card" data-reveal>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <h3>Works in every app</h3>
+            <p>Slack, Mail, your editor, that CRM you hate. If a cursor blinks in it, Linty types in it.</p>
+          </article>
+          <article class="card" data-reveal>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 8h20"/><circle cx="17" cy="6" r=".5" fill="currentColor"/></svg>
+            <h3>Lives in the menu bar</h3>
+            <p>No dock icon, no clutter. A capsule fades in while you speak and gets out of the way when you stop.</p>
+          </article>
+          <article class="card card--full" data-reveal>
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>
+            <h3>Everything you said, kept</h3>
+            <p>Every transcription is saved to a local history — search it, copy it again, or clear it. It's your data, on your disk, in plain JSON.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PRIVACY ============ -->
+    <section class="section privacy" id="privacy">
+      <div class="container">
+        <h2 class="privacy-statement" data-reveal data-caret-zone>
+          Your voice <em>never</em> leaves your&nbsp;Mac.
+        </h2>
+        <p class="privacy-sub" data-reveal>
+          Local Whisper runs on Apple Silicon. No account, no telemetry on your speech, no audio on
+          anyone's server — unless you deliberately choose cloud mode. The code is open;
+          <a href="https://github.com/lintyai/linty" target="_blank" rel="noopener">read it yourself</a>.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ FINAL CTA ============ -->
+    <section class="section final">
+      <div class="container">
+        <h2 class="display display--final" data-reveal data-caret-zone>Stop typing<br />everything.</h2>
+        <div class="hero-cta final-cta" data-reveal>
+          <a class="btn btn-primary" data-magnetic href="https://github.com/lintyai/linty/releases/latest" target="_blank" rel="noopener">
+            <svg width="17" height="20" viewBox="0 0 17 20" fill="currentColor" aria-hidden="true"><path d="M14.13 10.6c.02 2.68 2.35 3.57 2.37 3.58-.02.06-.37 1.27-1.22 2.52-.74 1.08-1.5 2.15-2.7 2.17-1.18.02-1.56-.7-2.91-.7-1.35 0-1.77.68-2.89.72-1.16.05-2.05-1.16-2.79-2.24C2.47 14.45 1.3 10.4 2.86 7.71c.77-1.34 2.15-2.19 3.65-2.21 1.14-.02 2.21.77 2.91.77.69 0 2-.95 3.38-.81.57.02 2.19.23 3.22 1.75-.08.05-1.92 1.12-1.89 3.39ZM11.9 3.99c.61-.74 1.02-1.77.91-2.79-.88.04-1.94.58-2.57 1.32-.57.65-1.06 1.7-.93 2.7.98.08 1.98-.5 2.59-1.23Z"/></svg>
+            Download for macOS
+          </a>
+        </div>
+        <p class="hero-fine" data-reveal>Free forever for local transcription · macOS 13+</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <a class="wordmark wordmark--footer" href="#top">linty<span class="wordmark-caret"></span></a>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="https://github.com/lintyai/linty" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/lintyai/linty/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/lintyai/linty/issues" target="_blank" rel="noopener">Issues</a>
+        <a href="https://github.com/lintyai/linty/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+      </nav>
+      <p class="footer-fine">© 2026 Linty AI</p>
+    </div>
+  </footer>
+
+  <script src="main.js" defer></script>
+</body>
+</html>
