@@ -276,11 +276,12 @@ async fn transcribe_buffer_cloud(
     .await
 }
 
-// CGEvent posting is thread-safe — run off the main thread so the 50ms
-// pre-paste delay never blocks event processing.
+// Stays async so the 50ms pre-paste delay never blocks event processing;
+// the key events themselves hop back to the main thread inside
+// simulate_paste (TIS keycode lookup is main-thread-only on macOS 26).
 #[tauri::command(async)]
-fn paste_text() -> Result<(), String> {
-    paste::simulate_paste()
+fn paste_text(app: tauri::AppHandle) -> Result<(), String> {
+    paste::simulate_paste(&app)
 }
 
 #[tauri::command]

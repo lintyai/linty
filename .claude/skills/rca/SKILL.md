@@ -166,7 +166,7 @@ cd /Users/hari/2025/mp/linty/src-tauri && cargo check --features local-stt
 - `src-tauri/src/transcribe.rs` — whisper-rs local + Groq cloud
 - `src-tauri/src/fnkey.rs` — NSEvent fn key monitor
 - `src-tauri/src/clipboard.rs` — NSPasteboard snapshot/restore
-- `src-tauri/src/paste.rs` — CGEvent Cmd+V simulation
+- `src-tauri/src/paste.rs` — Cmd+V simulation via enigo (Unicode keys do a TIS layout lookup — main-thread-only on macOS 26)
 - `src-tauri/src/capsule.rs` — overlay panel
 - `src-tauri/src/permissions.rs` — AVFoundation mic FFI
 - `src-tauri/src/watchdog.rs` — runaway recording recovery
@@ -338,7 +338,7 @@ EOF
 | `src-tauri/src/fnkey.rs` | NSEvent fn key monitor |
 | `src-tauri/src/permissions.rs` | AVFoundation mic FFI |
 | `src-tauri/src/clipboard.rs` | NSPasteboard snapshot/restore |
-| `src-tauri/src/paste.rs` | CGEvent Cmd+V simulation |
+| `src-tauri/src/paste.rs` | Cmd+V simulation via enigo (`Key::Unicode` hits TIS — main-thread-only) |
 | `src-tauri/src/capsule.rs` | Overlay panel (NSPanel) |
 | `src-tauri/src/watchdog.rs` | Runaway recording recovery |
 | `src-tauri/Entitlements.plist` | Hardened Runtime entitlements |
@@ -376,6 +376,7 @@ EOF
 - Accessibility permission required for CGEvent paste simulation
 - Race condition: clipboard restore may happen before paste completes
 - Some apps intercept Cmd+V differently — check focused app
+- SIGTRAP in `_dispatch_assert_queue_fail` → `TSMGetInputSourceProperty` on a tokio worker = TIS layout lookup off the main thread (enigo `Key::Unicode`); macOS 26 asserts main-queue (issue #26)
 
 ### Capsule Overlay
 - NSPanel z-order issues after system sleep/wake
