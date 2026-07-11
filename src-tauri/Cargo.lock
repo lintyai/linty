@@ -2304,7 +2304,7 @@ dependencies = [
 
 [[package]]
 name = "linty"
-version = "0.0.19"
+version = "0.0.20"
 dependencies = [
  "block2 0.5.1",
  "cocoa",
