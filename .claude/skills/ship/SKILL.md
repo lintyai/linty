@@ -96,6 +96,8 @@ cd /Users/hari/2025/mp/linty/src-tauri && cargo check --features local-stt
 
 **If build/typecheck fails**: Fix the issues before proceeding. Do NOT ship broken code.
 
+**Website-only diffs**: If the diff only touches `website/` (static site, no build step), skip the Rust check and run `node --check website/main.js` instead of relying solely on `yarn build`.
+
 ---
 
 ### Step 4: Create Branch (if on main)

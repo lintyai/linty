@@ -112,8 +112,8 @@
   const key = document.getElementById('demo-key');
   const field = document.getElementById('demo-field');
   const text = document.getElementById('demo-text');
-  const FALLBACK_SENTENCE = 'This sentence was spoken, not typed.';
-  const HINT = '<span class="demo-placeholder" id="demo-hint">Hold the key — or your space bar — and speak</span>';
+  const FALLBACK_SENTENCE = 'This sentence was dictated rather than typed.';
+  const HINT = '<span class="demo-placeholder" id="demo-hint">Press and hold the key — or the space bar — and speak</span>';
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let srUnavailable = !SR || !isSecureContext;
   let recognition = null;
@@ -194,7 +194,7 @@
       if (heard) return showResult(heard);
       if (wasTap) return setPlaceholder('Press and hold to speak');
       if (srUnavailable) return showResult(FALLBACK_SENTENCE);
-      setPlaceholder("Didn't catch that — hold and try again");
+      setPlaceholder('No speech detected — please hold the key and try again');
     };
     r.onend = settle;
     try {
