@@ -2,7 +2,7 @@ import { useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { load } from "@tauri-apps/plugin-store";
 import { useAppStore } from "@/store/app.store";
-import { DEFAULT_MODEL_IDLE_UNLOAD_MINUTES } from "@/store/slices/settings.slice";
+import { DEFAULT_MODEL_IDLE_UNLOAD_MINUTES, DEFAULT_TRIGGER_KEY } from "@/store/slices/settings.slice";
 import type { SttMode, ThemePreference } from "@/store/slices/settings.slice";
 
 const STORE_PATH = "linty-settings.json";
@@ -22,6 +22,7 @@ async function getStore() {
         transcriptionLanguage: "auto",
         translateToEnglish: false,
         modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
+        triggerKey: DEFAULT_TRIGGER_KEY,
       },
       autoSave: true,
     });
@@ -52,6 +53,8 @@ export function useSettings() {
     setSelectedModelFilename,
     modelIdleUnloadMinutes,
     setModelIdleUnloadMinutes,
+    triggerKey,
+    setTriggerKey,
     settingsLoaded,
     setSettingsLoaded,
   } = useAppStore();
@@ -72,6 +75,7 @@ export function useSettings() {
         const savedTranslate = await store.get<boolean>("translateToEnglish");
         const savedSelectedModel = await store.get<string>("selectedModelFilename");
         const savedIdleUnload = await store.get<number>("modelIdleUnloadMinutes");
+        const savedTriggerKey = await store.get<string>("triggerKey");
 
         if (key) setGroqApiKey(key);
         if (mode) setSttMode(mode);
@@ -85,6 +89,7 @@ export function useSettings() {
         if (savedTranslate !== null && savedTranslate !== undefined)
           setTranslateToEnglish(savedTranslate);
         if (savedSelectedModel) setSelectedModelFilename(savedSelectedModel);
+        if (savedTriggerKey) setTriggerKey(savedTriggerKey);
 
         // 0 is a valid value (never unload) — only fall back when unset
         const idleUnload = savedIdleUnload ?? DEFAULT_MODEL_IDLE_UNLOAD_MINUTES;
@@ -98,7 +103,7 @@ export function useSettings() {
         setSettingsLoaded(true);
       }
     })();
-  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setTranslateToEnglish, setSelectedModelFilename, setModelIdleUnloadMinutes, setSettingsLoaded]);
+  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setTranslateToEnglish, setSelectedModelFilename, setModelIdleUnloadMinutes, setTriggerKey, setSettingsLoaded]);
 
   const saveGroqApiKey = useCallback(
     async (key: string) => {
@@ -190,6 +195,15 @@ export function useSettings() {
     [setSelectedModelFilename],
   );
 
+  const saveTriggerKey = useCallback(
+    async (key: string) => {
+      setTriggerKey(key);
+      const store = await getStore();
+      await store.set("triggerKey", key);
+    },
+    [setTriggerKey],
+  );
+
   const saveModelIdleUnloadMinutes = useCallback(
     async (minutes: number) => {
       setModelIdleUnloadMinutes(minutes);
@@ -222,6 +236,8 @@ export function useSettings() {
     saveSelectedModelFilename,
     modelIdleUnloadMinutes,
     saveModelIdleUnloadMinutes,
+    triggerKey,
+    saveTriggerKey,
     settingsLoaded,
   };
 }

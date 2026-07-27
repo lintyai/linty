@@ -10,6 +10,7 @@ import {
 import { useRecording } from "@/hooks/useRecording.hook";
 import { useTranscription } from "@/hooks/useTranscription.hook";
 import { WaveformVisualizer } from "@/components/WaveformVisualizer.component";
+import { FnKeyConflictWarning } from "@/components/shared/FnKeyConflictWarning.component";
 import { cn } from "@/lib/utils";
 
 type PermissionStatus = "authorized" | "denied" | "not_determined" | "restricted";
@@ -223,6 +224,8 @@ export function SystemCheckPage() {
             isLast
           />
         </div>
+
+        <FnKeyConflictWarning className="mt-3" />
 
         {/* Footer note */}
         <p className="mt-3 text-[11px] text-text-muted">

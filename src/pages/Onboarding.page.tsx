@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { load } from "@tauri-apps/plugin-store";
 import { open } from "@tauri-apps/plugin-shell";
-import { Mic, Shield, CheckCircle2, ArrowRight, Loader2, ExternalLink, Download, Cloud, AlertCircle, Eye, EyeOff, RefreshCw, Key } from "lucide-react";
+import { Mic, Shield, CheckCircle2, ArrowRight, Loader2, ExternalLink, Download, Cloud, AlertCircle, Eye, EyeOff, RefreshCw, Key, Keyboard } from "lucide-react";
 import {
   checkMicrophonePermission,
   requestMicrophonePermission,
@@ -13,12 +13,16 @@ import {
   openSystemSettings,
 } from "@/services/permissions.service";
 import { useAppStore } from "@/store/app.store";
+import { useSettings } from "@/hooks/useSettings.hook";
+import { formatTriggerLabel } from "@/lib/trigger.util";
+import { FnKeyConflictWarning } from "@/components/shared/FnKeyConflictWarning.component";
+import { TriggerKeyPicker } from "@/components/shared/TriggerKeyPicker.component";
 import { cn } from "@/lib/utils";
 
-type Step = "welcome" | "microphone" | "accessibility" | "model" | "cloud-setup" | "done";
+type Step = "welcome" | "microphone" | "accessibility" | "trigger" | "model" | "cloud-setup" | "done";
 
 // Steps used for progress dots — cloud-setup shares the "model" dot position
-const PROGRESS_STEPS: Step[] = ["welcome", "microphone", "accessibility", "model", "done"];
+const PROGRESS_STEPS: Step[] = ["welcome", "microphone", "accessibility", "trigger", "model", "done"];
 
 interface OnboardingPageProps {
   onComplete: () => void;
@@ -42,7 +46,10 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
           <MicrophoneStep onNext={() => setStep("accessibility")} />
         )}
         {step === "accessibility" && (
-          <AccessibilityStep onNext={() => setStep("model")} />
+          <AccessibilityStep onNext={() => setStep("trigger")} />
+        )}
+        {step === "trigger" && (
+          <TriggerStep onNext={() => setStep("model")} />
         )}
         {step === "model" && (
           <ModelDownloadStep
@@ -347,6 +354,48 @@ function AccessibilityStep({ onNext }: { onNext: () => void }) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Trigger Key Step ── */
+
+function TriggerStep({ onNext }: { onNext: () => void }) {
+  const { triggerKey, saveTriggerKey } = useSettings();
+
+  return (
+    <div className="flex flex-col items-center text-center animate-page-enter">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-info/15 mb-5">
+        <Keyboard size={28} className="text-info" />
+      </div>
+
+      <h1 className="text-[22px] font-bold text-text-primary mb-2">
+        Choose Your Trigger Key
+      </h1>
+      <p className="text-[14px] text-text-secondary leading-relaxed mb-6">
+        Hold this key to record, release to transcribe and paste.
+        <br />
+        You can change it anytime from the Shortcuts page.
+      </p>
+
+      <TriggerKeyPicker
+        value={triggerKey}
+        onChange={saveTriggerKey}
+        className="mb-6 w-full max-w-[420px]"
+      />
+
+      <button
+        onClick={onNext}
+        className={cn(
+          "flex items-center gap-2 rounded-xl px-6 py-2.5 text-[14px] font-semibold",
+          "bg-accent text-white",
+          "hover:bg-accent-soft active:scale-[0.97]",
+          "transition-all duration-150",
+        )}
+      >
+        Continue
+        <ArrowRight size={16} />
+      </button>
     </div>
   );
 }
@@ -699,6 +748,9 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
 /* ── Done Step ── */
 
 function DoneStep({ onComplete }: { onComplete: () => void }) {
+  const triggerKey = useAppStore((s) => s.triggerKey);
+  const triggerLabel = formatTriggerLabel(triggerKey);
+
   return (
     <div className="flex flex-col items-center text-center animate-page-enter">
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-success/15 mb-5">
@@ -709,10 +761,12 @@ function DoneStep({ onComplete }: { onComplete: () => void }) {
         You're All Set
       </h1>
       <p className="text-[14px] text-text-secondary leading-relaxed mb-8">
-        Hold the <span className="font-medium text-text-primary">fn</span> key anywhere to start recording.
+        Hold <span className="font-medium text-text-primary">{triggerLabel}</span> anywhere to start recording.
         <br />
         Release to transcribe and auto-paste.
       </p>
+
+      <FnKeyConflictWarning className="mb-6 max-w-[400px]" />
 
       <button
         onClick={onComplete}

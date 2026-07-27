@@ -3,6 +3,58 @@ import type { StateCreator } from "zustand";
 export type SttMode = "cloud" | "local";
 export type ThemePreference = "light" | "dark" | "system";
 
+/** Sentinel value for the fn-key trigger. */
+export const TRIGGER_KEY_FN = "fn";
+export const DEFAULT_TRIGGER_KEY = TRIGGER_KEY_FN;
+/**
+ * triggerKey value formats: TRIGGER_KEY_FN, "modifier:<name>" for a bare
+ * modifier hold (right-command, left-option, ...), or a global-shortcut
+ * accelerator string ("Command+Shift+Space").
+ */
+export const MODIFIER_TRIGGER_PREFIX = "modifier:";
+/** Registered alongside modifier-hold triggers as an alternate shortcut; also offered as a standalone trigger option. */
+export const FALLBACK_TRIGGER_ACCELERATOR = "CommandOrControl+Shift+Space";
+
+export interface TriggerKeyOption {
+  value: string;
+  label: string;
+  display: string;
+  description: string;
+}
+
+export const TRIGGER_KEY_OPTIONS: TriggerKeyOption[] = [
+  {
+    value: TRIGGER_KEY_FN,
+    label: "fn key",
+    display: "fn (hold)",
+    description: "Hold the fn key. Requires the macOS fn binding set to \"Do Nothing\".",
+  },
+  {
+    value: `${MODIFIER_TRIGGER_PREFIX}right-command`,
+    label: "Right ⌘",
+    display: "R⌘ (hold)",
+    description: "Hold the right Command key. No macOS conflicts.",
+  },
+  {
+    value: `${MODIFIER_TRIGGER_PREFIX}right-option`,
+    label: "Right ⌥",
+    display: "R⌥ (hold)",
+    description: "Hold the right Option key. No macOS conflicts.",
+  },
+  {
+    value: FALLBACK_TRIGGER_ACCELERATOR,
+    label: "⌘⇧Space",
+    display: "⌘⇧Space (hold)",
+    description: "Hold Command+Shift+Space. Unassigned by macOS by default.",
+  },
+  {
+    value: "Control+Option+Space",
+    label: "⌃⌥Space",
+    display: "⌃⌥Space (hold)",
+    description: "Hold Control+Option+Space. Can conflict if you switch between multiple input sources.",
+  },
+];
+
 export interface SettingsSlice {
   groqApiKey: string;
   sttMode: SttMode;
@@ -19,6 +71,8 @@ export interface SettingsSlice {
   selectedModelFilename: string | null;
   /** Minutes of inactivity before the local model is unloaded (0 = never). */
   modelIdleUnloadMinutes: number;
+  /** Push-to-talk trigger: TRIGGER_KEY_FN or a global-shortcut accelerator string. */
+  triggerKey: string;
   settingsLoaded: boolean;
   setLoadedModelFilename: (filename: string | null) => void;
   setSelectedModelFilename: (filename: string | null) => void;
@@ -34,6 +88,7 @@ export interface SettingsSlice {
   setTranscriptionLanguage: (language: string) => void;
   setTranslateToEnglish: (translate: boolean) => void;
   setModelIdleUnloadMinutes: (minutes: number) => void;
+  setTriggerKey: (triggerKey: string) => void;
   setSettingsLoaded: (loaded: boolean) => void;
 }
 
@@ -54,6 +109,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   loadedModelFilename: null,
   selectedModelFilename: null,
   modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
+  triggerKey: DEFAULT_TRIGGER_KEY,
   settingsLoaded: false,
   setLoadedModelFilename: (loadedModelFilename) => set({ loadedModelFilename }),
   setSelectedModelFilename: (selectedModelFilename) => set({ selectedModelFilename }),
@@ -70,5 +126,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   setTranscriptionLanguage: (transcriptionLanguage) => set({ transcriptionLanguage }),
   setTranslateToEnglish: (translateToEnglish) => set({ translateToEnglish }),
   setModelIdleUnloadMinutes: (modelIdleUnloadMinutes) => set({ modelIdleUnloadMinutes }),
+  setTriggerKey: (triggerKey) => set({ triggerKey }),
   setSettingsLoaded: (settingsLoaded) => set({ settingsLoaded }),
 });

@@ -29,6 +29,15 @@ struct StopResult {
     duration_secs: f64,
 }
 
+/// System-level fn key binding status (issue #32 — macOS Dictation double-paste).
+#[derive(serde::Serialize)]
+struct FnKeyConflict {
+    /// AppleFnUsageType: 0 = Do Nothing, 1 = Change Input Source,
+    /// 2 = Show Emoji & Symbols, 3 = Start Dictation. None = unset (macOS default).
+    usage_type: Option<i64>,
+    conflict: bool,
+}
+
 fn now_epoch_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -317,6 +326,44 @@ fn reinit_fn_key_monitor(app: tauri::AppHandle) {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
+    }
+}
+
+/// Point the modifier-hold monitor at a different trigger key
+/// (fn, right-command, left-option, ...). Invalid names are rejected.
+#[tauri::command]
+fn set_trigger_modifier(modifier: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        fnkey::set_trigger_modifier(&modifier)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = modifier;
+        Ok(())
+    }
+}
+
+/// Detect whether the fn key is also bound to a macOS system action.
+/// Linty's NSEvent monitors are observe-only, so a system binding (Dictation,
+/// emoji picker) fires alongside push-to-talk — the cause of double-pasted
+/// dictations (issue #32). Only AppleFnUsageType == 0 ("Do Nothing") is safe.
+#[tauri::command]
+fn check_fn_key_conflict() -> FnKeyConflict {
+    #[cfg(target_os = "macos")]
+    {
+        let usage_type = fnkey::fn_usage_type();
+        FnKeyConflict {
+            usage_type,
+            conflict: usage_type != Some(0),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        FnKeyConflict {
+            usage_type: None,
+            conflict: false,
+        }
     }
 }
 
@@ -1014,6 +1061,8 @@ pub fn run() {
             request_accessibility,
             reinit_fn_key_monitor,
             force_reinit_fn_key_monitor,
+            check_fn_key_conflict,
+            set_trigger_modifier,
             open_system_settings,
             check_microphone,
             request_microphone,
