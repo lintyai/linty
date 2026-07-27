@@ -1,8 +1,13 @@
+import { useSettings } from "@/hooks/useSettings.hook";
+import {
+  TRIGGER_KEY_OPTIONS,
+  FALLBACK_TRIGGER_ACCELERATOR,
+} from "@/store/slices/settings.slice";
+import { isModifierHoldTrigger, formatTriggerDisplay } from "@/lib/trigger.util";
+import { TriggerKeyPicker } from "@/components/shared/TriggerKeyPicker.component";
 import { cn } from "@/lib/utils";
 
-const SHORTCUTS = [
-  { action: "Push-to-talk", mac: "fn (hold)" },
-  { action: "Push-to-talk (alt)", mac: "⌘⇧Space" },
+const STATIC_SHORTCUTS = [
   { action: "Settings", mac: "⌘," },
   { action: "Search history", mac: "⌘F" },
   { action: "Copy transcript", mac: "⌘C" },
@@ -11,6 +16,24 @@ const SHORTCUTS = [
 ];
 
 export function ShortcutsPage() {
+  const { triggerKey, saveTriggerKey } = useSettings();
+
+  const shortcuts = [
+    { action: "Push-to-talk", mac: formatTriggerDisplay(triggerKey) },
+    // modifier-hold users keep the always-registered alternate combo
+    ...(isModifierHoldTrigger(triggerKey)
+      ? [
+          {
+            action: "Push-to-talk (alt)",
+            mac:
+              TRIGGER_KEY_OPTIONS.find((o) => o.value === FALLBACK_TRIGGER_ACCELERATOR)
+                ?.display ?? "⌘⇧Space (hold)",
+          },
+        ]
+      : []),
+    ...STATIC_SHORTCUTS,
+  ];
+
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
@@ -29,14 +52,30 @@ export function ShortcutsPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <div className="mx-auto max-w-[480px]">
+          <div className="mb-2.5">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
+              Trigger Key
+            </span>
+          </div>
+          <TriggerKeyPicker
+            value={triggerKey}
+            onChange={saveTriggerKey}
+            className="mb-6"
+          />
+
+          <div className="mb-2.5">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
+              Shortcuts
+            </span>
+          </div>
           <div className="rounded-[10px] bg-bg-elevated border border-border-subtle overflow-hidden">
             <div className="flex flex-col">
-              {SHORTCUTS.map((s, i) => (
+              {shortcuts.map((s, i) => (
                 <div
                   key={s.action}
                   className={cn(
                     "flex items-center justify-between px-4 py-[10px]",
-                    i < SHORTCUTS.length - 1 && "border-b border-border-subtle",
+                    i < shortcuts.length - 1 && "border-b border-border-subtle",
                   )}
                 >
                   <span className="text-[13px] text-text-primary">{s.action}</span>

@@ -9,8 +9,8 @@ import {
 import { useRecording } from "./useRecording.hook";
 import { useTranscription } from "./useTranscription.hook";
 import { useAppStore } from "@/store/app.store";
-
-const FALLBACK_HOTKEY = "CommandOrControl+Shift+Space";
+import { FALLBACK_TRIGGER_ACCELERATOR } from "@/store/slices/settings.slice";
+import { isModifierHoldTrigger, triggerModifierName, formatTriggerLabel } from "@/lib/trigger.util";
 
 export function useGlobalHotkey() {
   const { startRecording, stopRecording } = useRecording();
@@ -139,8 +139,17 @@ export function useGlobalHotkey() {
     };
   }, []);
 
-  // ── Primary: Fn key push-to-talk ──
+  // ── Primary: modifier-hold push-to-talk (fn or a bare modifier key) ──
+  // The Rust flagsChanged monitor emits fnkey-pressed/released for whichever
+  // modifier bit set_trigger_modifier points it at.
+  const triggerKey = useAppStore((s) => s.triggerKey);
   useEffect(() => {
+    if (!isModifierHoldTrigger(triggerKey)) return;
+
+    invoke("set_trigger_modifier", {
+      modifier: triggerModifierName(triggerKey),
+    }).catch((err) => console.error("Failed to set trigger modifier:", err));
+
     const unlistenPress = listen("fnkey-pressed", handlePress);
     const unlistenRelease = listen("fnkey-released", handleRelease);
 
@@ -148,20 +157,24 @@ export function useGlobalHotkey() {
       unlistenPress.then((fn) => fn());
       unlistenRelease.then((fn) => fn());
     };
-  }, [handlePress, handleRelease]);
+  }, [triggerKey, handlePress, handleRelease]);
 
-  // ── Fallback: Cmd+Shift+Space ──
+  // ── Accelerator trigger: the configured combo, or Cmd+Shift+Space as
+  //    an alternate alongside modifier-hold triggers ──
   useEffect(() => {
+    const accelerator = isModifierHoldTrigger(triggerKey)
+      ? FALLBACK_TRIGGER_ACCELERATOR
+      : triggerKey;
     let mounted = true;
 
     const setup = async () => {
       try {
-        const alreadyRegistered = await isRegistered(FALLBACK_HOTKEY);
+        const alreadyRegistered = await isRegistered(accelerator);
         if (alreadyRegistered) {
-          await unregister(FALLBACK_HOTKEY);
+          await unregister(accelerator);
         }
 
-        await register(FALLBACK_HOTKEY, async (event) => {
+        await register(accelerator, async (event) => {
           if (!mounted) return;
 
           if (event.state === "Pressed") {
@@ -171,7 +184,15 @@ export function useGlobalHotkey() {
           }
         });
       } catch (err) {
-        console.error("Failed to register fallback hotkey:", err);
+        console.error("Failed to register hotkey:", err);
+        // Only toast for a user-chosen trigger — the silent fallback combo
+        // failing shouldn't interrupt anyone.
+        if (!isModifierHoldTrigger(triggerKey)) {
+          addToastRef.current({
+            type: "error",
+            message: `Could not register ${formatTriggerLabel(accelerator)} — another app may be using it. Pick a different trigger in Shortcuts.`,
+          });
+        }
       }
     };
 
@@ -179,7 +200,7 @@ export function useGlobalHotkey() {
 
     return () => {
       mounted = false;
-      unregister(FALLBACK_HOTKEY).catch(() => {});
+      unregister(accelerator).catch(() => {});
     };
-  }, [handlePress, handleRelease]);
+  }, [triggerKey, handlePress, handleRelease]);
 }

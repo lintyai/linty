@@ -71,6 +71,14 @@ extern "C" {
         c_str: *const u8,
         encoding: u32,
     ) -> *const c_void;
+    fn CFPreferencesCopyAppValue(
+        key: *const c_void,
+        application_id: *const c_void,
+    ) -> *const c_void;
+    fn CFNumberGetValue(number: *const c_void, the_type: i64, value_ptr: *mut c_void) -> bool;
+    fn CFGetTypeID(cf: *const c_void) -> usize;
+    fn CFNumberGetTypeID() -> usize;
+    fn CFRelease(cf: *const c_void);
 }
 
 /// Prompt macOS to show the Accessibility permission dialog
@@ -108,6 +116,41 @@ extern "C" {
 const NS_EVENT_MODIFIER_FLAG_FUNCTION: u64 = 0x80_0000;
 // NSEventMaskFlagsChanged = 1 << 12
 const NS_EVENT_MASK_FLAGS_CHANGED: u64 = 1 << 12;
+
+/// The modifier-flag bit the monitor treats as the push-to-talk trigger.
+/// Defaults to fn; set_trigger_modifier switches it to a device-dependent
+/// bit (NX_DEVICE*KEYMASK) so bare left/right modifiers work as triggers.
+static TRIGGER_MASK: AtomicU64 = AtomicU64::new(NS_EVENT_MODIFIER_FLAG_FUNCTION);
+
+/// Map a trigger modifier name to its NSEvent modifierFlags bit.
+/// Left/right variants use the device-dependent masks from IOKit/hidsystem
+/// (present in the low bits of every flagsChanged event's modifierFlags).
+fn modifier_mask(name: &str) -> Option<u64> {
+    Some(match name {
+        "fn" => NS_EVENT_MODIFIER_FLAG_FUNCTION,
+        "left-control" => 0x0000_0001,  // NX_DEVICELCTLKEYMASK
+        "left-shift" => 0x0000_0002,    // NX_DEVICELSHIFTKEYMASK
+        "right-shift" => 0x0000_0004,   // NX_DEVICERSHIFTKEYMASK
+        "left-command" => 0x0000_0008,  // NX_DEVICELCMDKEYMASK
+        "right-command" => 0x0000_0010, // NX_DEVICERCMDKEYMASK
+        "left-option" => 0x0000_0020,   // NX_DEVICELALTKEYMASK
+        "right-option" => 0x0000_0040,  // NX_DEVICERALTKEYMASK
+        "right-control" => 0x0000_2000, // NX_DEVICERCTLKEYMASK
+        _ => return None,
+    })
+}
+
+/// Point the monitor at a different trigger modifier. Called from the
+/// frontend when the user picks a modifier-hold trigger key.
+pub fn set_trigger_modifier(name: &str) -> Result<(), String> {
+    let mask = modifier_mask(name)
+        .ok_or_else(|| format!("Unknown trigger modifier: {}", name))?;
+    let previous = TRIGGER_MASK.swap(mask, Ordering::SeqCst);
+    if previous != mask {
+        log(&format!("[fnkey] trigger modifier -> {} (mask 0x{:X})", name, mask));
+    }
+    Ok(())
+}
 
 // ── Block layout for Objective-C ──
 
@@ -167,7 +210,7 @@ unsafe extern "C" fn block_invoke(block: *mut FnKeyBlock, event: *const c_void) 
         std::mem::transmute(objc_msgSend as *const c_void);
     let modifier_flags = send(event, sel);
 
-    let fn_pressed = (modifier_flags & NS_EVENT_MODIFIER_FLAG_FUNCTION) != 0;
+    let fn_pressed = (modifier_flags & TRIGGER_MASK.load(Ordering::Relaxed)) != 0;
 
     if count <= 5 {
         log(&format!(
@@ -222,7 +265,7 @@ unsafe extern "C" fn local_block_invoke(block: *mut LocalFnKeyBlock, event: *con
         std::mem::transmute(objc_msgSend as *const c_void);
     let modifier_flags = send(event, sel);
 
-    let fn_pressed = (modifier_flags & NS_EVENT_MODIFIER_FLAG_FUNCTION) != 0;
+    let fn_pressed = (modifier_flags & TRIGGER_MASK.load(Ordering::Relaxed)) != 0;
 
     if fn_pressed {
         if !state.fn_held.swap(true, Ordering::SeqCst) {
@@ -270,6 +313,52 @@ pub fn is_accessibility_granted() -> bool {
 /// Returns current trust status (usually false until user acts).
 pub fn request_accessibility_permission() -> bool {
     unsafe { prompt_accessibility() }
+}
+
+/// Read the macOS "Press 🌐 key to" setting (com.apple.HIToolbox AppleFnUsageType).
+/// 0 = Do Nothing, 1 = Change Input Source, 2 = Show Emoji & Symbols, 3 = Start Dictation.
+/// Returns None when unset — the macOS default applies, which is NOT "Do Nothing",
+/// so an unset value still conflicts with fn push-to-talk (issue #32).
+pub fn fn_usage_type() -> Option<i64> {
+    const UTF8: u32 = 0x08000100; // kCFStringEncodingUTF8
+    unsafe {
+        let key = CFStringCreateWithCString(
+            std::ptr::null(),
+            b"AppleFnUsageType\0".as_ptr(),
+            UTF8,
+        );
+        let app_id = CFStringCreateWithCString(
+            std::ptr::null(),
+            b"com.apple.HIToolbox\0".as_ptr(),
+            UTF8,
+        );
+        // CFRelease(NULL) crashes — guard before releasing anything.
+        if key.is_null() || app_id.is_null() {
+            if !key.is_null() {
+                CFRelease(key);
+            }
+            if !app_id.is_null() {
+                CFRelease(app_id);
+            }
+            return None;
+        }
+        let value = CFPreferencesCopyAppValue(key, app_id);
+        CFRelease(key);
+        CFRelease(app_id);
+        if value.is_null() {
+            return None;
+        }
+
+        let mut result = None;
+        if CFGetTypeID(value) == CFNumberGetTypeID() {
+            let mut n: i64 = 0;
+            if CFNumberGetValue(value, 4 /* kCFNumberSInt64Type */, &mut n as *mut i64 as *mut c_void) {
+                result = Some(n);
+            }
+        }
+        CFRelease(value);
+        result
+    }
 }
 
 /// Set up global fn key monitoring using NSEvent.
