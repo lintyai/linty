@@ -6,8 +6,10 @@ import {
 } from "@/store/slices/settings.slice";
 import {
   MODIFIER_CAPTURE_CODES,
+  COMMON_SHORTCUT_USAGE,
   codeToAcceleratorKey,
   formatTriggerDisplay,
+  formatTriggerLabel,
 } from "@/lib/trigger.util";
 import { FnKeyConflictWarning } from "@/components/shared/FnKeyConflictWarning.component";
 import { cn } from "@/lib/utils";
@@ -27,8 +29,17 @@ interface TriggerKeyPickerProps {
 export function TriggerKeyPicker({ value, onChange, className }: TriggerKeyPickerProps) {
   const [capturing, setCapturing] = useState(false);
   const [captureError, setCaptureError] = useState("");
+  // A captured combo that collides with a universal shortcut (⌘C, ⌘V, ...) —
+  // held here until the user explicitly confirms or cancels
+  const [pendingCombo, setPendingCombo] = useState<{ accelerator: string; usage: string } | null>(null);
 
   const isPreset = TRIGGER_KEY_OPTIONS.some((o) => o.value === value);
+
+  const select = (selected: string) => {
+    setPendingCombo(null);
+    setCaptureError("");
+    onChange(selected);
+  };
 
   useEffect(() => {
     if (!capturing) return;
@@ -71,11 +82,21 @@ export function TriggerKeyPicker({ value, onChange, className }: TriggerKeyPicke
 
       // A bare letter/number would hijack normal typing system-wide
       if (mods.length === 0 && !/^F\d+$/.test(keyToken)) {
-        setCaptureError("Add a modifier (⌘ ⌃ ⌥ ⇧) or use an F-key.");
+        setCaptureError("Add a modifier (⌘ ⌃ ⌥) or use an F-key.");
         return;
       }
 
-      finish([...mods, keyToken].join("+"));
+      const accelerator = [...mods, keyToken].join("+");
+      const usage = COMMON_SHORTCUT_USAGE[accelerator];
+      if (usage) {
+        // Universal shortcut — require explicit confirmation before hijacking it
+        setCapturing(false);
+        setCaptureError("");
+        setPendingCombo({ accelerator, usage });
+        return;
+      }
+
+      finish(accelerator);
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
@@ -109,7 +130,7 @@ export function TriggerKeyPicker({ value, onChange, className }: TriggerKeyPicke
           return (
             <button
               key={option.value}
-              onClick={() => onChange(option.value)}
+              onClick={() => select(option.value)}
               className={cn(
                 "flex w-full items-center gap-3 border-b border-border-subtle px-4 py-3 text-left transition-colors duration-150",
                 selected ? "bg-bg-active" : "hover:bg-bg-hover",
@@ -157,6 +178,7 @@ export function TriggerKeyPicker({ value, onChange, className }: TriggerKeyPicke
         <button
           onClick={() => {
             setCaptureError("");
+            setPendingCombo(null);
             setCapturing(true);
           }}
           className={cn(
@@ -180,6 +202,37 @@ export function TriggerKeyPicker({ value, onChange, className }: TriggerKeyPicke
 
       {captureError && (
         <p className="text-[11px] text-error">{captureError}</p>
+      )}
+
+      {pendingCombo && (
+        <div className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-3 text-left">
+          <p className="text-[12px] text-text-secondary leading-relaxed">
+            <span className="font-medium text-text-primary">
+              {formatTriggerLabel(pendingCombo.accelerator)}
+            </span>{" "}
+            is <span className="font-medium text-warning">{pendingCombo.usage}</span> in
+            most apps. Using it as the trigger overrides it system-wide.
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={() => select(pendingCombo.accelerator)}
+              className={cn(
+                "rounded-lg px-3 py-[5px] text-[12px] font-medium",
+                "bg-bg-elevated border border-border text-text-secondary",
+                "hover:bg-bg-hover hover:text-text-primary active:scale-95",
+                "transition-all duration-150",
+              )}
+            >
+              Use it anyway
+            </button>
+            <button
+              onClick={() => setPendingCombo(null)}
+              className="text-[12px] text-text-muted hover:text-text-secondary transition-colors duration-150"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       <FnKeyConflictWarning />

@@ -4,7 +4,11 @@ import {
   TRIGGER_KEY_OPTIONS,
 } from "@/store/slices/settings.slice";
 
-/** Names accepted by the Rust set_trigger_modifier command, keyed by DOM KeyboardEvent.code. */
+/**
+ * Names accepted by the Rust set_trigger_modifier command, keyed by DOM
+ * KeyboardEvent.code. Shift keys are deliberately absent — every capitalized
+ * keystroke holds Shift, so a Shift trigger would phantom-record constantly.
+ */
 export const MODIFIER_CAPTURE_CODES: Record<string, string> = {
   MetaLeft: "left-command",
   MetaRight: "right-command",
@@ -12,8 +16,6 @@ export const MODIFIER_CAPTURE_CODES: Record<string, string> = {
   AltRight: "right-option",
   ControlLeft: "left-control",
   ControlRight: "right-control",
-  ShiftLeft: "left-shift",
-  ShiftRight: "right-shift",
 };
 
 export const MODIFIER_HOLD_LABELS: Record<string, string> = {
@@ -23,8 +25,26 @@ export const MODIFIER_HOLD_LABELS: Record<string, string> = {
   "right-option": "Right ⌥",
   "left-control": "Left ⌃",
   "right-control": "Right ⌃",
-  "left-shift": "Left ⇧",
-  "right-shift": "Right ⇧",
+};
+
+/**
+ * Shortcuts so universal that capturing one as the trigger would silently
+ * hijack it in every app. The picker requires an explicit confirm for these.
+ */
+export const COMMON_SHORTCUT_USAGE: Record<string, string> = {
+  "Command+C": "Copy",
+  "Command+V": "Paste",
+  "Command+X": "Cut",
+  "Command+A": "Select All",
+  "Command+Z": "Undo",
+  "Command+S": "Save",
+  "Command+F": "Find",
+  "Command+N": "New",
+  "Command+T": "New Tab",
+  "Command+W": "Close Window",
+  "Command+Q": "Quit",
+  "Command+Space": "Spotlight",
+  "Command+Tab": "App Switcher",
 };
 
 const ACCELERATOR_SYMBOLS: Record<string, string> = {
