@@ -290,7 +290,14 @@ async fn transcribe_buffer_cloud(
 // simulate_paste (TIS keycode lookup is main-thread-only on macOS 26).
 #[tauri::command(async)]
 fn paste_text(app: tauri::AppHandle) -> Result<(), String> {
-    paste::simulate_paste(&app)
+    let result = paste::simulate_paste(&app);
+    // Time-based restore (not read-triggered): clipboard managers reading the
+    // pasteboard on change must not cause a restore that beats the target
+    // app's Cmd+V read. Scheduled even on paste failure so the user's
+    // original clipboard always comes back.
+    #[cfg(target_os = "macos")]
+    clipboard::schedule_restore(clipboard::RESTORE_DELAY_MS);
+    result
 }
 
 #[tauri::command]
@@ -964,6 +971,18 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be the first plugin registered. A second launch (double-open,
+        // updater relaunch overlapping the old process) would run its own
+        // fn-key monitors and paste pipeline — an independent double-paste
+        // vector. Instead, surface the already-running instance.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            eprintln!("[single-instance] Second launch blocked — focusing existing window");
+            set_activation_policy_regular();
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
