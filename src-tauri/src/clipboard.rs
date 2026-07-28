@@ -566,6 +566,10 @@ pub fn restore_clipboard(state: &ClipboardState) -> Result<(), String> {
 
 /// Snapshot the current clipboard into module-level state.
 pub fn cmd_snapshot() {
+    // Invalidate any pending restore timer BEFORE swapping in this session's
+    // state — a stale timer firing between this snapshot and the upcoming
+    // write_transient would otherwise consume the fresh state.
+    RESTORE_GENERATION.fetch_add(1, Ordering::AcqRel);
     let snap = snapshot_clipboard();
     let mut guard = CLIPBOARD_STATE.lock().unwrap();
     if let Some(s) = snap {
