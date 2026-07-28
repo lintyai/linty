@@ -190,8 +190,9 @@ export function useTranscription() {
         }
         const pasteTimeMs = Date.now() - pasteStart;
 
-        // Clipboard restore happens automatically in Rust via NSPasteboardItemDataProvider
-        // callback — fires when the target app reads the pasted data (~50ms after paste)
+        // Clipboard restore is scheduled in Rust ~800ms after the Cmd+V keystroke —
+        // time-based rather than read-based, so clipboard managers reading the
+        // pasteboard can't trigger an early restore that beats the target app's read
 
         const processingTimeMs = Date.now() - processingStartRef.current;
 
