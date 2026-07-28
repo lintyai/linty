@@ -5,7 +5,7 @@
 
 use std::ffi::c_void;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
@@ -41,6 +41,14 @@ extern "C" {}
 extern "C" {
     fn AXIsProcessTrusted() -> bool;
 }
+
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGEventSourceKeyState(state_id: i32, key: u16) -> bool;
+}
+
+/// kCGEventSourceStateHIDSystemState — hardware-level key state.
+const CG_EVENT_SOURCE_STATE_HID: i32 = 1;
 
 #[link(name = "CoreFoundation", kind = "framework")]
 extern "C" {
@@ -122,20 +130,24 @@ const NS_EVENT_MASK_FLAGS_CHANGED: u64 = 1 << 12;
 /// bit (NX_DEVICE*KEYMASK) so bare left/right modifiers work as triggers.
 static TRIGGER_MASK: AtomicU64 = AtomicU64::new(NS_EVENT_MODIFIER_FLAG_FUNCTION);
 
-/// Map a trigger modifier name to its NSEvent modifierFlags bit.
-/// Left/right variants use the device-dependent masks from IOKit/hidsystem
-/// (present in the low bits of every flagsChanged event's modifierFlags).
-fn modifier_mask(name: &str) -> Option<u64> {
+/// Hardware keycode (kVK_*) of the trigger key, for CGEventSourceKeyState
+/// reality checks on release events. Defaults to fn (kVK_Function = 63).
+static TRIGGER_KEYCODE: AtomicU32 = AtomicU32::new(63);
+
+/// Map a trigger modifier name to its NSEvent modifierFlags bit and its
+/// hardware keycode. Left/right variants use the device-dependent masks from
+/// IOKit/hidsystem (present in the low bits of every flagsChanged event).
+fn modifier_target(name: &str) -> Option<(u64, u16)> {
     Some(match name {
-        "fn" => NS_EVENT_MODIFIER_FLAG_FUNCTION,
-        "left-control" => 0x0000_0001,  // NX_DEVICELCTLKEYMASK
-        "left-shift" => 0x0000_0002,    // NX_DEVICELSHIFTKEYMASK
-        "right-shift" => 0x0000_0004,   // NX_DEVICERSHIFTKEYMASK
-        "left-command" => 0x0000_0008,  // NX_DEVICELCMDKEYMASK
-        "right-command" => 0x0000_0010, // NX_DEVICERCMDKEYMASK
-        "left-option" => 0x0000_0020,   // NX_DEVICELALTKEYMASK
-        "right-option" => 0x0000_0040,  // NX_DEVICERALTKEYMASK
-        "right-control" => 0x0000_2000, // NX_DEVICERCTLKEYMASK
+        "fn" => (NS_EVENT_MODIFIER_FLAG_FUNCTION, 63), // kVK_Function
+        "left-control" => (0x0000_0001, 59),  // NX_DEVICELCTLKEYMASK
+        "left-shift" => (0x0000_0002, 56),    // NX_DEVICELSHIFTKEYMASK
+        "right-shift" => (0x0000_0004, 60),   // NX_DEVICERSHIFTKEYMASK
+        "left-command" => (0x0000_0008, 55),  // NX_DEVICELCMDKEYMASK
+        "right-command" => (0x0000_0010, 54), // NX_DEVICERCMDKEYMASK
+        "left-option" => (0x0000_0020, 58),   // NX_DEVICELALTKEYMASK
+        "right-option" => (0x0000_0040, 61),  // NX_DEVICERALTKEYMASK
+        "right-control" => (0x0000_2000, 62), // NX_DEVICERCTLKEYMASK
         _ => return None,
     })
 }
@@ -143,13 +155,26 @@ fn modifier_mask(name: &str) -> Option<u64> {
 /// Point the monitor at a different trigger modifier. Called from the
 /// frontend when the user picks a modifier-hold trigger key.
 pub fn set_trigger_modifier(name: &str) -> Result<(), String> {
-    let mask = modifier_mask(name)
+    let (mask, keycode) = modifier_target(name)
         .ok_or_else(|| format!("Unknown trigger modifier: {}", name))?;
     let previous = TRIGGER_MASK.swap(mask, Ordering::SeqCst);
+    TRIGGER_KEYCODE.store(keycode as u32, Ordering::SeqCst);
     if previous != mask {
-        log(&format!("[fnkey] trigger modifier -> {} (mask 0x{:X})", name, mask));
+        log(&format!(
+            "[fnkey] trigger modifier -> {} (mask 0x{:X}, keycode {})",
+            name, mask, keycode
+        ));
     }
     Ok(())
+}
+
+/// True when the trigger key is physically held per hardware state. Used to
+/// reject synthetic flagsChanged events with stale flags (focus transitions
+/// can deliver those). If the OS ever denies the query it returns false,
+/// which degrades to trusting the event — never to a stuck-held state.
+fn trigger_key_physically_down() -> bool {
+    let keycode = TRIGGER_KEYCODE.load(Ordering::Relaxed) as u16;
+    unsafe { CGEventSourceKeyState(CG_EVENT_SOURCE_STATE_HID, keycode) }
 }
 
 // ── Block layout for Objective-C ──
@@ -177,14 +202,7 @@ struct FnKeyState {
     app: AppHandle,
     fn_held: AtomicBool,
     event_count: AtomicU64,
-    /// Timestamp (ms since epoch) of last fn-press — used to debounce spurious
-    /// releases during focus transitions (global ↔ local monitor handoff).
-    press_timestamp_ms: AtomicU64,
 }
-
-/// Minimum hold duration (ms) before a release is accepted.
-/// Prevents false releases caused by focus transitions between global/local monitors.
-const MIN_HOLD_MS: u64 = 150;
 
 // ── Local monitor block (returns NSEvent* to not consume the event) ──
 
@@ -221,26 +239,17 @@ unsafe extern "C" fn block_invoke(block: *mut FnKeyBlock, event: *const c_void) 
 
     if fn_pressed {
         if !state.fn_held.swap(true, Ordering::SeqCst) {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            state.press_timestamp_ms.store(now, Ordering::SeqCst);
             log("[fnkey] fn PRESSED — starting recording");
             let _ = state.app.emit("fnkey-pressed", ());
         }
     } else if state.fn_held.swap(false, Ordering::SeqCst) {
-        // Debounce: suppress releases within MIN_HOLD_MS of press to avoid
-        // false releases during global ↔ local monitor focus transitions.
-        let press_ts = state.press_timestamp_ms.load(Ordering::SeqCst);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-        if now.saturating_sub(press_ts) < MIN_HOLD_MS {
-            // Too fast — likely a focus-transition artefact, re-arm fn_held
+        if trigger_key_physically_down() {
+            // The event's flags say released, but the hardware says the key
+            // is still held — a synthetic flagsChanged with stale flags
+            // (focus transition). Stay armed; the real release will produce
+            // its own event.
             state.fn_held.store(true, Ordering::SeqCst);
-            log("[fnkey] fn release suppressed (debounce — focus transition)");
+            log("[fnkey] release ignored — trigger key physically still down");
         } else {
             log("[fnkey] fn RELEASED — stopping recording");
             let _ = state.app.emit("fnkey-released", ());
@@ -269,23 +278,13 @@ unsafe extern "C" fn local_block_invoke(block: *mut LocalFnKeyBlock, event: *con
 
     if fn_pressed {
         if !state.fn_held.swap(true, Ordering::SeqCst) {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            state.press_timestamp_ms.store(now, Ordering::SeqCst);
             log("[fnkey] fn PRESSED (local — app focused)");
             let _ = state.app.emit("fnkey-pressed", ());
         }
     } else if state.fn_held.swap(false, Ordering::SeqCst) {
-        let press_ts = state.press_timestamp_ms.load(Ordering::SeqCst);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-        if now.saturating_sub(press_ts) < MIN_HOLD_MS {
+        if trigger_key_physically_down() {
             state.fn_held.store(true, Ordering::SeqCst);
-            log("[fnkey] fn release suppressed (debounce — local focus transition)");
+            log("[fnkey] release ignored — trigger key physically still down (local)");
         } else {
             log("[fnkey] fn RELEASED (local — app focused)");
             let _ = state.app.emit("fnkey-released", ());
@@ -501,7 +500,6 @@ fn init_monitor(app: AppHandle) {
         app,
         fn_held: AtomicBool::new(false),
         event_count: AtomicU64::new(0),
-        press_timestamp_ms: AtomicU64::new(0),
     });
 
     // Two Arc references — one for global monitor, one for local monitor
