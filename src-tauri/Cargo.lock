@@ -2523,7 +2523,7 @@ dependencies = [
 
 [[package]]
 name = "linty"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "block2 0.5.1",
  "cocoa",
