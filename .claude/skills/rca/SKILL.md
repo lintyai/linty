@@ -377,7 +377,7 @@ EOF
 - Race condition: clipboard restore may happen before paste completes
 - Some apps intercept Cmd+V differently — check focused app
 - Same speech pasted twice with DIFFERENT wording/punctuation = a second STT engine, not Linty (issue #32): Linty's NSEvent monitors are observe-only, so fn presses also reach macOS Dictation. Check `defaults read com.apple.HIToolbox AppleFnUsageType` and installed models in `defaults read com.apple.assistant.support`. Cross-reference `~/Library/Application Support/ai.linty.desktop/linty-history.json` — one record per dictation proves Linty's pipeline ran once (local whisper greedy decoding is deterministic: same audio → identical text)
-- SIGTRAP in `_dispatch_assert_queue_fail` → `TSMGetInputSourceProperty` on a tokio worker = TIS layout lookup off the main thread (enigo `Key::Unicode`); macOS 26 asserts main-queue (issue #26)
+- SIGTRAP in `_dispatch_assert_queue_fail` → `TSMGetInputSourceProperty` on a tokio worker = TIS layout lookup off the main thread (`paste.rs` `resolve_v_keycode`, formerly enigo `Key::Unicode`); macOS 26 asserts main-queue (issue #26)
 
 ### Capsule Overlay
 - NSPanel z-order issues after system sleep/wake
