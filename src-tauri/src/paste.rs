@@ -87,11 +87,18 @@ mod imp {
     const UC_KEY_ACTION_DOWN: u16 = 0;
     /// kUCKeyTranslateNoDeadKeysMask
     const UC_KEY_TRANSLATE_NO_DEAD_KEYS: u32 = 1;
+    /// `(cmdKey >> 8) & 0xFF` — ask the layout which key types "v" *while Cmd is held*,
+    /// which is what Cmd+V needs. Matters for "Dvorak - QWERTY ⌘" (letters switch to
+    /// QWERTY under Cmd) and lets non-Latin layouts resolve via their own Cmd table.
+    const UC_MODIFIER_CMD: u32 = 1;
 
     /// Settle time after the pasteboard write before the keystroke lands.
     const PRE_PASTE_DELAY: Duration = Duration::from_millis(20);
     /// Spacing between the four key events, roughly a hardware cadence.
     const INTER_KEY_DELAY: Duration = Duration::from_millis(10);
+    /// Upper bound on waiting for the main thread to run the layout lookup, so a
+    /// stalled run loop surfaces as a paste error instead of a hung worker task.
+    const MAIN_THREAD_TIMEOUT: Duration = Duration::from_secs(2);
 
     pub fn simulate_paste(app: &AppHandle) -> Result<(), String> {
         eprintln!("[paste] Simulating Cmd+V via CGEvent...");
@@ -113,8 +120,8 @@ mod imp {
         })
         .map_err(|e| format!("Main thread dispatch failed: {}", e))?;
         let v_keycode = rx
-            .recv()
-            .map_err(|e| format!("Keycode channel closed: {}", e))?;
+            .recv_timeout(MAIN_THREAD_TIMEOUT)
+            .map_err(|e| format!("Keycode lookup on main thread failed: {}", e))?;
         if v_keycode != VK_ANSI_V {
             eprintln!(
                 "[paste] active layout types 'v' at keycode 0x{:02X}",
@@ -129,20 +136,26 @@ mod imp {
             (v_keycode, false, FLAG_NON_COALESCED | FLAG_COMMAND),
             (VK_COMMAND, false, FLAG_NON_COALESCED),
         ];
+        // SAFETY: post_chord owns every CF object it creates and releases each on all
+        // paths; CGEvent creation/posting is thread-safe, so no main-thread hop needed.
         unsafe { post_chord(&chord)? };
 
         eprintln!("[paste] Cmd+V posted successfully");
         Ok(())
     }
 
-    /// Find the virtual keycode that types "v" on the layout macOS consults for Cmd
-    /// shortcuts. `TISCopyCurrentASCIICapableKeyboardLayoutInputSource` returns the
-    /// active layout when it is ASCII-capable (QWERTY, Dvorak, Colemak, ...) and the
-    /// ASCII fallback layout otherwise (Russian, Hindi, ...), matching AppKit's own
-    /// key-equivalent resolution. Falls back to `kVK_ANSI_V` if the lookup fails.
+    /// Find the virtual keycode that types "v" while Cmd is held, on the layout macOS
+    /// consults for Cmd shortcuts. `TISCopyCurrentASCIICapableKeyboardLayoutInputSource`
+    /// returns the active layout when it is ASCII-capable (QWERTY, Dvorak, Colemak, ...)
+    /// and the ASCII fallback layout otherwise (Russian, Hindi, ...), matching AppKit's
+    /// own key-equivalent resolution. Falls back to `kVK_ANSI_V` if the lookup fails.
     ///
     /// Must run on the main thread: TIS asserts main-queue access on macOS 26.
     fn resolve_v_keycode() -> u16 {
+        // SAFETY: runs on the main thread (dispatched via run_on_main_thread) as TIS
+        // requires. `source` is a +1 "Copy" reference released below; `layout_data` is
+        // borrowed from `source` and must not be released. UCKeyTranslate only reads the
+        // layout bytes and writes into the local buffers whose sizes are passed to it.
         unsafe {
             let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource();
             if source.is_null() {
@@ -166,7 +179,7 @@ mod imp {
                         layout,
                         candidate,
                         UC_KEY_ACTION_DOWN,
-                        0,
+                        UC_MODIFIER_CMD,
                         kbd_type,
                         UC_KEY_TRANSLATE_NO_DEAD_KEYS,
                         &mut dead_key_state,
@@ -192,6 +205,10 @@ mod imp {
 
     /// Create all four events up front (so a failure never leaves Cmd held down),
     /// stamp explicit modifier flags on each, then post them in order.
+    ///
+    /// # Safety
+    /// No caller invariants: every CF object created here is released on every path,
+    /// and `CGEventPost` copies the event, so releasing after posting is sound.
     unsafe fn post_chord(chord: &[(u16, bool, u64); 4]) -> Result<(), String> {
         // A null source is permitted by CGEventCreateKeyboardEvent; log and continue.
         let source = CGEventSourceCreate(EVENT_SOURCE_STATE_HID_SYSTEM);
