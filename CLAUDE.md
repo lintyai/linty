@@ -1,7 +1,3 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
 Linty is a macOS voice-to-text desktop app built with Tauri v2 + React 19 + Rust. Hold the fn key to record, release to transcribe (local Whisper or Groq cloud), and auto-paste the result.
@@ -23,19 +19,6 @@ cargo build --features local-stt   # Build Rust backend
 Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separated).
 
 ## Architecture
-
-```
-Frontend (React 19 + Zustand)  ←— IPC / Events —→  Backend (Rust + Tauri 2)
-     │                                                    │
-     ├── pages/          (6 pages)                        ├── audio.rs      (cpal capture, 16kHz mono)
-     ├── hooks/          (recording, transcription, etc)  ├── transcribe.rs (whisper-rs local, Groq cloud)
-     ├── store/slices/   (Zustand slices)                 ├── fnkey.rs      (NSEvent fn key monitor)
-     ├── services/       (permissions, paste, correction) ├── permissions.rs (AVFoundation mic FFI)
-     └── components/     (capsule, sidebar, waveform)     ├── clipboard.rs  (NSPasteboard snapshot/restore)
-                                                          ├── paste.rs      (CGEvent Cmd+V simulation)
-                                                          ├── capsule.rs    (overlay panel)
-                                                          └── watchdog.rs   (runaway recording recovery)
-```
 
 ### Core Flow
 1. Fn key press → `fnkey.rs` emits `fnkey-pressed` event → frontend starts recording
