@@ -1,11 +1,40 @@
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState},
     Emitter, Listener, Manager,
 };
 
 /// The config-created tray icon always has id "main" in Tauri v2.
 const TRAY_ID: &str = "main";
+const RECENT_TRANSCRIPT_LIMIT: usize = 10;
+const TRANSCRIPT_PREVIEW_LENGTH: usize = 60;
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrayTranscript {
+    transcript_id: String,
+    final_text: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrayState {
+    status: String,
+    stt_mode: String,
+    #[serde(default)]
+    recent_transcripts: Vec<TrayTranscript>,
+}
+
+fn transcript_preview(text: &str) -> String {
+    let single_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = single_line.chars();
+    let mut preview: String = chars.by_ref().take(TRANSCRIPT_PREVIEW_LENGTH).collect();
+    if chars.next().is_some() {
+        preview.push('…');
+    }
+    // Native menus treat ampersands as mnemonic markers; preserve literal text.
+    preview.replace('&', "&&")
+}
 
 fn status_label(status: &str) -> &str {
     match status {
@@ -36,16 +65,65 @@ fn build_tray_menu(
     app: &tauri::AppHandle,
     status: &str,
     stt_mode: &str,
+    recent_transcripts: &[TrayTranscript],
 ) -> Result<Menu<tauri::Wry>, tauri::Error> {
+    let latest_item = match recent_transcripts.first() {
+        Some(transcript) => MenuItem::with_id(
+            app,
+            format!("copy-latest-{}", transcript.transcript_id),
+            transcript_preview(&transcript.final_text),
+            true,
+            None::<&str>,
+        )?,
+        None => MenuItem::with_id(
+            app,
+            "copy-latest-empty",
+            "No transcriptions yet",
+            false,
+            None::<&str>,
+        )?,
+    };
+    let recent_menu = Submenu::new(app, "Recent", !recent_transcripts.is_empty())?;
+    for (index, transcript) in recent_transcripts
+        .iter()
+        .take(RECENT_TRANSCRIPT_LIMIT)
+        .enumerate()
+    {
+        let item = MenuItem::with_id(
+            app,
+            format!("copy-recent-{}", transcript.transcript_id),
+            format!(
+                "{}. {}",
+                index + 1,
+                transcript_preview(&transcript.final_text)
+            ),
+            true,
+            None::<&str>,
+        )?;
+        recent_menu.append(&item)?;
+    }
+    let history_sep = PredefinedMenuItem::separator(app)?;
     let status_item = MenuItem::with_id(app, "status", status_label(status), false, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
 
     let cloud_checked = stt_mode != "local";
     let local_checked = stt_mode == "local";
-    let cloud_item =
-        CheckMenuItem::with_id(app, "engine-cloud", "Cloud (Groq)", true, cloud_checked, None::<&str>)?;
-    let local_item =
-        CheckMenuItem::with_id(app, "engine-local", "Local (Whisper)", true, local_checked, None::<&str>)?;
+    let cloud_item = CheckMenuItem::with_id(
+        app,
+        "engine-cloud",
+        "Cloud (Groq)",
+        true,
+        cloud_checked,
+        None::<&str>,
+    )?;
+    let local_item = CheckMenuItem::with_id(
+        app,
+        "engine-local",
+        "Local (Whisper)",
+        true,
+        local_checked,
+        None::<&str>,
+    )?;
 
     let sep2 = PredefinedMenuItem::separator(app)?;
     let show_item = MenuItem::with_id(app, "show", "Show Linty", true, None::<&str>)?;
@@ -54,6 +132,9 @@ fn build_tray_menu(
     Menu::with_items(
         app,
         &[
+            &latest_item,
+            &recent_menu,
+            &history_sep,
             &status_item,
             &sep1,
             &cloud_item,
@@ -73,7 +154,7 @@ pub fn init_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         .tray_by_id(TRAY_ID)
         .expect("tray icon must exist from tauri.conf.json trayIcon config");
 
-    let menu = build_tray_menu(app.handle(), "idle", "cloud")?;
+    let menu = build_tray_menu(app.handle(), "idle", "cloud", &[])?;
     tray.set_menu(Some(menu))?;
     tray.set_show_menu_on_left_click(false)?; // left-click toggles window, right-click opens menu
 
@@ -95,7 +176,14 @@ pub fn init_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         "engine-local" => {
             let _ = app.emit("tray-engine-changed", "local");
         }
-        _ => {}
+        id => {
+            if let Some(transcript_id) = id
+                .strip_prefix("copy-latest-")
+                .or_else(|| id.strip_prefix("copy-recent-"))
+            {
+                let _ = app.emit_to("main", "tray-copy-transcript", transcript_id);
+            }
+        }
     });
 
     tray.on_tray_icon_event(|tray, event| {
@@ -123,24 +211,21 @@ pub fn init_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     // Listen for frontend state changes to update tray menu + tooltip
     let handle = app.handle().clone();
     app.listen("tray-state-changed", move |event| {
-        let payload: serde_json::Value = match serde_json::from_str(event.payload()) {
+        let state: TrayState = match serde_json::from_str(event.payload()) {
             Ok(v) => v,
             Err(_) => return,
         };
-        let status = payload
-            .get("status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("idle");
-        let stt_mode = payload
-            .get("sttMode")
-            .and_then(|v| v.as_str())
-            .unwrap_or("cloud");
 
         // Rebuild menu
-        if let Ok(menu) = build_tray_menu(&handle, status, stt_mode) {
+        if let Ok(menu) = build_tray_menu(
+            &handle,
+            &state.status,
+            &state.stt_mode,
+            &state.recent_transcripts,
+        ) {
             if let Some(tray) = handle.tray_by_id(TRAY_ID) {
                 let _ = tray.set_menu(Some(menu));
-                let _ = tray.set_tooltip(Some(&tooltip_text(status, stt_mode)));
+                let _ = tray.set_tooltip(Some(&tooltip_text(&state.status, &state.stt_mode)));
             }
         }
     });
