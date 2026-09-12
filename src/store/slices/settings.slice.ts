@@ -74,6 +74,8 @@ export interface SettingsSlice {
   /** Push-to-talk trigger: TRIGGER_KEY_FN or a global-shortcut accelerator string. */
   triggerKey: string;
   settingsLoaded: boolean;
+  trackApplicationUsage: boolean;
+  setTrackApplicationUsage: (enabled: boolean) => void;
   setLoadedModelFilename: (filename: string | null) => void;
   setSelectedModelFilename: (filename: string | null) => void;
   setGroqApiKey: (key: string) => void;
@@ -111,6 +113,8 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
   triggerKey: DEFAULT_TRIGGER_KEY,
   settingsLoaded: false,
+  trackApplicationUsage: true,
+  setTrackApplicationUsage: (trackApplicationUsage) => set({ trackApplicationUsage }),
   setLoadedModelFilename: (loadedModelFilename) => set({ loadedModelFilename }),
   setSelectedModelFilename: (selectedModelFilename) => set({ selectedModelFilename }),
   setGroqApiKey: (groqApiKey) => set({ groqApiKey }),

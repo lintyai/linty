@@ -15,7 +15,7 @@ export function TranscriptActions({
   onDelete,
   stopPropagation,
 }: TranscriptActionsProps) {
-  const { success } = useToast();
+  const { success, error } = useToast();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async (e: React.MouseEvent) => {
@@ -28,8 +28,12 @@ export function TranscriptActions({
 
   const handleDelete = async (e: React.MouseEvent) => {
     if (stopPropagation) e.stopPropagation();
-    await onDelete(transcript.transcriptId);
-    success("Transcript deleted");
+    try {
+      await onDelete(transcript.transcriptId);
+      success("Transcript deleted");
+    } catch {
+      error("Could not delete transcription. Please try again.");
+    }
   };
 
   return (

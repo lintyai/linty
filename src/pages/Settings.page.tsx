@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { useSettings } from "@/hooks/useSettings.hook";
+import { useAppStore } from "@/store/app.store";
 import { useModelDownload } from "@/hooks/useModelDownload.hook";
 import { Toggle } from "@/components/shared/Toggle.component";
 import { SegmentedControl } from "@/components/shared/SegmentedControl.component";
@@ -582,35 +583,26 @@ function LanguageSection() {
 
 /* ═══ Privacy ═══ */
 function PrivacySection() {
+  const { trackApplicationUsage, saveTrackApplicationUsage } = useSettings();
+  const addToast = useAppStore((s) => s.addToast);
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title="Privacy & Storage" />
-
-      <SectionCard>
-        <SettingRow
-          label="Transcript retention"
-          description="How long to keep transcription history"
-          right={<ValueBadge>Forever</ValueBadge>}
-        />
-      </SectionCard>
-
       <SectionCard>
         <Toggle
-          enabled={true}
-          onChange={() => {}}
-          label="Store transcripts locally"
-          description="Save all transcriptions on this device"
+          enabled={trackApplicationUsage}
+          onChange={(enabled) => { saveTrackApplicationUsage(enabled).catch(() => addToast({ type: "error", message: "Could not save app attribution preference." })); }}
+          label="Attribute dictations to apps"
+          description="Save the active app’s name when dictation starts. See words and dictation time per app in your dashboard."
         />
       </SectionCard>
-
       <SectionCard>
-        <Toggle
-          enabled={false}
-          onChange={() => {}}
-          label="Anonymous usage statistics"
-          description="Help improve Linty. No audio or transcript data is ever collected."
-        />
+        <SettingRow label="History retention" description="The latest 500 transcriptions. Dashboard statistics use this saved history." right={<ValueBadge>500 records</ValueBadge>} />
+        <SettingRow label="Storage location" description="Transcripts and app usage are saved on this Mac in Linty’s application data folder." right={<ValueBadge>On this Mac</ValueBadge>} />
       </SectionCard>
+      <div className="rounded-xl border border-border-subtle bg-bg-elevated px-4 py-3 text-[12px] leading-relaxed text-text-secondary">
+        App attribution records only the app name and identifier, once per dictation. It does not read window titles, browser URLs, or track time spent in other apps. Turning it off affects new dictations; deleting history removes its app statistics too.
+      </div>
     </div>
   );
 }
@@ -645,4 +637,3 @@ function AppearanceSection() {
     </div>
   );
 }
-

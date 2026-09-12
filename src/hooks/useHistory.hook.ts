@@ -1,82 +1,40 @@
 import { useEffect, useCallback } from "react";
-import { load } from "@tauri-apps/plugin-store";
 import { useAppStore } from "@/store/app.store";
+import {
+  initializeHistory,
+  saveTranscript,
+  updateHistory,
+} from "@/services/history.service";
 import type { TranscriptRecord } from "@/types/transcript.types";
 
-const STORE_PATH = "linty-history.json";
-
-let storeInstance: Awaited<ReturnType<typeof load>> | null = null;
-
-async function getHistoryStore() {
-  if (!storeInstance) {
-    storeInstance = await load(STORE_PATH, {
-      defaults: { transcripts: [] },
-      autoSave: true,
-    });
-  }
-  return storeInstance;
-}
-
 export function useHistory() {
-  const {
-    transcripts,
-    searchQuery,
-    selectedTranscriptId,
-    setTranscripts,
-    addTranscript,
-    removeTranscript,
-    clearTranscripts,
-    setSearchQuery,
-    setSelectedTranscriptId,
-  } = useAppStore();
-
+  const transcripts = useAppStore((s) => s.transcripts);
+  const searchQuery = useAppStore((s) => s.searchQuery);
+  const selectedTranscriptId = useAppStore((s) => s.selectedTranscriptId);
+  const setSearchQuery = useAppStore((s) => s.setSearchQuery);
+  const setSelectedTranscriptId = useAppStore((s) => s.setSelectedTranscriptId);
   useEffect(() => {
-    (async () => {
-      const store = await getHistoryStore();
-      const saved = await store.get<TranscriptRecord[]>("transcripts");
-      if (saved?.length) {
-        setTranscripts(saved);
-      }
-    })();
-  }, [setTranscripts]);
-
-  const persistTranscripts = useCallback(async (records: TranscriptRecord[]) => {
-    const store = await getHistoryStore();
-    await store.set("transcripts", records);
+    initializeHistory().catch((error) =>
+      console.error("Failed to load history:", error),
+    );
   }, []);
 
-  const saveTranscript = useCallback(
-    async (transcript: TranscriptRecord) => {
-      addTranscript(transcript);
-      const store = await getHistoryStore();
-      const current = await store.get<TranscriptRecord[]>("transcripts");
-      await store.set("transcripts", [transcript, ...(current || [])]);
-    },
-    [addTranscript],
+  const persistTranscripts = useCallback(
+    (records: TranscriptRecord[]) => updateHistory(() => records),
+    [],
   );
-
   const deleteTranscript = useCallback(
-    async (transcriptId: string) => {
-      removeTranscript(transcriptId);
-      const store = await getHistoryStore();
-      const current = await store.get<TranscriptRecord[]>("transcripts");
-      await store.set(
-        "transcripts",
-        (current || []).filter((t) => t.transcriptId !== transcriptId),
-      );
-    },
-    [removeTranscript],
+    (id: string) =>
+      updateHistory((records) => records.filter((t) => t.transcriptId !== id)),
+    [],
   );
-
-  const clearAll = useCallback(async () => {
-    clearTranscripts();
-    const store = await getHistoryStore();
-    await store.set("transcripts", []);
-  }, [clearTranscripts]);
-
-  const filteredTranscripts = searchQuery
+  const clearAll = useCallback(() => updateHistory(() => []), []);
+  const query = searchQuery.trim().toLowerCase();
+  const filteredTranscripts = query
     ? transcripts.filter((t) =>
-        t.finalText.toLowerCase().includes(searchQuery.toLowerCase()),
+        `${t.finalText} ${t.application?.name ?? ""} ${t.application?.bundleId ?? ""}`
+          .toLowerCase()
+          .includes(query),
       )
     : transcripts;
 

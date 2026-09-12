@@ -23,6 +23,7 @@ async function getStore() {
         translateToEnglish: false,
         modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
         triggerKey: DEFAULT_TRIGGER_KEY,
+        trackApplicationUsage: true,
       },
       autoSave: true,
     });
@@ -57,6 +58,8 @@ export function useSettings() {
     setTriggerKey,
     settingsLoaded,
     setSettingsLoaded,
+    trackApplicationUsage,
+    setTrackApplicationUsage,
   } = useAppStore();
 
   // Load settings on mount
@@ -76,6 +79,8 @@ export function useSettings() {
         const savedSelectedModel = await store.get<string>("selectedModelFilename");
         const savedIdleUnload = await store.get<number>("modelIdleUnloadMinutes");
         const savedTriggerKey = await store.get<string>("triggerKey");
+        const savedAppTracking = await store.get<boolean>("trackApplicationUsage");
+        setTrackApplicationUsage(savedAppTracking ?? true);
 
         if (key) setGroqApiKey(key);
         if (mode) setSttMode(mode);
@@ -103,7 +108,7 @@ export function useSettings() {
         setSettingsLoaded(true);
       }
     })();
-  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setTranslateToEnglish, setSelectedModelFilename, setModelIdleUnloadMinutes, setTriggerKey, setSettingsLoaded]);
+  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setTranslateToEnglish, setSelectedModelFilename, setModelIdleUnloadMinutes, setTriggerKey, setSettingsLoaded, setTrackApplicationUsage]);
 
   const saveGroqApiKey = useCallback(
     async (key: string) => {
@@ -113,6 +118,13 @@ export function useSettings() {
     },
     [setGroqApiKey],
   );
+
+  const saveTrackApplicationUsage = useCallback(async (enabled: boolean) => {
+    const store = await getStore();
+    await store.set("trackApplicationUsage", enabled);
+    await store.save();
+    setTrackApplicationUsage(enabled);
+  }, [setTrackApplicationUsage]);
 
   const saveSttMode = useCallback(
     async (mode: SttMode) => {
@@ -215,6 +227,8 @@ export function useSettings() {
   );
 
   return {
+    trackApplicationUsage,
+    saveTrackApplicationUsage,
     groqApiKey,
     sttMode,
     correctionEnabled,

@@ -1,3 +1,8 @@
+export interface ApplicationIdentity {
+  name: string;
+  bundleId: string | null;
+}
+
 export interface TranscriptRecord {
   transcriptId: string;
   rawText: string;
@@ -12,6 +17,8 @@ export interface TranscriptRecord {
   wordCount: number;
   timestamp: number;
   corrected: boolean;
+  /** Foreground app when dictation started; absent for older/private sessions. */
+  application?: ApplicationIdentity | null;
 }
 
 export interface UsageStats {
