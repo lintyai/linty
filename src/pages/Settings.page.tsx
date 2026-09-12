@@ -25,6 +25,7 @@ import { SegmentedControl } from "@/components/shared/SegmentedControl.component
 import { SectionHeader, SectionCard, SettingRow, ValueBadge } from "@/components/shared/SettingsLayout.component";
 import { cn } from "@/lib/utils";
 import { DEFAULT_CORRECTION_PROMPT } from "@/services/correction.service";
+import { SETTINGS_SECTIONS } from "@/store/slices/navigation.slice";
 import type { SttMode, ThemePreference } from "@/store/slices/settings.slice";
 
 const THEME_SEGMENTS = [
@@ -47,31 +48,23 @@ const IDLE_UNLOAD_OPTIONS = [
 ];
 
 export function SettingsPage() {
+  const section = useAppStore((s) => s.settingsSection);
+  const [visited, setVisited] = useState(() => new Set([section]));
+  useEffect(() => { setVisited((old) => old.has(section) ? old : new Set([...old, section])); }, [section]);
+  const metadata = SETTINGS_SECTIONS.find((item) => item.id === section)!;
   return (
-    <div className="flex h-full flex-col">
-      {/* Toolbar */}
-      <div
-        data-tauri-drag-region
-        className="flex h-[52px] shrink-0 items-center border-b border-border-subtle px-5"
-      >
-        <h1
-          className="text-[15px] font-semibold text-text-primary"
-          data-tauri-drag-region
-        >
-          Settings
-        </h1>
-      </div>
-
-      {/* All sections stacked */}
-      <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="mx-auto max-w-[480px] flex flex-col gap-8">
-          <GeneralSection />
-          <AudioSection />
-          <ModelsSection />
-          <LanguageSection />
-          <AppearanceSection />
-          <PrivacySection />
+    <div className="preferences-scroll">
+      <div className="preferences-content">
+        <div className="page-intro"><h2>{metadata.label}</h2><p>{metadata.description}</p></div>
+        <div className="settings-pane">
+          {(visited.has("general") || section === "general") && <div hidden={section !== "general"}><GeneralSection /></div>}
+          {(visited.has("audio") || section === "audio") && <div hidden={section !== "audio"}><AudioSection /></div>}
+          {(visited.has("models") || section === "models") && <div hidden={section !== "models"}><ModelsSection /></div>}
+          {(visited.has("language") || section === "language") && <div hidden={section !== "language"}><LanguageSection /></div>}
+          {(visited.has("appearance") || section === "appearance") && <div hidden={section !== "appearance"}><AppearanceSection /></div>}
+          {(visited.has("privacy") || section === "privacy") && <div hidden={section !== "privacy"}><PrivacySection /></div>}
         </div>
+        <p className="preferences-footnote">Changes are saved automatically.</p>
       </div>
     </div>
   );
@@ -104,8 +97,8 @@ function GeneralSection() {
         <Toggle
           enabled={correctionEnabled}
           onChange={saveCorrectionEnabled}
-          label="LLM Correction"
-          description="Fix grammar and punctuation using AI after transcription"
+          label="Refine transcription"
+          description="Fix grammar and punctuation with Groq. Transcribed text is sent to the cloud."
         />
       </SectionCard>
 
@@ -130,6 +123,7 @@ function GeneralSection() {
                 )}
               </div>
               <textarea
+                aria-label="Correction instructions"
                 value={correctionInput || DEFAULT_CORRECTION_PROMPT}
                 onChange={(e) => setCorrectionInput(e.target.value)}
                 onBlur={handleCorrectionBlur}
@@ -143,7 +137,7 @@ function GeneralSection() {
                 )}
               />
               <span className="text-[11px] text-text-muted leading-snug">
-                System prompt for the LLM correction step
+                Instructions used to refine your transcribed text.
               </span>
             </div>
           </div>
@@ -176,7 +170,7 @@ function AudioSection() {
         />
         <SettingRow
           label="Sample quality"
-          description="Higher quality uses more resources"
+          description="Optimized for speech recognition"
           right={<ValueBadge>16 kHz</ValueBadge>}
         />
       </SectionCard>
@@ -234,6 +228,7 @@ function ModelsSection() {
       <SectionHeader title="Speech Engine" />
 
       <SegmentedControl
+        label="Speech engine"
         segments={ENGINE_SEGMENTS}
         value={sttMode}
         onChange={saveSttMode}
@@ -251,6 +246,7 @@ function ModelsSection() {
                 </label>
                 <div className="relative">
                   <input
+                    aria-label="Groq API key"
                     type={showKey ? "text" : "password"}
                     value={keyInput}
                     onChange={(e) => setKeyInput(e.target.value)}
@@ -270,6 +266,7 @@ function ModelsSection() {
                   />
                   <button
                     type="button"
+                    aria-label={showKey ? "Hide API key" : "Show API key"}
                     onClick={() => setShowKey(!showKey)}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
                   >
@@ -294,6 +291,7 @@ function ModelsSection() {
                   Transcription Prompt
                 </label>
                 <textarea
+                  aria-label="Transcription prompt"
                   value={whisperInput}
                   onChange={(e) => setWhisperInput(e.target.value)}
                   onBlur={handleWhisperBlur}
@@ -344,14 +342,10 @@ function ModelsSection() {
               <HardDrive size={13} className="text-warning shrink-0 mt-px" />
               <div className="flex flex-col gap-1">
                 <span className="text-[13px] font-medium text-text-primary">
-                  Local STT not available
+                  On-device transcription unavailable
                 </span>
                 <span className="text-[12px] text-text-muted leading-relaxed">
-                  Rebuild with{" "}
-                  <code className="rounded bg-bg-hover px-1 py-0.5 text-[11px] font-medium">
-                    --features local-stt
-                  </code>{" "}
-                  to enable on-device transcription.
+                  This build does not include on-device transcription. Choose Cloud to continue, or install the full macOS version.
                 </span>
               </div>
             </div>
@@ -405,6 +399,8 @@ function ModelsSection() {
                                 setLoadingModel(model.filename);
                                 try {
                                   await loadModel(model.filename);
+                                } catch {
+                                  useAppStore.getState().addToast({ type: "error", message: "Could not load model. Try again or choose another model." });
                                 } finally {
                                   setLoadingModel(null);
                                 }
@@ -454,6 +450,7 @@ function ModelsSection() {
                   </div>
                   <div className="shrink-0 ml-4 relative">
                     <select
+                      aria-label="Unload model when idle"
                       value={modelIdleUnloadMinutes}
                       onChange={(e) => saveModelIdleUnloadMinutes(Number(e.target.value))}
                       className={cn(
@@ -533,6 +530,7 @@ function LanguageSection() {
           </div>
           <div className="shrink-0 ml-4 relative">
             <select
+              aria-label="Transcription language"
               value={transcriptionLanguage}
               onChange={(e) => saveTranscriptionLanguage(e.target.value)}
               className={cn(
@@ -621,6 +619,7 @@ function AppearanceSection() {
           description="Choose light, dark, or follow system"
           right={
             <SegmentedControl
+              label="Appearance"
               segments={THEME_SEGMENTS}
               value={theme}
               onChange={saveTheme}
@@ -630,7 +629,7 @@ function AppearanceSection() {
         />
         <SettingRow
           label="Accent color"
-          description="Used for recording indicator and highlights"
+          description="Coral, for interactions and recording"
           right={<div className="h-5 w-5 rounded-full bg-accent border border-accent-soft" />}
         />
       </SectionCard>

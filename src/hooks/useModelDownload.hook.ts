@@ -154,9 +154,11 @@ export function useModelDownload() {
           console.log("[model] Auto-loaded after download:", model.filename);
         } catch (loadErr) {
           console.error("[model] Auto-load after download failed:", loadErr);
+          useAppStore.getState().addToast({ type: "error", message: "Model downloaded but could not load. Choose Load to try again." });
         }
       } catch (err) {
         console.error("Download failed:", err);
+        useAppStore.getState().addToast({ type: "error", message: "Model download failed. Check your connection, then try again." });
       } finally {
         setIsDownloading(false);
         setDownloadingFilename(null);

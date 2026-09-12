@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  Sparkles,
+  AudioLines,
   Download,
   RefreshCw,
   ExternalLink,
@@ -30,29 +30,16 @@ export function AboutPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Toolbar */}
-      <div
-        data-tauri-drag-region
-        className="flex h-[52px] shrink-0 items-center border-b border-border-subtle px-5"
-      >
-        <h1
-          className="text-[15px] font-semibold text-text-primary"
-          data-tauri-drag-region
-        >
-          About
-        </h1>
-      </div>
-
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="mx-auto max-w-[480px] flex flex-col gap-8">
+      <div className="preferences-scroll">
+        <div className="preferences-content flex flex-col gap-8">
           {/* App identity */}
           <div className="flex flex-col items-center gap-3 py-6">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 border border-accent/20">
-              <Sparkles size={22} className="text-accent" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-[10px] bg-bg-secondary">
+              <AudioLines size={24} className="text-accent" />
             </div>
             <div className="flex flex-col items-center gap-0.5">
-              <span className="text-[15px] font-semibold text-text-primary">
+              <span className="text-[22px] font-semibold text-text-primary">
                 Linty
               </span>
               <span className="text-[12px] text-text-muted">
@@ -107,7 +94,7 @@ export function AboutPage() {
           {updateStatus === "error" && updateError && (
             <SectionCard className="animate-fade-in">
               <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-[13px] text-danger">{updateError}</span>
+                <span className="text-[13px] text-error">{updateError}</span>
                 <button
                   onClick={handleCheckUpdate}
                   className="text-[12px] text-accent hover:text-accent-soft transition-colors"
@@ -149,8 +136,8 @@ export function AboutPage() {
                 <span className="text-[13px] text-text-primary">GitHub</span>
                 <ExternalLink size={13} className="text-text-muted" />
               </button>
-              <button className="flex items-center justify-between px-4 py-[10px] hover:bg-bg-hover transition-colors">
-                <span className="text-[13px] text-text-primary">Licenses</span>
+              <button onClick={() => open("https://github.com/lintyai/linty/blob/main/LICENSE")} className="flex items-center justify-between px-4 py-[10px] hover:bg-bg-hover transition-colors">
+                <span className="text-[13px] text-text-primary">License</span>
                 <ExternalLink size={13} className="text-text-muted" />
               </button>
             </div>

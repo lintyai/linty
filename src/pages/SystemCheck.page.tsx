@@ -118,7 +118,7 @@ function PermissionRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3.5 px-4 py-3.5",
+        "permission-row flex items-center gap-3.5 px-4 py-3.5",
         !isLast && "border-b border-border-subtle",
       )}
     >
@@ -183,30 +183,19 @@ export function SystemCheckPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Toolbar */}
-      <div
-        data-tauri-drag-region
-        className="flex h-[52px] shrink-0 items-center border-b border-border-subtle px-5"
-      >
-        <h1
-          className="text-[15px] font-semibold text-text-primary"
-          data-tauri-drag-region
-        >
-          System Check
-        </h1>
-      </div>
-
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-5">
+      <div className="preferences-scroll">
+        <div className="preferences-content">
+        <div className="page-intro"><h2>Ready when you are</h2><p>Check permissions and make sure your microphone is working.</p></div>
         {/* Section label */}
         <div className="mb-2.5">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
+          <span className="text-[13px] font-semibold text-text-primary">
             Permissions
           </span>
         </div>
 
         {/* Permission cards */}
-        <div className="rounded-xl border border-border-subtle bg-bg-secondary overflow-hidden">
+        <div className="settings-group">
           <PermissionRow
             icon={<Mic size={15} className="text-text-secondary" />}
             label="Microphone Access"
@@ -229,16 +218,17 @@ export function SystemCheckPage() {
 
         {/* Footer note */}
         <p className="mt-3 text-[11px] text-text-muted">
-          Permissions are checked every 3 seconds.
+          Permission status updates automatically when you return from System Settings.
         </p>
 
         {/* Microphone Test */}
         <div className="mt-6 mb-2.5">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
+          <span className="text-[13px] font-semibold text-text-primary">
             Microphone Test
           </span>
         </div>
         <RecordingTestWidget />
+        </div>
       </div>
     </div>
   );
@@ -274,10 +264,11 @@ function RecordingTestWidget() {
   const handleToggle = useCallback(async () => {
     if (isRecording) {
       await handleStopAndProcess();
-    } else if (isIdle) {
+    } else if (isIdle || isDone || isError) {
+      resetTranscription();
       await startRecording();
     }
-  }, [isRecording, isIdle, startRecording, handleStopAndProcess]);
+  }, [isRecording, isIdle, isDone, isError, resetTranscription, startRecording, handleStopAndProcess]);
 
   // Auto-reset after done/error
   useEffect(() => {
@@ -294,11 +285,12 @@ function RecordingTestWidget() {
   };
 
   return (
-    <div className="rounded-xl border border-border-subtle bg-bg-secondary overflow-hidden">
+    <div className="settings-group">
       <div className="px-4 py-3.5">
         <div className="flex items-center gap-3">
           <button
             onClick={handleToggle}
+            aria-label={isRecording ? "Stop microphone test" : "Start microphone test"}
             disabled={isProcessing}
             className={cn(
               "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200",

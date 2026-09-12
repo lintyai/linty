@@ -23,30 +23,32 @@ export function ToastContainer() {
   if (!toasts.length) return null;
 
   return (
-    <div className="fixed right-3 top-14 z-50 flex flex-col gap-1.5 pointer-events-none">
+    <div className="fixed right-4 bottom-12 z-50 flex flex-col gap-1.5 pointer-events-none">
       {toasts.map((toast) => (
         <div
           key={toast.toastId}
+          role={toast.type === "error" ? "alert" : "status"}
           className={cn(
             "animate-toast-in pointer-events-auto flex items-center gap-2 rounded-lg border px-3 py-2",
-            "bg-bg-elevated/95 backdrop-blur-xl shadow-lg",
-            "max-w-[280px]",
+            "bg-bg-elevated shadow-sm",
+            "max-w-[340px]",
             TOAST_BORDER[toast.type],
           )}
         >
           {TOAST_ICONS[toast.type]}
-          <span className="flex-1 text-[11px] text-text-primary leading-snug">
+          <span className="flex-1 text-[12px] text-text-primary leading-snug">
             {toast.message}
           </span>
           {toast.action && (
             <button
               onClick={toast.action.onClick}
-              className="shrink-0 text-[10px] font-medium text-accent hover:text-accent-soft transition-colors"
+              className="shrink-0 text-[12px] font-medium text-accent hover:text-accent-soft transition-colors"
             >
               {toast.action.label}
             </button>
           )}
           <button
+            aria-label="Dismiss notification"
             onClick={() => removeToast(toast.toastId)}
             className="shrink-0 text-text-muted hover:text-text-secondary transition-colors"
           >

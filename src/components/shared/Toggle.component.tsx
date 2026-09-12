@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { cn } from "@/lib/utils";
 
 interface ToggleProps {
@@ -15,16 +16,18 @@ export function Toggle({
   description,
   disabled,
 }: ToggleProps) {
+  const descriptionId = useId();
   return (
     <button
       type="button"
       role="switch"
       aria-checked={enabled}
       aria-label={label}
+      aria-describedby={description ? descriptionId : undefined}
       onClick={() => !disabled && onChange(!enabled)}
       disabled={disabled}
       className={cn(
-        "flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors duration-150",
+        "setting-toggle flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors duration-150",
         "hover:bg-bg-hover",
         disabled && "cursor-not-allowed opacity-40",
       )}
@@ -34,7 +37,7 @@ export function Toggle({
           {label}
         </span>
         {description && (
-          <span className="text-[12px] text-text-muted leading-snug">
+          <span id={descriptionId} className="text-[12px] text-text-secondary leading-snug">
             {description}
           </span>
         )}
@@ -42,7 +45,7 @@ export function Toggle({
       <div
         className={cn(
           "relative h-[20px] w-[34px] shrink-0 rounded-full transition-colors duration-200",
-          enabled ? "bg-success" : "bg-border",
+          enabled ? "bg-accent" : "bg-border",
         )}
       >
         <div

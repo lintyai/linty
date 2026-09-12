@@ -36,3 +36,6 @@ firebase-debug.log
 
 # Tauri
 src-tauri/gen/
+
+# Generated interface test screenshots
+artifacts/

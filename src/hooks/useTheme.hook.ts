@@ -14,13 +14,26 @@ export function useTheme() {
 
   useEffect(() => {
     const mq = window.matchMedia(MEDIA_QUERY);
+    let firstFrame = 0;
+    let secondFrame = 0;
     const apply = () => {
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+      document.documentElement.classList.add("theme-changing");
       const resolved = resolveTheme(theme, mq.matches);
       document.documentElement.setAttribute("data-theme", resolved);
+      firstFrame = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => document.documentElement.classList.remove("theme-changing"));
+      });
     };
 
     apply();
     mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
+    return () => {
+      mq.removeEventListener("change", apply);
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+      document.documentElement.classList.remove("theme-changing");
+    };
   }, [theme]);
 }

@@ -8,7 +8,7 @@
   --color-text-primary: rgba(255, 255, 255, 0.93);
   --color-text-secondary: rgba(255, 255, 255, 0.63);
   --color-text-muted: rgba(255, 255, 255, 0.42);
-  --color-accent: #e23535;
+  --color-accent: #f0947f;
   --color-success: #30d158;
   --color-error: #ff453a;
 }
@@ -44,40 +44,20 @@ body,
   display: flex;
   align-items: center;
   padding: 7px 14px;
-  border-radius: 100px;
-  backdrop-filter: blur(40px) saturate(1.8);
-  -webkit-backdrop-filter: blur(40px) saturate(1.8);
-  background: rgba(28, 28, 30, 0.82);
+  border-radius: 10px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: rgba(32, 33, 34, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
     0 2px 12px rgba(0, 0, 0, 0.35),
     0 0 0 0.5px rgba(255, 255, 255, 0.06) inset;
 }
 
-.capsule-recording {
-  border-color: rgba(226, 53, 53, 0.18);
-  box-shadow:
-    0 2px 16px rgba(226, 53, 53, 0.12),
-    0 0 0 0.5px rgba(226, 53, 53, 0.08) inset;
-}
-
-.capsule-processing {
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.capsule-done {
-  border-color: rgba(48, 209, 88, 0.18);
-  box-shadow:
-    0 2px 12px rgba(48, 209, 88, 0.1),
-    0 0 0 0.5px rgba(48, 209, 88, 0.06) inset;
-}
-
-.capsule-error {
-  border-color: rgba(255, 69, 58, 0.18);
-  box-shadow:
-    0 2px 12px rgba(255, 69, 58, 0.1),
-    0 0 0 0.5px rgba(255, 69, 58, 0.06) inset;
-}
+.capsule-recording { border-color: rgba(240, 148, 127, .3); }
+.capsule-processing { border-color: rgba(255,255,255,.15); }
+.capsule-done { border-color: rgba(119,206,150,.3); }
+.capsule-error { border-color: rgba(255,138,146,.4); }
 
 /* ── Recording dot ── */
 
@@ -188,4 +168,11 @@ body,
     animation-iteration-count: 1 !important;
     transition-duration: .01ms !important;
   }
+}
+
+:root[data-theme="light"] { --color-text-primary: #252628; --color-text-secondary: #626367; --color-text-muted: #68696d; --color-accent: #a94230; --color-success: #267343; --color-error: #bc3440; }
+:root[data-theme="light"] .capsule-pill { background: rgba(250,249,247,.96); border-color: rgba(0,0,0,.12); box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+@media (prefers-reduced-transparency: reduce) {
+  .capsule-pill { backdrop-filter: none; -webkit-backdrop-filter: none; background: #202122; }
+  :root[data-theme="light"] .capsule-pill { background: #faf9f7; }
 }

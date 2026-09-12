@@ -1,84 +1,41 @@
+import { isTauri } from "@tauri-apps/api/core";
+import { showTranscriptMenu } from "@/lib/transcript-menu.util";
 import { Cloud, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TranscriptRecord } from "@/types/transcript.types";
-
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
 
 interface TranscriptRowProps {
   transcript: TranscriptRecord;
   selected?: boolean;
   onClick?: () => void;
+  onDelete?: (id: string) => Promise<void>;
   actions?: React.ReactNode;
   className?: string;
 }
 
-export function TranscriptRow({
-  transcript: t,
-  selected,
-  onClick,
-  actions,
-  className,
-}: TranscriptRowProps) {
-  const Tag = onClick ? "button" : "div";
-
+export function TranscriptRow({ transcript: t, selected, onClick, onDelete, actions, className }: TranscriptRowProps) {
+  const content = <>
+    <p className="transcript-preview">{t.finalText}</p>
+    <span className="transcript-metadata">
+      <time dateTime={new Date(t.timestamp).toISOString()}>{new Date(t.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+      {t.application && <><span aria-hidden="true">·</span><span>{t.application.name}</span></>}
+      <span aria-hidden="true">·</span><span>{t.wordCount} words</span>
+      <span className="transcript-engine" title={t.modelName}>{t.engine === "cloud" ? <Cloud size={11} /> : <Cpu size={11} />}{t.engine === "cloud" ? "Cloud" : "Local"}</span>
+    </span>
+  </>;
   return (
-    <Tag
-      onClick={onClick}
-      className={cn(
-        "group relative flex w-full items-start gap-3 px-5 py-2.5 transition-colors duration-100",
-        onClick && "text-left",
-        selected ? "bg-bg-active" : "hover:bg-bg-hover",
-        className,
-      )}
-    >
-      {selected && (
-        <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-accent" />
-      )}
-
-      <div className="flex flex-1 flex-col gap-1 min-w-0">
-        <p className="text-[13px] text-text-primary leading-snug truncate">
-          {t.finalText}
-        </p>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-text-muted">
-          {t.application && <span className="rounded bg-accent-glow px-1.5 py-0.5 text-accent">{t.application.name}</span>}
-          <span className="tabular-nums">{formatTime(t.timestamp)}</span>
-          <span className="text-border-subtle">·</span>
-          <span className="flex items-center gap-0.5">
-            {t.engine === "cloud" ? (
-              <Cloud size={10} />
-            ) : (
-              <Cpu size={10} />
-            )}
-            {t.modelName}
-          </span>
-          <span className="text-border-subtle">·</span>
-          <span>
-            {formatDuration(t.durationSeconds)} rec
-            {" · "}
-            {(t.processingTimeMs / 1000).toFixed(1)}s processed
-          </span>
-          <span className="text-border-subtle">·</span>
-          <span>{t.wordCount} words</span>
-        </div>
-      </div>
-
-      {actions && (
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shrink-0 pt-0.5">
-          {actions}
-        </div>
-      )}
-    </Tag>
+    <div className={cn("transcript-row group", selected && "is-selected", className)}
+      onContextMenu={(e) => {
+        if (!isTauri() || !onDelete) return;
+        e.preventDefault(); onClick?.(); void showTranscriptMenu(t, onDelete);
+      }}
+      onKeyDown={(e) => {
+        if (isTauri() && onDelete && (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10"))) {
+          e.preventDefault(); onClick?.(); void showTranscriptMenu(t, onDelete);
+        }
+      }}>
+      {onClick ? <button type="button" data-transcript-id={t.transcriptId} aria-pressed={!!selected} onClick={(e) => { e.currentTarget.focus(); onClick(); }} className="transcript-select">{content}</button> : <div className="transcript-select select-text">{content}</div>}
+      {actions && <div className="transcript-actions">{actions}</div>}
+    </div>
   );
 }

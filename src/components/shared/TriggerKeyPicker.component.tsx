@@ -124,12 +124,13 @@ export function TriggerKeyPicker({ value, onChange, className }: TriggerKeyPicke
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <div className="rounded-xl border border-border-subtle bg-bg-secondary overflow-hidden">
+      <div className="settings-group">
         {TRIGGER_KEY_OPTIONS.map((option) => {
           const selected = value === option.value;
           return (
             <button
               key={option.value}
+              aria-pressed={selected}
               onClick={() => select(option.value)}
               className={cn(
                 "flex w-full items-center gap-3 border-b border-border-subtle px-4 py-3 text-left transition-colors duration-150",
@@ -140,7 +141,7 @@ export function TriggerKeyPicker({ value, onChange, className }: TriggerKeyPicke
                 <span className="text-[13px] font-medium text-text-primary">
                   {option.label}
                 </span>
-                <span className="text-[11px] text-text-muted">
+                <span className="text-[12px] text-text-secondary">
                   {option.description}
                 </span>
               </div>
@@ -161,7 +162,7 @@ export function TriggerKeyPicker({ value, onChange, className }: TriggerKeyPicke
               <span className="text-[13px] font-medium text-text-primary">
                 Custom
               </span>
-              <span className="text-[11px] text-text-muted">
+              <span className="text-[12px] text-text-secondary">
                 Your recorded trigger.
               </span>
             </div>
@@ -191,7 +192,7 @@ export function TriggerKeyPicker({ value, onChange, className }: TriggerKeyPicke
             <span className="text-[13px] font-medium text-text-primary">
               {capturing ? "Press your key or combination…" : "Record a custom trigger"}
             </span>
-            <span className="text-[11px] text-text-muted">
+            <span className="text-[12px] text-text-secondary">
               {capturing
                 ? "Hold a single modifier and release it, or press a combo. Esc cancels."
                 : "Any modifier key alone, or any combination."}
@@ -201,7 +202,7 @@ export function TriggerKeyPicker({ value, onChange, className }: TriggerKeyPicke
       </div>
 
       {captureError && (
-        <p className="text-[11px] text-error">{captureError}</p>
+        <p role="alert" className="text-[12px] text-error">{captureError}</p>
       )}
 
       {pendingCombo && (

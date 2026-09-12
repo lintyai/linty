@@ -1,54 +1,25 @@
-import { Cloud, Cpu } from "lucide-react";
+import { AlertCircle, Cloud, Cpu, Loader2 } from "lucide-react";
 import { useAppStore } from "@/store/app.store";
-import { cn } from "@/lib/utils";
 
 export function StatusBar() {
-  const sttMode = useAppStore((s) => s.sttMode);
-  const status = useAppStore((s) => s.status);
-  const transcripts = useAppStore((s) => s.transcripts);
-
-  const isRecording = status === "recording";
-  const isProcessing =
-    status === "transcribing" || status === "correcting" || status === "pasting";
-
-  const statusText = isRecording
-    ? "Recording..."
-    : isProcessing
-      ? status === "transcribing"
-        ? "Transcribing..."
-        : status === "correcting"
-          ? "Polishing..."
-          : "Pasting..."
-      : "Ready";
-
+  const { sttMode, status, transcripts, error, groqApiKey, loadedModelFilename, setSettingsSection } = useAppStore();
+  const busy = ["transcribing", "correcting", "pasting"].includes(status);
+  const needsSetup = sttMode === "cloud" && !groqApiKey;
+  const labels: Record<string, string> = {
+    recording: "Recording", transcribing: "Transcribing", correcting: "Refining text", pasting: "Pasting", done: "Transcription complete",
+  };
+  const label = status === "error" ? (error || "Transcription failed") : labels[status] || (needsSetup ? "API key required" : sttMode === "local" && !loadedModelFilename ? "Model will load on dictation" : "Ready to dictate");
   return (
-    <div className="flex h-[24px] shrink-0 items-center justify-between border-t border-border-subtle px-4 text-[11px]">
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1 text-text-muted">
-          {sttMode === "cloud" ? <Cloud size={11} /> : <Cpu size={11} />}
-          <span>{sttMode === "cloud" ? "Cloud" : "Local"}</span>
-        </div>
-        <span className="text-border">·</span>
-        <span
-          className={cn(
-            "flex items-center gap-1.5",
-            isRecording
-              ? "text-accent"
-              : isProcessing
-                ? "text-warning"
-                : "text-text-muted",
-          )}
-        >
-          {isRecording && (
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent animate-breathe" />
-          )}
-          {statusText}
-        </span>
+    <footer className="status-bar">
+      <div className={`status-message ${status === "error" ? "text-error" : ""}`} role="status" title={label}>
+        {status === "error" ? <AlertCircle size={12} /> : busy ? <Loader2 size={12} className="animate-spin" /> : <span className={`status-dot ${status === "recording" ? "is-recording" : ""}`} />}
+        <span>{label}</span>
       </div>
-
-      <span className="text-text-muted tabular-nums">
-        {transcripts.length} transcription{transcripts.length !== 1 ? "s" : ""}
-      </span>
-    </div>
+      <button className="status-engine" onClick={() => setSettingsSection("models")} title="Configure speech engine">
+        {sttMode === "cloud" ? <Cloud size={12} /> : <Cpu size={12} />}
+        {sttMode === "cloud" ? "Cloud" : "On-device"}
+      </button>
+      <span className="status-count">{transcripts.length} saved</span>
+    </footer>
   );
 }
