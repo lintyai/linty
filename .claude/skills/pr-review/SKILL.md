@@ -62,7 +62,7 @@ gh api repos/lintyai/linty/pulls/{pr_number}/reviews --jq '
 | **Critical** | `src-tauri/src/permissions.rs`, `src-tauri/src/fnkey.rs`, `src-tauri/Entitlements.plist`, `src-tauri/Info.plist`, `.env*`, `**/secret*`, `**/token*` | Full + security pass |
 | **High** | `src-tauri/src/*.rs`, `src/store/**`, `src/hooks/**`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` | Deep line-by-line |
 | **Medium** | `src/pages/**`, `src/components/**`, `src/services/**`, `src/types/**` | Standard |
-| **Low** | `**/*.md`, `**/package.json`, `**/*.config.*`, `scripts/**` | Light |
+| **Low** | `**/*.md`, `**/package.json`, `**/*.config.*`, `scripts/**`, `.claude/**` | Light |
 
 ### 2.2 Aggregate Risk
 PR risk = **highest risk** among all changed files. Determines:
