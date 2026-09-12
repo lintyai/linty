@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { load } from "@tauri-apps/plugin-store";
+import { saveTranscript } from "@/services/history.service";
 import { useAppStore } from "@/store/app.store";
 import { correctText } from "@/services/correction.service";
 import type { TranscriptRecord } from "@/types/transcript.types";
@@ -39,11 +39,9 @@ export function useTranscription() {
     setFinalText,
     setError,
     resetTranscription,
-    addTranscript,
     addToast,
   } = useAppStore();
 
-  const recordingStartRef = useRef<number>(0);
   const processingStartRef = useRef<number>(0);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -57,10 +55,6 @@ export function useTranscription() {
       clearTimeout(resetTimerRef.current);
       resetTimerRef.current = null;
     }
-  }, []);
-
-  const setRecordingStart = useCallback((ts: number) => {
-    recordingStartRef.current = ts;
   }, []);
 
   const processAudio = useCallback(
@@ -78,10 +72,8 @@ export function useTranscription() {
         return;
       }
 
-      const recordingDuration =
-        recordingStartRef.current > 0
-          ? (Date.now() - recordingStartRef.current) / 1000
-          : result.duration_secs;
+      // Captured audio is authoritative; wall time includes device/IPC delays.
+      const recordingDuration = result.duration_secs;
 
       processingStartRef.current = Date.now();
 
@@ -216,23 +208,12 @@ export function useTranscription() {
           wordCount: finalResult.split(/\s+/).filter(Boolean).length,
           timestamp: Date.now(),
           corrected: correctionEnabled && groqApiKey !== "",
+          application: result.application ?? null,
         };
-        addTranscript(record);
-
-        // Persist to store
-        (async () => {
-          try {
-            const store = await load("linty-history.json", {
-              defaults: { transcripts: [] },
-              autoSave: true,
-            });
-            const current =
-              (await store.get<TranscriptRecord[]>("transcripts")) || [];
-            await store.set("transcripts", [record, ...current].slice(0, 500));
-          } catch (err) {
-            console.error("Failed to persist transcript:", err);
-          }
-        })();
+        saveTranscript(record).catch((err) => {
+          console.error("Failed to persist transcript:", err);
+          addToast({ type: "error", message: "Text transcribed, but history could not be saved on this Mac." });
+        });
 
         setStatus("done");
         emitCapsule("done", finalResult);
@@ -280,7 +261,6 @@ export function useTranscription() {
       setFinalText,
       setError,
       resetTranscription,
-      addTranscript,
       addToast,
     ],
   );
@@ -298,7 +278,6 @@ export function useTranscription() {
     error,
     processAudio,
     resetTranscription,
-    setRecordingStart,
     clearPendingTimers,
   };
 }

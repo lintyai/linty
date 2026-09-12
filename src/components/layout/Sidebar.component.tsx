@@ -19,12 +19,14 @@ import {
   ArrowDownToLine,
   Loader2,
   AlertCircle,
+  AudioLines,
 } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore } from "@/store/app.store";
 import { useUpdater } from "@/hooks/useUpdater.hook";
 import type { AppView } from "@/store/slices/navigation.slice";
 import { cn } from "@/lib/utils";
+import { formatTriggerLabel } from "@/lib/trigger.util";
 
 /* ── Nav items ── */
 
@@ -79,9 +81,9 @@ const SEARCH_ITEMS: SearchItem[] = [
   { label: "Accent Color", category: "Settings", keywords: "color theme accent highlight", view: "settings", icon: <Palette size={14} /> },
 
   // Settings > Privacy
-  { label: "Transcript Retention", category: "Settings", keywords: "storage history retention delete", view: "settings", icon: <Shield size={14} /> },
-  { label: "Store Transcripts Locally", category: "Settings", keywords: "local storage save data privacy", view: "settings", icon: <Shield size={14} /> },
-  { label: "Usage Statistics", category: "Settings", keywords: "analytics telemetry anonymous privacy", view: "settings", icon: <Shield size={14} /> },
+  { label: "History Retention", category: "Settings", keywords: "storage history retention delete", view: "settings", icon: <Shield size={14} /> },
+  { label: "Storage Location", category: "Settings", keywords: "local storage save data privacy", view: "settings", icon: <Shield size={14} /> },
+  { label: "Attribute Dictations to Apps", category: "Settings", keywords: "analytics applications words time privacy usage", view: "settings", icon: <Shield size={14} /> },
 
   // System Check
   { label: "Microphone Access", category: "System Check", keywords: "mic permission grant recording", view: "system-check", icon: <Mic size={14} /> },
@@ -110,8 +112,9 @@ function NavButton({
   return (
     <button
       onClick={onClick}
+      aria-current={isActive ? "page" : undefined}
       className={cn(
-        "flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition-all duration-150",
+        "nav-button flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[12px] transition-all duration-150",
         isActive
           ? "bg-bg-active font-medium text-text-primary"
           : "font-normal text-text-secondary hover:bg-bg-hover hover:text-text-primary active:bg-bg-active",
@@ -402,24 +405,24 @@ function VersionIndicator() {
 export function Sidebar() {
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
+  const triggerKey = useAppStore((s) => s.triggerKey);
 
   return (
-    <aside className="flex h-full w-[var(--sidebar-width)] shrink-0 flex-col border-r border-border-subtle bg-bg-secondary">
+    <aside className="app-sidebar flex h-full w-[var(--sidebar-width)] shrink-0 flex-col border-r border-border-subtle">
       {/* Traffic light spacing + drag region */}
       <div data-tauri-drag-region className="h-[52px] shrink-0" />
 
       {/* App identity */}
-      <div className="px-3.5 pb-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
-          Linty
-        </span>
+      <div className="sidebar-brand">
+        <span className="brand-symbol"><AudioLines size={21} strokeWidth={2.5} /></span>
+        <div><div className="brand-name">linty<small>.ai</small></div><p className="sidebar-caption">THOUGHTS INTO WORDS</p></div>
       </div>
 
       {/* Search */}
       <SidebarSearch onNavigate={setCurrentView} />
 
       {/* Navigation */}
-      <nav className="flex flex-col gap-0.5 px-2.5">
+      <nav aria-label="Main navigation" className="flex flex-col gap-1 px-2.5">
         {NAV_ITEMS.map((item) => (
           <NavButton
             key={item.view}
@@ -433,6 +436,8 @@ export function Sidebar() {
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      <div className="sidebar-tip"><span className="flex items-center gap-1.5 text-[11px] font-medium"><Mic size={12} className="text-accent" /> A thought away</span><p>Hold <kbd>{formatTriggerLabel(triggerKey)}</kbd><br />Speak. Release. Keep going.</p></div>
 
       {/* Version indicator */}
       <VersionIndicator />

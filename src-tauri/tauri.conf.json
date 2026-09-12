@@ -14,8 +14,8 @@
     "windows": [
       {
         "title": "Linty",
-        "width": 800,
-        "height": 600,
+        "width": 1080,
+        "height": 760,
         "minWidth": 640,
         "minHeight": 480,
         "resizable": true,

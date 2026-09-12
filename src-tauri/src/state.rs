@@ -9,6 +9,7 @@ pub const DEFAULT_MODEL_IDLE_UNLOAD_SECS: u64 = 15 * 60;
 pub struct RecordingState {
     pub is_recording: bool,
     pub samples: Vec<f32>,
+    pub application: Option<crate::application::ApplicationIdentity>,
 }
 
 /// Commands sent to the dedicated audio thread.

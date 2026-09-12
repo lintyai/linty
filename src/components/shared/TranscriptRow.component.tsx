@@ -51,7 +51,8 @@ export function TranscriptRow({
         <p className="text-[13px] text-text-primary leading-snug truncate">
           {t.finalText}
         </p>
-        <div className="flex items-center gap-2 text-[11px] text-text-muted">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-text-muted">
+          {t.application && <span className="rounded bg-accent-glow px-1.5 py-0.5 text-accent">{t.application.name}</span>}
           <span className="tabular-nums">{formatTime(t.timestamp)}</span>
           <span className="text-border-subtle">·</span>
           <span className="flex items-center gap-0.5">
@@ -74,7 +75,7 @@ export function TranscriptRow({
       </div>
 
       {actions && (
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 pt-0.5">
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shrink-0 pt-0.5">
           {actions}
         </div>
       )}

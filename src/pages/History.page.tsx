@@ -98,7 +98,7 @@ export function HistoryPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search..."
+              placeholder="Search transcripts or apps..."
               spellCheck={false}
               className={cn(
                 "w-[180px] rounded-lg border border-border-subtle bg-bg-elevated/50 py-[5px] pl-[30px]",

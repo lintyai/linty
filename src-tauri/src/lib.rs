@@ -1,4 +1,5 @@
 mod audio;
+mod application;
 #[cfg(target_os = "macos")]
 #[allow(deprecated, unexpected_cfgs)]
 mod capsule;
@@ -27,6 +28,7 @@ use tauri::{
 struct StopResult {
     sample_count: usize,
     duration_secs: f64,
+    application: Option<application::ApplicationIdentity>,
 }
 
 /// System-level fn key binding status (issue #32 — macOS Dictation double-paste).
@@ -82,10 +84,16 @@ async fn load_whisper_ctx(
 fn start_recording(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+    track_application: Option<bool>,
 ) -> Result<(), String> {
     {
         let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
         rec.samples = Vec::new();
+        rec.application = if track_application.unwrap_or(false) {
+            application::frontmost_application()
+        } else {
+            None
+        };
         rec.is_recording = true;
     }
 
@@ -152,15 +160,17 @@ async fn stop_recording(
         duration_secs
     );
 
-    {
+    let application = {
         let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
         rec.is_recording = false;
         rec.samples = samples;
-    }
+        rec.application.take()
+    };
 
     Ok(StopResult {
         sample_count,
         duration_secs,
+        application,
     })
 }
 

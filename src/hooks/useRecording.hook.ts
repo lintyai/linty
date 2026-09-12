@@ -2,10 +2,12 @@ import { useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store/app.store";
+import type { ApplicationIdentity } from "@/types/transcript.types";
 
 export interface StopResult {
   sample_count: number;
   duration_secs: number;
+  application?: ApplicationIdentity | null;
 }
 
 export function useRecording() {
@@ -22,7 +24,8 @@ export function useRecording() {
 
   const startRecording = useCallback(async () => {
     try {
-      await invoke("start_recording");
+      const settings = useAppStore.getState();
+      await invoke("start_recording", { trackApplication: settings.settingsLoaded && settings.trackApplicationUsage });
       setIsRecording(true);
       setStatus("recording");
       startTimeRef.current = Date.now();
