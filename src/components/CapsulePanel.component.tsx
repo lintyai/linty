@@ -1,3 +1,4 @@
+import { useCapsuleTheme } from "@/hooks/useCapsuleTheme.hook";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -87,14 +88,16 @@ function WaveformBars({ amplitude }: { amplitude: number }) {
     canvas.style.height = `${height}px`;
     ctx.scale(2, 2);
 
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let frame = 0;
     const draw = () => {
       frame++;
       ctx.clearRect(0, 0, totalWidth, height);
 
       const amp = ampRef.current;
-      const t = frame / 60; // ~1 second per unit at 60fps
+      const t = motionQuery.matches ? 0 : frame / 60; // ~1 second per unit at 60fps
 
+      const accent = getComputedStyle(canvas).getPropertyValue("--color-accent").trim() || "#f0947f";
       for (let i = 0; i < barCount; i++) {
         const center = barCount / 2;
         const distFromCenter = Math.abs(i - center) / center;
@@ -118,7 +121,8 @@ function WaveformBars({ amplitude }: { amplitude: number }) {
 
         // Color: accent with opacity based on height
         const opacity = 0.5 + (barHeight / height) * 0.5;
-        ctx.fillStyle = `rgba(226, 53, 53, ${opacity})`;
+        ctx.fillStyle = accent;
+        ctx.globalAlpha = opacity;
         ctx.beginPath();
         ctx.roundRect(x, y, barWidth, barHeight, 1);
         ctx.fill();
@@ -135,6 +139,7 @@ function WaveformBars({ amplitude }: { amplitude: number }) {
 }
 
 export function CapsulePanel() {
+  useCapsuleTheme();
   const [mode, setMode] = useState<CapsuleMode>("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [amplitude, setAmplitude] = useState(0);
@@ -267,6 +272,8 @@ export function CapsulePanel() {
   return (
     <div className="flex items-center justify-center h-full w-full">
       <div
+        role="status"
+        aria-label={isRecording ? "Recording" : isError ? errorMsg : isDone ? "Transcription complete" : PROCESSING_LABELS[mode] || "Processing"}
         className={[
           "capsule-pill",
           dismissing ? "animate-capsule-out" : "animate-capsule-in",

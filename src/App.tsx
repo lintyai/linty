@@ -12,6 +12,7 @@ import { useTraySync } from "@/hooks/useTraySync.hook";
 import { useAppStore } from "@/store/app.store";
 import { checkMicrophonePermission } from "@/services/permissions.service";
 import { Sidebar } from "@/components/layout/Sidebar.component";
+import { WindowToolbar } from "@/components/layout/WindowToolbar.component";
 import { StatusBar } from "@/components/layout/StatusBar.component";
 import { ConfirmResetDialogue } from "@/components/shared/ConfirmReset.dialogue";
 
@@ -27,6 +28,7 @@ import { OnboardingPage } from "@/pages/Onboarding.page";
 export default function App() {
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
+  const sidebarVisible = useAppStore((s) => s.sidebarVisible);
   const { groqApiKey, sttMode, saveSttMode, onboardingComplete, saveOnboardingComplete, settingsLoaded } = useSettings();
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -69,7 +71,7 @@ export default function App() {
   useEffect(() => {
     if (!onboardingComplete || !settingsLoaded) return;
     if (!groqApiKey && sttMode === "cloud") {
-      const timer = setTimeout(() => setCurrentView("settings"), 500);
+      const timer = setTimeout(() => useAppStore.getState().setSettingsSection("models"), 500);
       return () => clearTimeout(timer);
     }
   }, [groqApiKey, sttMode, setCurrentView, onboardingComplete, settingsLoaded]);
@@ -116,25 +118,57 @@ export default function App() {
       window.location.reload();
     } catch (err) {
       console.error("Reset failed:", err);
+      useAppStore.getState().addToast({ type: "error", message: "Could not reset all data. Please try again." });
     }
   }, []);
 
-  // Keyboard shortcuts
+  // Commands yield to dialogs and controls that already handled the event.
   useEffect(() => {
-    if (!onboardingComplete) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!onboardingComplete || e.defaultPrevented || document.querySelector("dialog[open]")) return;
       if (e.metaKey && e.key === ",") {
         e.preventDefault();
         setCurrentView("settings");
-      }
-      if (e.key === "Escape" && currentView !== "dashboard") {
+      } else if (e.metaKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
-        setCurrentView("dashboard");
+        setCurrentView("history");
+        requestAnimationFrame(() => document.getElementById("history-search")?.focus());
+      } else if (e.metaKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (!useAppStore.getState().sidebarVisible) useAppStore.getState().toggleSidebar();
+        requestAnimationFrame(() => document.getElementById("navigation-search")?.focus());
+      } else if (e.metaKey && e.ctrlKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        useAppStore.getState().toggleSidebar();
+      } else if (e.key === "Escape" && currentView !== "dashboard") {
+        e.preventDefault();
+        if (currentView === "settings" && (e.target as HTMLElement).matches("input, textarea")) {
+          (e.target as HTMLElement).blur();
+          return;
+        }
+        const state = useAppStore.getState();
+        if (currentView === "history" && state.searchQuery) state.setSearchQuery("");
+        else if (currentView === "history" && state.selectedTranscriptId) {
+          const id = state.selectedTranscriptId;
+          state.setSelectedTranscriptId(null);
+          requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-transcript-id="${CSS.escape(id)}"]`)?.focus());
+        }
+        else setCurrentView("dashboard");
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [currentView, setCurrentView, onboardingComplete]);
+
+  useEffect(() => {
+    const unlisten = listen("menu-settings", () => setCurrentView("settings"));
+    return () => { unlisten.then((fn) => fn()); };
+  }, [setCurrentView]);
+
+  // Avoid flashing the first-run flow while saved preferences hydrate.
+  if (!settingsLoaded) {
+    return <div className="app-loading" role="status"><span className="loading-mark" />Opening Linty…</div>;
+  }
 
   // Show onboarding on first launch
   if (!onboardingComplete) {
@@ -148,21 +182,20 @@ export default function App() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      <Sidebar />
+      {sidebarVisible && <Sidebar />}
 
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Drag region for title bar area */}
-        <div data-tauri-drag-region className="absolute right-0 top-0 left-[var(--sidebar-width)] z-20 h-[52px] pointer-events-none" />
+        <WindowToolbar />
 
         {/* Page content */}
-        <div key={currentView} className="flex-1 min-h-0 animate-page-enter">
+        <main key={currentView} id="page-content" className="flex-1 min-h-0 animate-page-enter" aria-label={currentView}>
           {currentView === "history" && <HistoryPage />}
           {currentView === "settings" && <SettingsPage />}
           {currentView === "dashboard" && <DashboardPage />}
           {currentView === "system-check" && <SystemCheckPage />}
           {currentView === "shortcuts" && <ShortcutsPage />}
           {currentView === "about" && <AboutPage />}
-        </div>
+        </main>
 
         <StatusBar />
       </div>

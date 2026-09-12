@@ -19,9 +19,11 @@ export function useUpdater() {
   const setUpdateProgress = useAppStore((s) => s.setUpdateProgress);
   const addToast = useAppStore((s) => s.addToast);
 
-  const checkForUpdate = useCallback(async () => {
+  const checkForUpdate = useCallback(async (silent = false) => {
+    if (["checking", "downloading"].includes(useAppStore.getState().updateStatus)) return;
     try {
       setUpdateStatus("checking");
+      setUpdateError(null);
       const update = await check();
 
       if (update) {
@@ -33,14 +35,20 @@ export function useUpdater() {
           message: `Update v${update.version} available`,
         });
       } else {
+        pendingUpdate = null;
+        setUpdateVersion(null);
         setUpdateStatus("idle");
+        if (!silent) addToast({ type: "success", message: "You’re using the latest version of Linty." });
       }
     } catch (err) {
       console.error("[updater] Check failed:", err);
-      // Fail silently — don't show error for routine checks
-      setUpdateStatus("idle");
+      if (silent) setUpdateStatus("idle");
+      else {
+        setUpdateError("Could not check for updates. Check your connection and try again.");
+        setUpdateStatus("error");
+      }
     }
-  }, [setUpdateStatus, setUpdateVersion, addToast]);
+  }, [setUpdateStatus, setUpdateVersion, setUpdateError, addToast]);
 
   const downloadAndInstall = useCallback(async () => {
     if (!pendingUpdate) return;
@@ -98,8 +106,8 @@ export function useUpdaterAutoCheck() {
     if (autoCheckActive) return;
     autoCheckActive = true;
 
-    const timeout = setTimeout(checkForUpdate, CHECK_DELAY_MS);
-    const interval = setInterval(checkForUpdate, CHECK_INTERVAL_MS);
+    const timeout = setTimeout(() => checkForUpdate(true), CHECK_DELAY_MS);
+    const interval = setInterval(() => checkForUpdate(true), CHECK_INTERVAL_MS);
     return () => {
       clearTimeout(timeout);
       clearInterval(interval);

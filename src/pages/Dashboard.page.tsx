@@ -5,7 +5,6 @@ import {
   Clock3,
   FileText,
   Layers3,
-  Mic,
   ShieldCheck,
   Sparkles,
   TrendingUp,
@@ -62,27 +61,14 @@ export function DashboardPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header data-tauri-drag-region className="page-toolbar">
-        <span
-          data-tauri-drag-region
-          className="text-[13px] font-medium text-text-secondary"
-        >
-          Your workspace <span className="mx-2 text-border">/</span>{" "}
-          <span className="text-text-primary">Overview</span>
-        </span>
-        <span className="local-badge">
-          <ShieldCheck size={12} /> Stored on this Mac
-        </span>
-      </header>
-      <main className="dashboard-scroll">
+      <div className="dashboard-scroll">
         <div className="dashboard-heading">
           <div>
-            <p className="eyebrow">A LITTLE VOICE. A LOT OF POSSIBILITY.</p>
             <h1>
-              Your words, at work<span className="text-accent">.</span>
+              Your dictation
             </h1>
             <p className="text-text-secondary">
-              A clearer picture of where your voice takes you.
+              Your recent words and activity, at a glance.
             </p>
           </div>
           <div className="period-control" aria-label="Usage period">
@@ -105,10 +91,10 @@ export function DashboardPage() {
               <AudioLines size={24} />
             </div>
             <div className="flex-1">
-              <h2 className="font-semibold">Your next thought starts here</h2>
+              <h2 className="font-semibold">Ready for your first dictation</h2>
               <p className="text-[12px] text-text-secondary">
                 Open an app, hold <kbd>{formatTriggerLabel(triggerKey)}</kbd>,
-                and speak. Your real stats will appear here.
+                speak, then release to paste your words.
               </p>
             </div>
             <button
@@ -126,16 +112,12 @@ export function DashboardPage() {
             value={number(stats.words)}
             label="Words transcribed"
             detail={`${number(stats.sessions)} completed dictation${stats.sessions === 1 ? "" : "s"}`}
-            color="coral"
-            delay={0}
           />
           <StatCard
             icon={<Clock3 size={17} />}
             value={formatDuration(stats.seconds)}
             label="Time dictating"
             detail="From captured audio"
-            color="blue"
-            delay={1}
           />
           <StatCard
             icon={<Zap size={17} />}
@@ -143,25 +125,57 @@ export function DashboardPage() {
               stats.sessions ? `${stats.avgProcessingSeconds.toFixed(1)}s` : "—"
             }
             label="Average turnaround"
-            detail="Transcription through paste attempt"
-            color="amber"
-            delay={2}
+            detail="Speech to paste attempt"
           />
           <StatCard
             icon={<TrendingUp size={17} />}
             value={stats.seconds ? number(stats.wordsPerMinute) : "—"}
             label="Words per minute"
-            detail="Output words ÷ dictation minutes"
-            color="green"
-            delay={3}
+            detail="Transcribed words per audio minute"
           />
         </div>
+
+        <section className="insight-card recent-card">
+          <div className="section-heading">
+            <div>
+              <h2>Recent transcriptions</h2>
+              <p>Your latest dictations in this period</p>
+            </div>
+            <button className="text-link" onClick={() => openHistory()}>
+              View history <ArrowRight size={13} />
+            </button>
+          </div>
+          {filtered.length ? (
+            filtered
+              .slice(0, 5)
+              .map((t) => (
+                <TranscriptRow
+                  key={t.transcriptId}
+                  transcript={t}
+                  onDelete={deleteTranscript}
+                  className="border-t border-border-subtle"
+                  actions={
+                    <TranscriptActions
+                      transcript={t}
+                      onDelete={deleteTranscript}
+                    />
+                  }
+                />
+              ))
+          ) : (
+            <p className="px-5 pb-6 text-[12px] text-text-muted">
+              {hasHistory
+                ? "No dictations in this period. Try a wider time range."
+                : "Your completed dictations will appear here."}
+            </p>
+          )}
+        </section>
 
         <div className="insights-grid">
           <section className="insight-card activity-card">
             <div className="section-heading">
               <div>
-                <h2>Find your flow</h2>
+                <h2>Dictation activity</h2>
                 <p>Words transcribed over time</p>
               </div>
               <span className="metric-pill">{number(stats.words)} words</span>
@@ -216,7 +230,7 @@ export function DashboardPage() {
                 <div className="chart-empty">
                   {hasHistory
                     ? "No words in this period"
-                    : "Your first words will start the story"}
+                    : "Activity will appear after your first dictation"}
                 </div>
               )}
             </div>
@@ -225,19 +239,17 @@ export function DashboardPage() {
           <section className="insight-card privacy-card">
             <div className="section-heading">
               <div>
-                <h2>On your terms</h2>
+                <h2>Processing</h2>
                 <p>How your speech was processed</p>
               </div>
-              <ShieldCheck size={17} className="text-success" />
+              <ShieldCheck size={17} className="text-text-muted" />
             </div>
             <div className="privacy-summary">
               <div
                 className="privacy-ring"
                 role="img"
                 aria-label={`${stats.localPercent}% of dictations processed locally`}
-                style={{
-                  background: `conic-gradient(var(--color-success) ${stats.localPercent}%, var(--color-border-subtle) 0)`,
-                }}
+
               >
                 <div>
                   <strong>
@@ -249,7 +261,7 @@ export function DashboardPage() {
               <div className="flex-1 space-y-3">
                 <div className="engine-legend">
                   <span>
-                    <i className="bg-success" />
+                    <i className="bg-text-secondary" />
                     Local
                   </span>
                   <strong>{number(stats.local)}</strong>
@@ -273,7 +285,7 @@ export function DashboardPage() {
           <div className="section-heading">
             <div>
               <h2>
-                <Layers3 size={16} className="text-accent" /> Dictation by app
+                <Layers3 size={16} className="text-text-muted" /> Dictation by app
               </h2>
               <p>See where you use Linty most</p>
             </div>
@@ -303,7 +315,7 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {apps.map((app, index) => (
+                  {apps.map((app) => (
                     <tr key={app.id}>
                       <td>
                         <button
@@ -316,7 +328,7 @@ export function DashboardPage() {
                               : "Older sessions or app attribution unavailable"
                           }
                         >
-                          <span className={`app-avatar app-tone-${index % 4}`}>
+                          <span className="app-avatar">
                             {app.attributed
                               ? app.name.slice(0, 1).toUpperCase()
                               : "?"}
@@ -345,20 +357,9 @@ export function DashboardPage() {
             </div>
           ) : (
             <div className="app-empty">
-              <div className="empty-app-icons">
-                <span>
-                  <FileText size={19} />
-                </span>
-                <span>
-                  <Mic size={22} />
-                </span>
-                <span>
-                  <Layers3 size={19} />
-                </span>
-              </div>
               <h3>
                 {tracking
-                  ? "Your voice works everywhere"
+                  ? "No app activity yet"
                   : "App attribution is paused"}
               </h3>
               <p>
@@ -391,45 +392,11 @@ export function DashboardPage() {
           </div>
         )}
 
-        <section className="insight-card recent-card">
-          <div className="section-heading">
-            <div>
-              <h2>Fresh off the mic</h2>
-              <p>Your latest dictations in this period</p>
-            </div>
-            <button className="text-link" onClick={() => openHistory()}>
-              View history <ArrowRight size={13} />
-            </button>
-          </div>
-          {filtered.length ? (
-            filtered
-              .slice(0, 5)
-              .map((t) => (
-                <TranscriptRow
-                  key={t.transcriptId}
-                  transcript={t}
-                  className="border-t border-border-subtle"
-                  actions={
-                    <TranscriptActions
-                      transcript={t}
-                      onDelete={deleteTranscript}
-                    />
-                  }
-                />
-              ))
-          ) : (
-            <p className="px-5 pb-6 text-[12px] text-text-muted">
-              {hasHistory
-                ? "No dictations in this period. Try a wider time range."
-                : "Your completed dictations will appear here."}
-            </p>
-          )}
-        </section>
         <p className="dashboard-footnote">
           Based on your last 500 saved transcriptions. Deleting history also
           removes its statistics.
         </p>
-      </main>
+      </div>
     </div>
   );
 }
@@ -439,26 +406,19 @@ function StatCard({
   value,
   label,
   detail,
-  color,
-  delay,
 }: {
   icon: React.ReactNode;
   value: string;
   label: string;
   detail: string;
-  color: string;
-  delay: number;
 }) {
   return (
-    <section
-      className={`stat-card stat-${color}`}
-      style={{ animationDelay: `${delay * 55}ms` }}
-    >
+    <section className="stat-card">
       <div className="stat-card-top">
         <span>{label}</span>
         <span className="stat-icon">{icon}</span>
       </div>
-      <div className="stat-value" key={value}>
+      <div className="stat-value">
         {value}
       </div>
       <p>{detail}</p>

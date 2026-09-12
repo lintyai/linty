@@ -8,9 +8,11 @@ import { TriggerKeyPicker } from "@/components/shared/TriggerKeyPicker.component
 import { cn } from "@/lib/utils";
 
 const STATIC_SHORTCUTS = [
+  { action: "Search Linty", mac: "⌘K" },
+  { action: "Show / hide sidebar", mac: "⌃⌘S" },
   { action: "Settings", mac: "⌘," },
   { action: "Search history", mac: "⌘F" },
-  { action: "Copy transcript", mac: "⌘C" },
+  { action: "Copy selected transcript", mac: "⌘C" },
   { action: "Dismiss / Back", mac: "Esc" },
   { action: "Quit", mac: "⌘Q" },
 ];
@@ -36,24 +38,12 @@ export function ShortcutsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Toolbar */}
-      <div
-        data-tauri-drag-region
-        className="flex h-[52px] shrink-0 items-center border-b border-border-subtle px-5"
-      >
-        <h1
-          className="text-[15px] font-semibold text-text-primary"
-          data-tauri-drag-region
-        >
-          Keyboard Shortcuts
-        </h1>
-      </div>
-
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="mx-auto max-w-[480px]">
+      <div className="preferences-scroll">
+        <div className="preferences-content">
+          <div className="page-intro"><h2>A shortcut to your words</h2><p>Choose a dictation trigger and navigate Linty from your keyboard.</p></div>
           <div className="mb-2.5">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
+            <span className="text-[13px] font-semibold text-text-primary">
               Trigger Key
             </span>
           </div>
@@ -64,7 +54,7 @@ export function ShortcutsPage() {
           />
 
           <div className="mb-2.5">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-text-muted">
+            <span className="text-[13px] font-semibold text-text-primary">
               Shortcuts
             </span>
           </div>

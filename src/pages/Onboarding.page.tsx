@@ -36,14 +36,14 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
   const activeProgressStep = step === "cloud-setup" ? "model" : step;
 
   return (
-    <div className="flex h-full items-center justify-center bg-bg">
+    <div className="onboarding-shell">
       {/* Drag region */}
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-20 h-[52px]" />
 
-      <div className="w-full max-w-[420px] px-6">
+      <div className="onboarding-content">
         {step === "welcome" && <WelcomeStep onNext={() => setStep("microphone")} />}
         {step === "microphone" && (
-          <MicrophoneStep onNext={() => setStep("accessibility")} />
+          <MicrophoneStep onNext={startAtMic ? onComplete : () => setStep("accessibility")} />
         )}
         {step === "accessibility" && (
           <AccessibilityStep onNext={() => setStep("trigger")} />
@@ -62,19 +62,9 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
         )}
         {step === "done" && <DoneStep onComplete={onComplete} />}
 
-        {/* Progress dots */}
-        <div className="mt-8 flex items-center justify-center gap-2">
-          {PROGRESS_STEPS.map((s) => (
-            <div
-              key={s}
-              className={cn(
-                "h-1.5 rounded-full transition-all duration-300",
-                s === activeProgressStep
-                  ? "w-6 bg-accent"
-                  : "w-1.5 bg-bg-active",
-              )}
-            />
-          ))}
+        <div className="onboarding-progress" aria-label="Setup progress">
+          <p>{startAtMic ? "Restore microphone access" : `Step ${PROGRESS_STEPS.indexOf(activeProgressStep) + 1} of ${PROGRESS_STEPS.length} · ${{ welcome: "Welcome", microphone: "Microphone", accessibility: "Permissions", trigger: "Shortcut", model: "Speech engine", done: "Ready" }[activeProgressStep]}`}</p>
+          {!startAtMic && <ol>{PROGRESS_STEPS.map((item) => <li key={item} aria-current={item === activeProgressStep ? "step" : undefined}><span className="sr-only">{item}</span></li>)}</ol>}
         </div>
       </div>
     </div>
@@ -339,9 +329,8 @@ function AccessibilityStep({ onNext }: { onNext: () => void }) {
           {showDevHint && (
             <div className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-3 text-left max-w-[340px]">
               <p className="text-[12px] text-text-secondary leading-relaxed">
-                <span className="font-medium text-warning">Dev build?</span>{" "}
-                Ad-hoc signed builds lose accessibility grants on every recompile.
-                Remove Linty from the list, then re-add it — or sign with a Developer ID to persist grants.
+                <span className="font-medium text-warning">Still waiting?</span>{" "}
+                Remove Linty from the Accessibility list, then add it again from Applications and enable access.
               </p>
             </div>
           )}
@@ -638,10 +627,12 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const { setSttMode, setGroqApiKey } = useAppStore();
 
   const handleContinue = async () => {
     setSaving(true);
+    setSaveError("");
     try {
       const store = await load("linty-settings.json", { defaults: {}, autoSave: true });
       setSttMode("cloud");
@@ -652,6 +643,9 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
       }
     } catch (err) {
       console.error("[onboarding] Failed to save cloud settings:", err);
+      setSaveError("Could not save your settings. Please try again.");
+      setSaving(false);
+      return;
     }
     setSaving(false);
     onNext();
@@ -693,6 +687,7 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
         <div className="relative">
           <Key size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
           <input
+            aria-label="Groq API key"
             type={showKey ? "text" : "password"}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
@@ -706,6 +701,7 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
           />
           <button
             type="button"
+            aria-label={showKey ? "Hide API key" : "Show API key"}
             onClick={() => setShowKey(!showKey)}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
           >
@@ -714,6 +710,7 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
         </div>
       </div>
 
+      {saveError && <p role="alert" className="mb-4 text-error text-[13px]">{saveError}</p>}
       {/* Continue button */}
       <button
         onClick={handleContinue}

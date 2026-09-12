@@ -28,7 +28,7 @@ export const createToastSlice: StateCreator<ToastSlice> = (set) => ({
       set((state) => ({
         toasts: state.toasts.filter((t) => t.toastId !== toastId),
       }));
-    }, 3500);
+    }, toast.action ? 12000 : 5000);
   },
   removeToast: (toastId) =>
     set((state) => ({

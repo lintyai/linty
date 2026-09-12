@@ -23,11 +23,29 @@ export function useHistory() {
     (records: TranscriptRecord[]) => updateHistory(() => records),
     [],
   );
-  const deleteTranscript = useCallback(
-    (id: string) =>
-      updateHistory((records) => records.filter((t) => t.transcriptId !== id)),
-    [],
-  );
+  const deleteTranscript = useCallback(async (id: string) => {
+    const record = useAppStore.getState().transcripts.find((item) => item.transcriptId === id);
+    await updateHistory((records) => records.filter((t) => t.transcriptId !== id));
+    if (!record) return;
+    let restored = false;
+    useAppStore.getState().addToast({
+      type: "success", message: "Transcript deleted", action: {
+        label: "Undo", onClick: async function undoTranscript() {
+          if (restored) return;
+          restored = true;
+          try {
+            await updateHistory((records) => records.some((item) => item.transcriptId === id) ? records : [...records, record].sort((a, b) => b.timestamp - a.timestamp));
+            const state = useAppStore.getState();
+            state.toasts.filter((toast) => toast.action?.onClick === undoTranscript).forEach((toast) => state.removeToast(toast.toastId));
+            state.addToast({ type: "success", message: "Transcript restored" });
+          } catch {
+            restored = false;
+            useAppStore.getState().addToast({ type: "error", message: "Could not restore transcript. Try Undo again." });
+          }
+        },
+      },
+    });
+  }, []);
   const clearAll = useCallback(() => updateHistory(() => []), []);
   const query = searchQuery.trim().toLowerCase();
   const filteredTranscripts = query

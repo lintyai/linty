@@ -1010,8 +1010,9 @@ pub fn run() {
             let sep2_app = PredefinedMenuItem::separator(app)?;
             let quit = PredefinedMenuItem::quit(app, Some("Quit Linty"))?;
             let check_updates = MenuItem::with_id(app, "check-for-updates", "Check for Updates...", true, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
             let app_submenu =
-                Submenu::with_items(app, "Linty", true, &[&about, &check_updates, &sep, &reset, &sep2_app, &quit])?;
+                Submenu::with_items(app, "Linty", true, &[&about, &check_updates, &sep, &settings, &reset, &sep2_app, &quit])?;
 
             let undo = PredefinedMenuItem::undo(app, None)?;
             let redo = PredefinedMenuItem::redo(app, None)?;
@@ -1031,6 +1032,13 @@ pub fn run() {
         })
         .on_menu_event(|app, event| {
             match event.id.as_ref() {
+                "settings" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                    let _ = app.emit("menu-settings", ());
+                }
                 "reset-all-data" => { let _ = app.emit("menu-reset-all-data", ()); }
                 "check-for-updates" => { let _ = app.emit("menu-check-for-updates", ()); }
                 _ => {}
