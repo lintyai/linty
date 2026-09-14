@@ -46,7 +46,7 @@ const SEARCH_ITEMS: SearchItem[] = [
   { label: "Storage Location", section: "privacy", category: "Settings", keywords: "local storage save data privacy", view: "settings", icon: <Shield size={14} /> },
   { label: "Attribute Dictations to Apps", section: "privacy", category: "Settings", keywords: "analytics applications words time privacy usage", view: "settings", icon: <Shield size={14} /> },
 
-  { label: "Language & translation", category: "Settings", keywords: "language translate english hindi", view: "settings", section: "language", icon: <Languages size={14} /> },
+  { label: "Transcription language", category: "Settings", keywords: "language spoken english auto-detect", view: "settings", section: "language", icon: <Languages size={14} /> },
 
   // System Check
   { label: "Microphone Access", category: "System Check", keywords: "mic permission grant recording", view: "system-check", icon: <Mic size={14} /> },

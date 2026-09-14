@@ -66,7 +66,6 @@ export interface SettingsSlice {
   correctionPrompt: string;
   onboardingComplete: boolean;
   transcriptionLanguage: string;
-  translateToEnglish: boolean;
   loadedModelFilename: string | null;
   selectedModelFilename: string | null;
   /** Minutes of inactivity before the local model is unloaded (0 = never). */
@@ -88,7 +87,6 @@ export interface SettingsSlice {
   setCorrectionPrompt: (prompt: string) => void;
   setOnboardingComplete: (complete: boolean) => void;
   setTranscriptionLanguage: (language: string) => void;
-  setTranslateToEnglish: (translate: boolean) => void;
   setModelIdleUnloadMinutes: (minutes: number) => void;
   setTriggerKey: (triggerKey: string) => void;
   setSettingsLoaded: (loaded: boolean) => void;
@@ -107,7 +105,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   correctionPrompt: "",
   onboardingComplete: false,
   transcriptionLanguage: "auto",
-  translateToEnglish: false,
   loadedModelFilename: null,
   selectedModelFilename: null,
   modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
@@ -128,7 +125,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   setCorrectionPrompt: (correctionPrompt) => set({ correctionPrompt }),
   setOnboardingComplete: (onboardingComplete) => set({ onboardingComplete }),
   setTranscriptionLanguage: (transcriptionLanguage) => set({ transcriptionLanguage }),
-  setTranslateToEnglish: (translateToEnglish) => set({ translateToEnglish }),
   setModelIdleUnloadMinutes: (modelIdleUnloadMinutes) => set({ modelIdleUnloadMinutes }),
   setTriggerKey: (triggerKey) => set({ triggerKey }),
   setSettingsLoaded: (settingsLoaded) => set({ settingsLoaded }),

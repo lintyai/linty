@@ -148,13 +148,12 @@ pub fn encode_wav(samples: &[f32]) -> Vec<u8> {
     buf
 }
 
-/// Transcribe audio via Groq Whisper Large v3 API.
+/// Transcribe audio via Groq's Whisper Large v3 Turbo API.
 pub async fn transcribe_cloud(
     samples: &[f32],
     api_key: &str,
     prompt: Option<&str>,
     language: Option<&str>,
-    translate: bool,
 ) -> Result<String, String> {
     if !audio_has_speech(samples) {
         eprintln!("[transcribe] Cloud: audio too quiet, skipping");
@@ -168,16 +167,9 @@ pub async fn transcribe_cloud(
         .mime_str("audio/wav")
         .map_err(|e| e.to_string())?;
 
-    // Turbo is ~3x cheaper and faster on Groq with comparable accuracy, but it
-    // does not support the translations endpoint — use large-v3 when translating.
-    let model = if translate {
-        "whisper-large-v3"
-    } else {
-        "whisper-large-v3-turbo"
-    };
-
+    // Turbo is ~3x cheaper and faster on Groq with comparable accuracy.
     let mut form = multipart::Form::new()
-        .text("model", model)
+        .text("model", "whisper-large-v3-turbo")
         .text("response_format", "json")
         .part("file", file_part);
 
@@ -195,15 +187,8 @@ pub async fn transcribe_cloud(
         }
     }
 
-    // Use translations endpoint when translate is enabled
-    let endpoint = if translate {
-        "https://api.groq.com/openai/v1/audio/translations"
-    } else {
-        "https://api.groq.com/openai/v1/audio/transcriptions"
-    };
-
     let response = api_client()
-        .post(endpoint)
+        .post("https://api.groq.com/openai/v1/audio/transcriptions")
         .header("Authorization", format!("Bearer {}", api_key))
         .multipart(form)
         .send()
@@ -241,7 +226,6 @@ pub fn transcribe_local<P, G>(
     samples: &[f32],
     prompt: Option<&str>,
     language: Option<&str>,
-    translate: bool,
     mut on_partial: P,
     on_progress: G,
 ) -> Result<String, String>
@@ -290,7 +274,6 @@ where
         }
     }
 
-    params.set_translate(translate);
     params.set_print_special(false);
     params.set_print_progress(false);
     params.set_print_realtime(false);
@@ -370,7 +353,7 @@ where
 
 /// Run Parakeet TDT over `samples` with the same silence and degenerate-output
 /// guards as the whisper path. `language` is an ISO 639-1 hint; "auto"/None
-/// lets the model detect it. Parakeet has no prompt or translation support.
+/// lets the model detect it. Parakeet has no vocabulary prompt.
 #[cfg(feature = "parakeet")]
 pub fn transcribe_parakeet(
     engine: &crate::parakeet::ParakeetEngine,
@@ -460,7 +443,7 @@ pub fn available_models(parakeet_supported: bool) -> Vec<ModelInfo> {
             filename: PARAKEET_V3_ID.into(),
             url: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml".into(),
             size_mb: 500,
-            description: "Runs on the Neural Engine · sub-second · 25 European languages · no prompt or translation".into(),
+            description: "Runs on the Neural Engine · sub-second · 25 European languages · no vocabulary prompt".into(),
             backend: ModelBackend::Parakeet,
         });
     }
@@ -469,7 +452,7 @@ pub fn available_models(parakeet_supported: bool) -> Vec<ModelInfo> {
         filename: "ggml-large-v3-turbo-q5_0.bin".into(),
         url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin".into(),
         size_mb: 574,
-        description: "Runs on the GPU · 99 languages · vocabulary prompt · translation".into(),
+        description: "Runs on the GPU · same languages · supports the vocabulary prompt".into(),
         backend: ModelBackend::Whisper,
     });
     models[0].name.push_str(" ★ Recommended");

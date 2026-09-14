@@ -7,7 +7,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   { id: "general", label: "Dictation", description: "Choose how your words are refined and delivered." },
   { id: "audio", label: "Audio", description: "Your microphone and recording quality." },
   { id: "models", label: "Speech engine", description: "Choose where and how your speech is transcribed." },
-  { id: "language", label: "Language", description: "Set your spoken language and translation preferences." },
+  { id: "language", label: "Language", description: "Set the language you dictate in." },
   { id: "appearance", label: "Appearance", description: "Make Linty feel at home on your Mac." },
   { id: "privacy", label: "Privacy & storage", description: "Understand and control what Linty saves." },
 ];
