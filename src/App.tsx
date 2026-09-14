@@ -20,6 +20,7 @@ import { ToastContainer } from "@/components/shared/ToastContainer.component";
 import { HistoryPage } from "@/pages/History.page";
 import { SettingsPage } from "@/pages/Settings.page";
 import { DashboardPage } from "@/pages/Dashboard.page";
+import { AppsPage } from "@/pages/Apps.page";
 import { SystemCheckPage } from "@/pages/SystemCheck.page";
 import { ShortcutsPage } from "@/pages/Shortcuts.page";
 import { AboutPage } from "@/pages/About.page";
@@ -192,6 +193,7 @@ export default function App() {
           {currentView === "history" && <HistoryPage />}
           {currentView === "settings" && <SettingsPage />}
           {currentView === "dashboard" && <DashboardPage />}
+          {currentView === "apps" && <AppsPage />}
           {currentView === "system-check" && <SystemCheckPage />}
           {currentView === "shortcuts" && <ShortcutsPage />}
           {currentView === "about" && <AboutPage />}

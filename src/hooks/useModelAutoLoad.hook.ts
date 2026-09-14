@@ -53,10 +53,10 @@ export function useModelAutoLoad() {
           }
         }
 
-        // Fallback: best available by quality order.
+        // Fallback: best available by preference (Parakeet is the default).
         const preferred = [
-          "ggml-large-v3-turbo-q5_0.bin",
           "parakeet-tdt-0.6b-v3",
+          "ggml-large-v3-turbo-q5_0.bin",
           "ggml-medium.bin",
           "ggml-small.bin",
         ];

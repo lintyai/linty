@@ -448,20 +448,15 @@ pub struct ModelInfo {
     pub backend: ModelBackend,
 }
 
-/// Catalog shown in Settings/Onboarding. Parakeet is listed only when this
-/// build includes the bridge and the machine can run it (Apple Silicon).
+/// Catalog shown in Settings/Onboarding, best first. The first entry is the
+/// recommended default that onboarding downloads automatically: Parakeet when
+/// this build includes the bridge and the machine can run it (Apple Silicon),
+/// otherwise whisper Turbo Q5.
 pub fn available_models(parakeet_supported: bool) -> Vec<ModelInfo> {
-    let mut models = vec![ModelInfo {
-        name: "Large Turbo Q5 (574 MB) ★ Recommended".into(),
-        filename: "ggml-large-v3-turbo-q5_0.bin".into(),
-        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin".into(),
-        size_mb: 574,
-        description: "Whisper · 99 languages · supports the vocabulary prompt".into(),
-        backend: ModelBackend::Whisper,
-    }];
+    let mut models = Vec::with_capacity(2);
     if parakeet_supported {
         models.push(ModelInfo {
-            name: "Parakeet TDT v3 (~500 MB) ⚡ Fastest".into(),
+            name: "Parakeet TDT v3 (~500 MB)".into(),
             filename: PARAKEET_V3_ID.into(),
             url: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml".into(),
             size_mb: 500,
@@ -469,6 +464,15 @@ pub fn available_models(parakeet_supported: bool) -> Vec<ModelInfo> {
             backend: ModelBackend::Parakeet,
         });
     }
+    models.push(ModelInfo {
+        name: "Whisper Large Turbo Q5 (574 MB)".into(),
+        filename: "ggml-large-v3-turbo-q5_0.bin".into(),
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin".into(),
+        size_mb: 574,
+        description: "Runs on the GPU · 99 languages · vocabulary prompt · translation".into(),
+        backend: ModelBackend::Whisper,
+    });
+    models[0].name.push_str(" ★ Recommended");
     models
 }
 

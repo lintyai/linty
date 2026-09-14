@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Clock, BarChart3, ShieldCheck, Settings, Keyboard, Search, Mic, Cpu, Volume2, Palette, Shield, Sparkles, Accessibility, Cloud, Info, Loader2, AudioLines, Languages, ArrowDownToLine } from "lucide-react";
+import { Clock, BarChart3, ShieldCheck, Settings, Keyboard, Search, Mic, Cpu, Volume2, Palette, Shield, Sparkles, Accessibility, Cloud, Info, Loader2, AudioLines, Languages, ArrowDownToLine, Layers3 } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { useAppStore } from "@/store/app.store";
 import { useUpdater } from "@/hooks/useUpdater.hook";
@@ -18,6 +18,7 @@ interface SearchItem {
 const SEARCH_ITEMS: SearchItem[] = [
   // Pages
   { label: "History", category: "Pages", keywords: "transcripts past recordings", view: "history", icon: <Clock size={14} /> },
+  { label: "Dictation by app", category: "Pages", keywords: "apps applications usage statistics words per app", view: "apps", icon: <Layers3 size={14} /> },
   { label: "Overview", category: "Pages", keywords: "stats overview analytics", view: "dashboard", icon: <BarChart3 size={14} /> },
   { label: "System Check", category: "Pages", keywords: "permissions microphone accessibility diagnostics", view: "system-check", icon: <ShieldCheck size={14} /> },
   { label: "Keyboard Shortcuts", category: "Pages", keywords: "hotkeys keys bindings", view: "shortcuts", icon: <Keyboard size={14} /> },
@@ -138,6 +139,7 @@ export function Sidebar() {
         <p className="nav-group-label">Workspace</p>
         {nav("dashboard", "Overview", <BarChart3 size={16} />)}
         {nav("history", "History", <Clock size={16} />)}
+        {nav("apps", "Apps", <Layers3 size={16} />)}
         <p className="nav-group-label utilities-label">Utilities</p>
         {nav("shortcuts", "Shortcuts", <Keyboard size={16} />)}
         {nav("system-check", "System Check", <ShieldCheck size={16} />)}

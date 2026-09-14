@@ -503,11 +503,21 @@ kbd { border: 1px solid var(--color-border); border-bottom-width: 2px; border-ra
 .app-usage-table td { padding: 12px 20px; border-bottom: 1px solid var(--color-border-subtle); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .app-usage-table tr:last-child td { border: 0; }
 .app-usage-table tbody tr:hover { background: var(--color-bg); }
+.app-usage-table.is-dense th, .app-usage-table.is-dense td { padding-inline: 12px; }
+.app-usage-table.is-dense th:first-child, .app-usage-table.is-dense td:first-child { padding-left: 20px; }
+.app-usage-table.is-dense th:last-child, .app-usage-table.is-dense td:last-child { padding-right: 20px; }
 .app-name { display: flex; align-items: center; gap: 10px; text-align: left; width: 100%; }
 .app-name strong { display: block; font-size: 12px; font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
 .app-avatar { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; background: var(--color-bg-hover); color: var(--color-text-secondary); font-size: 13px; font-weight: 600; flex-shrink: 0; }
 .app-share-track { display: block; width: 64px; height: 2px; background: var(--color-border-subtle); margin-top: 5px; }
 .app-share-track > span { display: block; height: 100%; background: var(--color-text-muted); }
+.app-share-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--color-border-subtle); margin: 4px 20px 12px; }
+.app-share-bar > span { display: block; min-width: 2px; background: var(--color-accent); opacity: var(--share-opacity, 1); transition: width .3s; }
+.app-share-bar > span + span { border-left: 1px solid var(--color-bg-elevated); }
+.app-share-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 0 20px 14px; font-size: 11px; color: var(--color-text-secondary); }
+.app-share-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.app-share-legend i { width: 8px; height: 8px; border-radius: 2px; background: var(--color-accent); opacity: var(--share-opacity, 1); }
+.app-share-legend strong { font-weight: 500; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
 .app-usage-note { display: flex; align-items: flex-start; gap: 6px; padding: 12px 20px; font-size: 11px; color: var(--color-text-muted); background: var(--color-bg); border-top: 1px solid var(--color-border-subtle); }
 .app-usage-note svg { flex-shrink: 0; margin-top: 2px; }
 .app-empty { padding: 12px 24px 28px; text-align: center; }

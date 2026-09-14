@@ -73,6 +73,7 @@ test("app totals use stable bundle IDs, preserve unknown history, and reconcile 
   assert.equal(apps.length, 3);
   assert.equal(apps.find((a) => a.id === "bundle:app.editor").words, 240);
   assert.equal(apps.find((a) => !a.attributed).sessions, 2);
+  assert.equal(apps.find((a) => a.id === "bundle:app.editor").lastUsedAt, now);
   assert.equal(
     apps.reduce((sum, a) => sum + a.words, 0),
     summarizeUsage(entries).words,

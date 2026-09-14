@@ -40,18 +40,23 @@ export function summarizeUsage(records: TranscriptRecord[]) {
   };
 }
 
-export function usageByApplication(records: TranscriptRecord[]) {
-  const apps = new Map<
-    string,
-    {
-      id: string;
-      name: string;
-      attributed: boolean;
-      words: number;
-      seconds: number;
-      sessions: number;
-    }
-  >();
+export interface ApplicationUsage {
+  id: string;
+  name: string;
+  attributed: boolean;
+  words: number;
+  seconds: number;
+  sessions: number;
+  /** Timestamp of the most recent dictation in this app. */
+  lastUsedAt: number;
+  /** Total speech-to-paste processing time, for per-app turnaround. */
+  processingMs: number;
+  /** Dictations processed on-device. */
+  local: number;
+}
+
+export function usageByApplication(records: TranscriptRecord[]): ApplicationUsage[] {
+  const apps = new Map<string, ApplicationUsage>();
   for (const t of records) {
     const id = t.application
       ? t.application.bundleId
@@ -65,13 +70,34 @@ export function usageByApplication(records: TranscriptRecord[]) {
       words: 0,
       seconds: 0,
       sessions: 0,
+      lastUsedAt: 0,
+      processingMs: 0,
+      local: 0,
     };
     app.words += t.wordCount;
     app.seconds += t.durationSeconds;
     app.sessions++;
+    app.lastUsedAt = Math.max(app.lastUsedAt, t.timestamp);
+    app.processingMs += t.processingTimeMs;
+    if (t.engine === "local") app.local++;
     apps.set(id, app);
   }
   return [...apps.values()];
+}
+
+/** "Today", "Yesterday", or a short calendar date in local time. */
+export function formatDayLabel(timestamp: number, now = Date.now()) {
+  const date = new Date(timestamp);
+  const today = new Date(now);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
+  });
 }
 
 /** Calendar buckets honor local time and daylight-saving boundaries. */

@@ -40,6 +40,9 @@ try {
     return page.screenshot({ path: `${output}/${name}.png`, animations: 'disabled' });
   };
   await audit('overview-light'); await screenshot('overview-light');
+  await page.getByRole('button', {name:'View all apps', exact:true}).click();
+  await page.getByRole('main').getByRole('heading', {name:'Dictation by app', exact:true}).waitFor();
+  await page.getByRole('navigation', {name:'Main navigation'}).getByRole('button', {name:'Overview',exact:true}).click();
   await page.keyboard.press('Meta+f');
   assert.equal(await page.locator('#history-search').evaluate(el => el === document.activeElement), true);
   await page.locator('#history-search').fill('zz-no-matches');
@@ -83,10 +86,11 @@ try {
       await audit(`${section}-${theme}`);
       if (section === 'models' || section === 'appearance') await screenshot(`${section}-${theme}`);
     }
-    for (const name of ['Overview', 'History', 'Shortcuts', 'System Check', 'About']) {
+    for (const name of ['Overview', 'History', 'Apps', 'Shortcuts', 'System Check', 'About']) {
       await page.getByRole('navigation', {name:'Main navigation'}).getByRole('button', {name,exact:true}).click();
       await audit(`${name}-${theme}`);
       if (name === 'Overview') await screenshot(`overview-${theme}`);
+      if (name === 'Apps') await screenshot(`apps-${theme}`);
     }
     await page.keyboard.press('Meta+,');
   }
