@@ -43,6 +43,9 @@ objc = "0.2"
 [features]
 custom-protocol = ["tauri/custom-protocol"]
 local-stt = ["whisper-rs", "hound"]
+# Parakeet TDT v3 on the Neural Engine via the Swift bridge in swift/ (see build.rs).
+# Needs Xcode 16+; SwiftPM fetches FluidAudio on the first build.
+parakeet = ["local-stt"]
 
 [lints.rust]
 unexpected_cfgs = "allow"

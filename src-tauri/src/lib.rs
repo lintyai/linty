@@ -10,8 +10,10 @@ mod fnkey;
 mod paste;
 #[cfg(target_os = "macos")]
 mod permissions;
+#[cfg(feature = "parakeet")]
+pub mod parakeet;
 mod state;
-mod transcribe;
+pub mod transcribe;
 mod tray;
 mod watchdog;
 
@@ -80,6 +82,144 @@ async fn load_whisper_ctx(
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+fn models_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("No app data dir: {}", e))?;
+    Ok(data_dir.join("models"))
+}
+
+/// A resident local speech engine, cloned out of AppState before blocking inference.
+#[cfg(feature = "local-stt")]
+enum LocalEngine {
+    Whisper(Arc<whisper_rs::WhisperContext>),
+    #[cfg(feature = "parakeet")]
+    Parakeet(Arc<parakeet::ParakeetEngine>),
+}
+
+#[cfg(feature = "local-stt")]
+fn resident_local_engine(state: &AppState) -> Result<Option<LocalEngine>, String> {
+    #[cfg(feature = "parakeet")]
+    {
+        let guard = state.parakeet_engine.lock().map_err(|e| e.to_string())?;
+        if let Some(engine) = guard.as_ref() {
+            return Ok(Some(LocalEngine::Parakeet(Arc::clone(engine))));
+        }
+    }
+    let guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
+    Ok(guard.as_ref().map(|ctx| LocalEngine::Whisper(Arc::clone(ctx))))
+}
+
+/// Load `filename` (whisper .bin or the Parakeet bundle) into memory, evicting
+/// whichever engine was resident so only one model is ever loaded.
+/// Caller must hold `local_model_load_lock`.
+#[cfg(feature = "local-stt")]
+async fn load_local_engine(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    filename: &str,
+) -> Result<LocalEngine, String> {
+    if transcribe::is_parakeet_model(filename) {
+        #[cfg(feature = "parakeet")]
+        {
+            let dir = models_dir(app)?.join(filename);
+            eprintln!("[stt] Loading Parakeet bundle from: {}", dir.display());
+            let started = std::time::Instant::now();
+            let engine = tokio::task::spawn_blocking(move || parakeet::ParakeetEngine::load(&dir))
+                .await
+                .map_err(|e| format!("Task join error: {}", e))??;
+            eprintln!(
+                "[stt] Parakeet loaded in {:.0}ms",
+                started.elapsed().as_millis()
+            );
+            let engine = Arc::new(engine);
+            *state.whisper_ctx.lock().map_err(|e| e.to_string())? = None;
+            *state.parakeet_engine.lock().map_err(|e| e.to_string())? = Some(Arc::clone(&engine));
+            return Ok(LocalEngine::Parakeet(engine));
+        }
+        #[cfg(not(feature = "parakeet"))]
+        return Err("This build does not include Parakeet support".to_string());
+    }
+
+    let ctx = Arc::new(load_whisper_ctx(app, filename).await?);
+    #[cfg(feature = "parakeet")]
+    {
+        *state.parakeet_engine.lock().map_err(|e| e.to_string())? = None;
+    }
+    *state.whisper_ctx.lock().map_err(|e| e.to_string())? = Some(Arc::clone(&ctx));
+    Ok(LocalEngine::Whisper(ctx))
+}
+
+/// Resolve the engine for the selected local model, transparently reloading it
+/// after the watchdog's idle unload. Runs BEFORE the recorded samples are taken
+/// so a failed load leaves them intact for a retry.
+#[cfg(feature = "local-stt")]
+async fn resolve_local_engine(
+    app: &tauri::AppHandle,
+    state: &AppState,
+) -> Result<LocalEngine, String> {
+    if let Some(engine) = resident_local_engine(state)? {
+        return Ok(engine);
+    }
+    // Serialize with other loads, then re-check — a concurrent load may have
+    // finished while we waited for the lock.
+    let _load_guard = state.local_model_load_lock.lock().await;
+    if let Some(engine) = resident_local_engine(state)? {
+        return Ok(engine);
+    }
+    let filename = state
+        .local_model_filename
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
+    let Some(filename) = filename else {
+        return Err("Local model not loaded".to_string());
+    };
+    eprintln!(
+        "[cmd] transcribe_buffer: reloading idle-unloaded model {}",
+        filename
+    );
+    load_local_engine(app, state, &filename).await
+}
+
+/// Prime the freshly loaded engine with a tiny silent inference on a background
+/// thread so the first real dictation doesn't pay the pipeline warm-up cost.
+#[cfg(feature = "local-stt")]
+fn warm_up_local_engine(engine: LocalEngine) {
+    std::thread::spawn(move || {
+        let warmup_start = std::time::Instant::now();
+        match engine {
+            LocalEngine::Whisper(ctx) => {
+                eprintln!("[cmd] Warming up Whisper GPU pipeline...");
+                if let Ok(mut state) = ctx.create_state() {
+                    let silence = vec![0.0f32; 1600]; // 0.1s at 16kHz
+                    let mut params = whisper_rs::FullParams::new(
+                        whisper_rs::SamplingStrategy::Greedy { best_of: 1 },
+                    );
+                    params.set_n_threads(1);
+                    params.set_single_segment(true);
+                    params.set_no_timestamps(true);
+                    params.set_print_special(false);
+                    params.set_print_progress(false);
+                    params.set_print_realtime(false);
+                    let _ = state.full(params, &silence);
+                }
+            }
+            #[cfg(feature = "parakeet")]
+            LocalEngine::Parakeet(engine) => {
+                eprintln!("[cmd] Warming up Parakeet Neural Engine pipeline...");
+                let silence = vec![0.0f32; 16000]; // 1s at 16kHz
+                let _ = engine.transcribe(&silence, None);
+            }
+        }
+        eprintln!(
+            "[cmd] Warm-up done in {:.0}ms",
+            warmup_start.elapsed().as_millis()
+        );
+    });
+}
+
 #[tauri::command]
 fn start_recording(
     app: tauri::AppHandle,
@@ -104,7 +244,7 @@ fn start_recording(
         state.audio_callback_count.store(0, Ordering::Relaxed);
         // Touch the whisper idle clock — never unload the model mid-dictation.
         #[cfg(feature = "local-stt")]
-        state.whisper_last_used_at.store(now, Ordering::Relaxed);
+        state.local_model_last_used_at.store(now, Ordering::Relaxed);
     }
 
     {
@@ -187,48 +327,12 @@ async fn transcribe_buffer(
     #[cfg(feature = "local-stt")]
     {
         state
-            .whisper_last_used_at
+            .local_model_last_used_at
             .store(now_epoch_ms(), Ordering::Relaxed);
 
-        // Resolve the Arc<WhisperContext> BEFORE taking samples — if the model
-        // can't be loaded, we fail early and leave samples intact for a retry.
-        let ctx = {
-            let guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
-            guard.as_ref().cloned()
-        };
-        let ctx = match ctx {
-            Some(ctx) => ctx,
-            None => {
-                // Model absent — either never loaded, or unloaded by the
-                // watchdog after idle. Transparently reload the remembered one.
-                // Serialize with other loads, then re-check — a concurrent
-                // load may have finished while we waited for the lock.
-                let _load_guard = state.whisper_load_lock.lock().await;
-                let already_loaded = state
-                    .whisper_ctx
-                    .lock()
-                    .map_err(|e| e.to_string())?
-                    .as_ref()
-                    .cloned();
-                if let Some(ctx) = already_loaded {
-                    ctx
-                } else {
-                    let filename = state
-                        .whisper_model_filename
-                        .lock()
-                        .map_err(|e| e.to_string())?
-                        .clone();
-                    let Some(filename) = filename else {
-                        return Err("Whisper model not loaded".to_string());
-                    };
-                    eprintln!("[cmd] transcribe_buffer: reloading idle-unloaded model {}", filename);
-                    let ctx = Arc::new(load_whisper_ctx(&app, &filename).await?);
-                    let mut guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
-                    *guard = Some(Arc::clone(&ctx));
-                    ctx
-                }
-            }
-        };
+        // Resolve the engine BEFORE taking samples — if the model can't be
+        // loaded, we fail early and leave samples intact for a retry.
+        let engine = resolve_local_engine(&app, &state).await?;
 
         // Take samples from recording state (zero-copy move)
         let samples = {
@@ -242,19 +346,40 @@ async fn transcribe_buffer(
             samples.len() as f64 / 16000.0
         );
 
-        let app_clone = app.clone();
-        tokio::task::spawn_blocking(move || {
-            transcribe::transcribe_local_with_events(
-                &ctx,
-                &samples,
-                prompt.as_deref(),
-                language.as_deref(),
-                translate,
-                app_clone,
-            )
-        })
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
+        match engine {
+            LocalEngine::Whisper(ctx) => {
+                let app_seg = app.clone();
+                let app_prog = app.clone();
+                tokio::task::spawn_blocking(move || {
+                    transcribe::transcribe_local(
+                        &ctx,
+                        &samples,
+                        prompt.as_deref(),
+                        language.as_deref(),
+                        translate,
+                        // Stream partial text / progress to the capsule as whisper decodes.
+                        move |partial| {
+                            let _ = app_seg.emit_to("capsule", "capsule-partial-text", partial);
+                        },
+                        move |progress| {
+                            let _ = app_prog.emit_to("capsule", "capsule-stt-progress", progress);
+                        },
+                    )
+                })
+                .await
+                .map_err(|e| format!("Task join error: {}", e))?
+            }
+            #[cfg(feature = "parakeet")]
+            LocalEngine::Parakeet(engine) => {
+                // Parakeet has no vocabulary prompt or translation mode.
+                let _ = (prompt, translate);
+                tokio::task::spawn_blocking(move || {
+                    transcribe::transcribe_parakeet(&engine, &samples, language.as_deref())
+                })
+                .await
+                .map_err(|e| format!("Task join error: {}", e))?
+            }
+        }
     }
     #[cfg(not(feature = "local-stt"))]
     {
@@ -568,17 +693,15 @@ fn reset_all_data(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> R
         eprintln!("[reset] Deleted models directory");
     }
 
-    // Unload whisper model from memory
+    // Unload any local model from memory
     #[cfg(feature = "local-stt")]
     {
-        if let Ok(mut ctx) = state.whisper_ctx.lock() {
-            *ctx = None;
-        }
-        if let Ok(mut name) = state.whisper_model_filename.lock() {
+        state.unload_local_models();
+        if let Ok(mut name) = state.local_model_filename.lock() {
             *name = None;
         }
-        state.whisper_last_used_at.store(0, Ordering::Relaxed);
-        eprintln!("[reset] Unloaded whisper model");
+        state.local_model_last_used_at.store(0, Ordering::Relaxed);
+        eprintln!("[reset] Unloaded local model");
     }
     #[cfg(not(feature = "local-stt"))]
     {
@@ -593,7 +716,11 @@ fn reset_all_data(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> R
 
 #[tauri::command]
 fn get_available_models() -> Vec<transcribe::ModelInfo> {
-    transcribe::available_models()
+    #[cfg(feature = "parakeet")]
+    let parakeet_supported = parakeet::is_supported();
+    #[cfg(not(feature = "parakeet"))]
+    let parakeet_supported = false;
+    transcribe::available_models(parakeet_supported)
 }
 
 #[tauri::command]
@@ -609,11 +736,15 @@ fn get_models_dir(app: tauri::AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 fn check_model_exists(app: tauri::AppHandle, filename: String) -> Result<bool, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("No app data dir: {}", e))?;
-    let model_path = data_dir.join("models").join(&filename);
+    let model_path = models_dir(&app)?.join(&filename);
+    if transcribe::is_parakeet_model(&filename) {
+        // A Parakeet bundle is a directory of CoreML models; only count it
+        // when every required file is present (a partial download is not usable).
+        #[cfg(feature = "parakeet")]
+        return Ok(parakeet::models_exist(&model_path));
+        #[cfg(not(feature = "parakeet"))]
+        return Ok(false);
+    }
     Ok(model_path.exists())
 }
 
@@ -623,23 +754,58 @@ async fn download_model_file(
     url: String,
     filename: String,
 ) -> Result<String, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("No app data dir: {}", e))?;
-    let dest = data_dir.join("models").join(&filename);
+    let dest = models_dir(&app)?.join(&filename);
+
+    if transcribe::is_parakeet_model(&filename) {
+        #[cfg(feature = "parakeet")]
+        {
+            // FluidAudio fetches the multi-file CoreML bundle itself and
+            // reports a 0–1 fraction covering download + Neural Engine compile.
+            let _ = url;
+            let app_progress = app.clone();
+            let dir = dest.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut last_pct: i64 = -1;
+                parakeet::download(&dir, |fraction| {
+                    let pct = (fraction.clamp(0.0, 1.0) * 100.0) as i64;
+                    if pct != last_pct {
+                        last_pct = pct;
+                        let _ = app_progress.emit(
+                            "model-download-progress",
+                            serde_json::json!({
+                                "downloaded": pct,
+                                "total": 100,
+                                "progress": pct,
+                            }),
+                        );
+                    }
+                })
+            })
+            .await
+            .map_err(|e| format!("Task join error: {}", e))??;
+            let _ = app.emit("model-download-complete", ());
+            return Ok(dest.to_string_lossy().to_string());
+        }
+        #[cfg(not(feature = "parakeet"))]
+        {
+            let _ = url;
+            return Err("This build does not include Parakeet support".to_string());
+        }
+    }
+
     transcribe::download_model(&app, &url, &dest).await?;
     Ok(dest.to_string_lossy().to_string())
 }
 
 #[tauri::command(async)]
 fn delete_model_file(app: tauri::AppHandle, filename: String) -> Result<(), String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("No app data dir: {}", e))?;
-    let model_path = data_dir.join("models").join(&filename);
-    if model_path.exists() {
+    let model_path = models_dir(&app)?.join(&filename);
+    if model_path.is_dir() {
+        // Parakeet bundles are directories of .mlmodelc packages.
+        std::fs::remove_dir_all(&model_path)
+            .map_err(|e| format!("Failed to delete {}: {}", filename, e))?;
+        eprintln!("[cmd] Deleted model bundle: {}", filename);
+    } else if model_path.exists() {
         std::fs::remove_file(&model_path)
             .map_err(|e| format!("Failed to delete {}: {}", filename, e))?;
         eprintln!("[cmd] Deleted model: {}", filename);
@@ -647,14 +813,21 @@ fn delete_model_file(app: tauri::AppHandle, filename: String) -> Result<(), Stri
     Ok(())
 }
 
-/// Remove deprecated model binaries (tiny, base) that are no longer offered.
+/// Remove model binaries that are no longer offered in the catalog
+/// (tiny/base, plus the 3.1 GB Large V3 and 1.6 GB full-precision Turbo
+/// dropped in favour of Turbo Q5 + Parakeet).
 fn cleanup_deprecated_models(app: &tauri::AppHandle) {
     let data_dir = match app.path().app_data_dir() {
         Ok(d) => d,
         Err(_) => return,
     };
     let models_dir = data_dir.join("models");
-    for filename in &["ggml-tiny.bin", "ggml-base.bin"] {
+    for filename in &[
+        "ggml-tiny.bin",
+        "ggml-base.bin",
+        "ggml-large-v3.bin",
+        "ggml-large-v3-turbo.bin",
+    ] {
         let path = models_dir.join(filename);
         if path.exists() {
             match std::fs::remove_file(&path) {
@@ -665,58 +838,34 @@ fn cleanup_deprecated_models(app: &tauri::AppHandle) {
     }
 }
 
+/// Load a local model (whisper .bin or the Parakeet bundle) into memory and make
+/// it the active engine for transcribe_buffer.
 #[tauri::command]
-async fn load_whisper_model(
+async fn load_local_model(
     #[allow(unused_variables)] app: tauri::AppHandle,
     #[allow(unused_variables)] state: tauri::State<'_, AppState>,
     #[allow(unused_variables)] filename: String,
 ) -> Result<(), String> {
-    eprintln!("[cmd] load_whisper_model: {}", filename);
+    eprintln!("[cmd] load_local_model: {}", filename);
     #[cfg(feature = "local-stt")]
     {
         // Serialize with transcribe_buffer's lazy reload — never two loads at once
-        let _load_guard = state.whisper_load_lock.lock().await;
-        let ctx = Arc::new(load_whisper_ctx(&app, &filename).await?);
-        {
-            let mut guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
-            *guard = Some(Arc::clone(&ctx));
-        }
+        let _load_guard = state.local_model_load_lock.lock().await;
+        let engine = load_local_engine(&app, &state, &filename).await?;
         {
             let mut name_guard = state
-                .whisper_model_filename
+                .local_model_filename
                 .lock()
                 .map_err(|e| e.to_string())?;
             *name_guard = Some(filename.clone());
         }
         state
-            .whisper_last_used_at
+            .local_model_last_used_at
             .store(now_epoch_ms(), Ordering::Relaxed);
 
-        // Warm up Metal GPU pipeline with a tiny silent inference
-        let ctx_clone = ctx;
-        std::thread::spawn(move || {
-            eprintln!("[cmd] Warming up Whisper GPU pipeline...");
-            let warmup_start = std::time::Instant::now();
-            if let Ok(mut state) = ctx_clone.create_state() {
-                let silence = vec![0.0f32; 1600]; // 0.1s at 16kHz
-                let mut params = whisper_rs::FullParams::new(
-                    whisper_rs::SamplingStrategy::Greedy { best_of: 1 },
-                );
-                params.set_n_threads(1);
-                params.set_single_segment(true);
-                params.set_no_timestamps(true);
-                params.set_print_special(false);
-                params.set_print_progress(false);
-                params.set_print_realtime(false);
-                let _ = state.full(params, &silence);
-            }
-            eprintln!(
-                "[cmd] GPU warm-up done in {:.0}ms",
-                warmup_start.elapsed().as_millis()
-            );
-        });
+        warm_up_local_engine(engine);
 
-        eprintln!("[cmd] Whisper model loaded successfully: {}", filename);
+        eprintln!("[cmd] Local model loaded successfully: {}", filename);
         Ok(())
     }
     #[cfg(not(feature = "local-stt"))]
@@ -727,15 +876,15 @@ async fn load_whisper_model(
 /// Used when the user's engine preference is Cloud — the model lazy-loads in
 /// transcribe_buffer if they switch to Local.
 #[tauri::command]
-fn register_whisper_model(
+fn register_local_model(
     #[allow(unused_variables)] state: tauri::State<'_, AppState>,
     #[allow(unused_variables)] filename: String,
 ) -> Result<(), String> {
     #[cfg(feature = "local-stt")]
     {
-        eprintln!("[cmd] register_whisper_model: {} (lazy, not loaded)", filename);
+        eprintln!("[cmd] register_local_model: {} (lazy, not loaded)", filename);
         let mut guard = state
-            .whisper_model_filename
+            .local_model_filename
             .lock()
             .map_err(|e| e.to_string())?;
         *guard = Some(filename);
@@ -1111,8 +1260,8 @@ pub fn run() {
             delete_model_file,
             is_local_stt_available,
             set_model_idle_unload_minutes,
-            register_whisper_model,
-            load_whisper_model,
+            register_local_model,
+            load_local_model,
             reset_all_data,
             capsule::show_capsule,
             capsule::hide_capsule,

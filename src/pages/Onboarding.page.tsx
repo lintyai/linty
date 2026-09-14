@@ -397,6 +397,8 @@ interface ModelInfo {
   url: string;
   size_mb: number;
   description: string;
+  /** Inference engine: whisper.cpp GGML file or Parakeet CoreML bundle. */
+  backend: "whisper" | "parakeet";
 }
 
 interface DownloadProgress {
@@ -448,7 +450,7 @@ function ModelDownloadStep({
 
       // Download complete — now load into GPU
       setStatus("loading");
-      await invoke("load_whisper_model", { filename: targetModel.filename });
+      await invoke("load_local_model", { filename: targetModel.filename });
       await persistSettings(targetModel.filename);
       setStatus("ready");
     } catch (err) {
@@ -482,7 +484,7 @@ function ModelDownloadStep({
         if (exists) {
           // Already downloaded — load and auto-advance
           setStatus("loading");
-          await invoke("load_whisper_model", { filename: recommended.filename });
+          await invoke("load_local_model", { filename: recommended.filename });
           await persistSettings(recommended.filename);
           setStatus("ready");
           return;

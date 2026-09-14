@@ -27,9 +27,8 @@ export const fixture = ({ empty = false, onboarding = false, theme = 'light' } =
       if (command === 'check_fn_key_conflict') return { conflict: false, usage_type: 0 };
       if (command === 'check_model_exists') return args.filename === 'ggml-large-v3-turbo-q5_0.bin';
       if (command === 'get_available_models') return [
-        { filename: 'ggml-large-v3-turbo-q5_0.bin', name: 'Large Turbo Q5', description: 'Recommended · 574 MB · Fast and accurate', size_mb: 574 },
-        { filename: 'ggml-large-v3-turbo.bin', name: 'Large Turbo', description: '1.6 GB · Full precision', size_mb: 1600 },
-        { filename: 'ggml-large-v3.bin', name: 'Large', description: '3.1 GB · Highest accuracy', size_mb: 3100 },
+        { filename: 'ggml-large-v3-turbo-q5_0.bin', name: 'Large Turbo Q5', description: 'Recommended · 574 MB · Fast and accurate', size_mb: 574, backend: 'whisper' },
+        { filename: 'parakeet-tdt-0.6b-v3', name: 'Parakeet TDT v3', description: '~500 MB · Neural Engine · Fastest', size_mb: 500, backend: 'parakeet' },
       ];
       return null;
     },

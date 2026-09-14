@@ -477,7 +477,7 @@ function ModelsSection() {
               <div className="flex items-start gap-2.5 rounded-[10px] bg-success-glow border border-success/10 px-4 py-3">
                 <Cpu size={13} className="text-success shrink-0 mt-px" />
                 <p className="text-[12px] text-text-secondary leading-relaxed">
-                  Audio stays on your device. Processing takes ~2-5s depending on model size and hardware.
+                  Audio stays on your device. Whisper runs on the GPU; Parakeet runs on the Neural Engine and is usually under a second.
                 </p>
               </div>
             </>

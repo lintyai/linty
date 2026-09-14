@@ -10,6 +10,8 @@ interface ModelInfo {
   url: string;
   size_mb: number;
   description: string;
+  /** Inference engine: whisper.cpp GGML file or Parakeet CoreML bundle. */
+  backend: "whisper" | "parakeet";
 }
 
 interface DownloadProgress {
@@ -90,7 +92,7 @@ export function useModelDownload() {
           if (firstDownloaded) {
             try {
               console.log("[model] Auto-loading:", firstDownloaded.filename);
-              await invoke("load_whisper_model", {
+              await invoke("load_local_model", {
                 filename: firstDownloaded.filename,
               });
               setLoadedModel(firstDownloaded.filename);
@@ -147,7 +149,7 @@ export function useModelDownload() {
 
         // Auto-load the model after download
         try {
-          await invoke("load_whisper_model", { filename: model.filename });
+          await invoke("load_local_model", { filename: model.filename });
           setLoadedModel(model.filename);
           setLoadedModelFilename(model.filename);
           await persistModelSelection(model.filename);
@@ -169,7 +171,7 @@ export function useModelDownload() {
 
   const loadModel = useCallback(async (filename: string) => {
     try {
-      await invoke("load_whisper_model", { filename });
+      await invoke("load_local_model", { filename });
       setLoadedModel(filename);
       setLoadedModelFilename(filename);
       await persistModelSelection(filename);
