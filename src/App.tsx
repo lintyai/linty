@@ -5,6 +5,7 @@ import { getStore } from "@tauri-apps/plugin-store";
 import { useSettings } from "@/hooks/useSettings.hook";
 import { useGlobalHotkey } from "@/hooks/useGlobalHotkey.hook";
 import { useCorrectionObserver } from "@/hooks/useCorrectionObserver.hook";
+import { useParakeetVocabulary } from "@/hooks/useParakeetVocabulary.hook";
 import { useModelAutoLoad } from "@/hooks/useModelAutoLoad.hook";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useTheme } from "@/hooks/useTheme.hook";
@@ -63,6 +64,7 @@ export default function App() {
   useTheme();
   useGlobalHotkey();
   useCorrectionObserver();
+  useParakeetVocabulary();
   useModelAutoLoad();
   useHistory();
   useUpdaterAutoCheck();

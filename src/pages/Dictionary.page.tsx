@@ -43,6 +43,7 @@ export function DictionaryPage() {
     dismissSuggestion,
   } = useDictionary();
   const { dictionaryEnabled, autoLearnWords } = useSettings();
+  const parakeetStatus = useAppStore((s) => s.parakeetVocabularyStatus);
   const { allTranscripts } = useHistory();
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
   const { success, error } = useToast();
@@ -246,6 +247,9 @@ export function DictionaryPage() {
         <p className="dashboard-footnote">
           Your dictionary stays on this Mac. Whole words are replaced before pasting, and the most-used
           entries are sent to the speech engine as spelling hints. Reset all data clears it.
+          {parakeetStatus === "ready" && " Parakeet’s vocabulary model is ready."}
+          {parakeetStatus === "preparing" && " Preparing Parakeet’s vocabulary model (about 100 MB, once)…"}
+          {parakeetStatus === "error" && " Parakeet’s vocabulary model could not be prepared; words are still fixed after transcription."}
         </p>
       </div>
     </div>

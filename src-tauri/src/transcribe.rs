@@ -397,6 +397,61 @@ pub fn transcribe_parakeet(
     Ok(text)
 }
 
+/// Parakeet with dictionary terms: the TDT transcript is rescored against the
+/// terms by FluidAudio's CTC keyword spotter, and only candidates that resemble a
+/// term (or one of its known wrong spellings) are applied.
+#[cfg(feature = "parakeet")]
+pub fn transcribe_parakeet_with_vocabulary(
+    engine: &crate::parakeet::ParakeetEngine,
+    samples: &[f32],
+    language: Option<&str>,
+    terms: &[crate::vocabulary::VocabTerm],
+) -> Result<String, String> {
+    let duration_secs = samples.len() as f64 / 16000.0;
+    eprintln!(
+        "[transcribe] Starting Parakeet with {} dictionary terms: {} samples ({:.1}s)",
+        terms.len(),
+        samples.len(),
+        duration_secs
+    );
+
+    if samples.len() < 1600 {
+        return Err(format!(
+            "Audio too short ({:.1}s) — need at least 0.1s",
+            duration_secs
+        ));
+    }
+
+    if !audio_has_speech(samples) {
+        eprintln!("[transcribe] Parakeet: audio too quiet, skipping");
+        return Ok(String::new());
+    }
+
+    let hint = language.filter(|l| *l != "auto" && !l.is_empty());
+    let started = std::time::Instant::now();
+    let result = engine.transcribe_with_vocabulary(samples, hint, terms)?;
+    let (text, applied) =
+        crate::vocabulary::apply_replacements(result.text.trim(), &result.replacements, terms);
+    eprintln!(
+        "[transcribe] Parakeet done in {:.0}ms (inference {:.0}ms); vocabulary candidates {}, applied {}",
+        started.elapsed().as_millis(),
+        result.processing_secs * 1000.0,
+        result.replacements.len(),
+        applied.len()
+    );
+    for change in &applied {
+        eprintln!("[transcribe]   {} -> {}", change.from, change.to);
+    }
+
+    let text = text.trim().to_string();
+    eprintln!("[transcribe] Final text: {:?}", text);
+    if is_hallucination(&text) {
+        eprintln!("[transcribe] Parakeet: filtered degenerate output: {:?}", text);
+        return Ok(String::new());
+    }
+    Ok(text)
+}
+
 // ── Model catalog & download ──
 
 /// Which local inference engine a catalog entry runs on.
@@ -412,6 +467,10 @@ pub enum ModelBackend {
 /// Bundle id (directory name inside the models dir) for Parakeet TDT 0.6B v3.
 /// FluidAudio derives this name from its HuggingFace repo, so it must match.
 pub const PARAKEET_V3_ID: &str = "parakeet-tdt-0.6b-v3";
+
+/// Bundle id of the Parakeet CTC 110M keyword-spotter models that let Parakeet
+/// recognise dictionary words. FluidAudio keeps the "-coreml" suffix for this one.
+pub const PARAKEET_CTC_ID: &str = "parakeet-ctc-110m-coreml";
 
 /// True when `filename` refers to the Parakeet bundle rather than a whisper file.
 pub fn is_parakeet_model(filename: &str) -> bool {

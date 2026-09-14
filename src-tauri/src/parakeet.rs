@@ -8,7 +8,10 @@
 
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+
+use crate::vocabulary::{VocabReplacement, VocabTerm};
 
 type ProgressFn = unsafe extern "C" fn(f64, *mut c_void);
 
@@ -33,6 +36,23 @@ extern "C" {
     ) -> i32;
     fn linty_parakeet_free(handle: *mut c_void);
     fn linty_parakeet_free_string(s: *mut c_char);
+    // ── Custom vocabulary (CTC keyword spotter) ──
+    fn linty_parakeet_load_ctc(
+        handle: *mut c_void,
+        dir: *const c_char,
+        out_error: *mut *mut c_char,
+    ) -> i32;
+    fn linty_parakeet_transcribe_vocab(
+        handle: *mut c_void,
+        samples: *const f32,
+        count: u32,
+        language: *const c_char,
+        terms_json: *const c_char,
+        out_text: *mut *mut c_char,
+        out_replacements_json: *mut *mut c_char,
+        out_processing_secs: *mut f64,
+        out_error: *mut *mut c_char,
+    ) -> i32;
 }
 
 /// Take ownership of a bridge-allocated C string, returning `fallback` when null.
@@ -116,6 +136,11 @@ pub struct ParakeetResult {
 /// `Arc`; inference calls are serialized by FluidAudio's actor.
 pub struct ParakeetEngine {
     handle: *mut c_void,
+    /// Set once the CTC keyword-spotter models are loaded alongside the TDT model.
+    vocabulary_ready: AtomicBool,
+    /// Serializes CTC loads: the engine load starts one in the background while
+    /// prepare_parakeet_vocabulary may ask for one at the same time.
+    vocabulary_load: Mutex<()>,
 }
 
 // SAFETY: the Swift side is an actor with no thread affinity, and the raw
@@ -134,7 +159,11 @@ impl ParakeetEngine {
         if handle.is_null() {
             return Err(take_string(err, "Parakeet load failed"));
         }
-        Ok(Self { handle })
+        Ok(Self {
+            handle,
+            vocabulary_ready: AtomicBool::new(false),
+            vocabulary_load: Mutex::new(()),
+        })
     }
 
     /// Transcribe 16 kHz mono samples. `language` is an ISO 639-1 hint or
@@ -184,6 +213,103 @@ impl ParakeetEngine {
         }
         Ok(ParakeetResult {
             text: take_string(text, ""),
+            processing_secs,
+        })
+    }
+}
+
+pub struct ParakeetVocabResult {
+    /// Untouched TDT transcript; apply `replacements` selectively.
+    pub text: String,
+    pub replacements: Vec<VocabReplacement>,
+    pub processing_secs: f64,
+}
+
+impl ParakeetEngine {
+    /// Download (if needed) and load the Parakeet CTC 110M models used for
+    /// keyword spotting into `dir`. Required before `transcribe_with_vocabulary`.
+    pub fn load_ctc(&self, dir: &Path) -> Result<(), String> {
+        let _guard = self.vocabulary_load.lock().map_err(|e| e.to_string())?;
+        if self.vocabulary_ready.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let c_dir = path_cstring(dir)?;
+        let mut err: *mut c_char = std::ptr::null_mut();
+        // SAFETY: c_dir outlives the call; err is written only on failure.
+        let rc = unsafe { linty_parakeet_load_ctc(self.handle, c_dir.as_ptr(), &mut err) };
+        if rc == 0 {
+            self.vocabulary_ready.store(true, Ordering::Release);
+            Ok(())
+        } else {
+            Err(take_string(err, "Parakeet CTC load failed"))
+        }
+    }
+
+    /// True once `load_ctc` succeeded for this engine instance.
+    pub fn has_vocabulary_models(&self) -> bool {
+        self.vocabulary_ready.load(Ordering::Acquire)
+    }
+
+    /// Transcribe with vocabulary boosting: the TDT transcript is rescored
+    /// against `terms` using the CTC keyword spotter (FluidAudio custom vocabulary).
+    /// The returned text is untouched; apply `replacements` through
+    /// `vocabulary::apply_replacements`, which gates the rescorer's over-reach.
+    pub fn transcribe_with_vocabulary(
+        &self,
+        samples: &[f32],
+        language: Option<&str>,
+        terms: &[VocabTerm],
+    ) -> Result<ParakeetVocabResult, String> {
+        if samples.is_empty() {
+            return Ok(ParakeetVocabResult {
+                text: String::new(),
+                replacements: Vec::new(),
+                processing_secs: 0.0,
+            });
+        }
+        let count = u32::try_from(samples.len())
+            .map_err(|_| "Audio too long for a single Parakeet call".to_string())?;
+        let terms_json = serde_json::to_string(terms).map_err(|e| e.to_string())?;
+        let c_terms = CString::new(terms_json).map_err(|_| "Invalid vocabulary".to_string())?;
+        let c_lang = match language {
+            Some(code) if !code.is_empty() => Some(
+                CString::new(code).map_err(|_| "Invalid language code".to_string())?,
+            ),
+            _ => None,
+        };
+        let lang_ptr = c_lang.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
+
+        let mut text: *mut c_char = std::ptr::null_mut();
+        let mut replacements: *mut c_char = std::ptr::null_mut();
+        let mut processing_secs = 0.0f64;
+        let mut err: *mut c_char = std::ptr::null_mut();
+        // SAFETY: every pointer outlives this synchronous call; out-params are
+        // bridge-allocated strings released by take_string.
+        let rc = unsafe {
+            linty_parakeet_transcribe_vocab(
+                self.handle,
+                samples.as_ptr(),
+                count,
+                lang_ptr,
+                c_terms.as_ptr(),
+                &mut text,
+                &mut replacements,
+                &mut processing_secs,
+                &mut err,
+            )
+        };
+        if rc != 0 {
+            return Err(take_string(err, "Parakeet vocabulary transcription failed"));
+        }
+        let replacements_json = take_string(replacements, "[]");
+        let replacements: Vec<VocabReplacement> = serde_json::from_str(&replacements_json)
+            .unwrap_or_else(|e| {
+                eprintln!("[parakeet] ignoring unreadable vocabulary replacements: {}", e);
+                Vec::new()
+            });
+        Ok(ParakeetVocabResult {
+            text: take_string(text, ""),
+            replacements,
             processing_secs,
         })
     }
