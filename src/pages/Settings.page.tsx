@@ -198,6 +198,7 @@ function ModelsSection() {
     downloadingFilename,
     isLocalAvailable,
     loadedModel,
+    loadingFilename,
     downloadModel,
     loadModel,
   } = useModelDownload();
@@ -205,7 +206,6 @@ function ModelsSection() {
   const [showKey, setShowKey] = useState(false);
   const [keyInput, setKeyInput] = useState(groqApiKey);
   const [whisperInput, setWhisperInput] = useState(whisperPrompt);
-  const [loadingModel, setLoadingModel] = useState<string | null>(null);
 
   useEffect(() => {
     setKeyInput(groqApiKey);
@@ -396,23 +396,20 @@ function ModelsSection() {
                           ) : (
                             <button
                               onClick={async () => {
-                                setLoadingModel(model.filename);
                                 try {
                                   await loadModel(model.filename);
                                 } catch {
                                   useAppStore.getState().addToast({ type: "error", message: "Could not load model. Try again or choose another model." });
-                                } finally {
-                                  setLoadingModel(null);
                                 }
                               }}
-                              disabled={loadingModel !== null}
+                              disabled={loadingFilename !== null}
                               className={cn(
                                 "flex h-[30px] items-center gap-1.5 rounded-md border border-success/20 px-3 text-[12px] font-medium text-success",
                                 "hover:bg-success/8 active:scale-95 transition-all duration-150",
                                 "disabled:cursor-not-allowed disabled:opacity-40",
                               )}
                             >
-                              {loadingModel === model.filename ? (
+                              {loadingFilename === model.filename ? (
                                 <Loader2 size={12} className="animate-spin" />
                               ) : (
                                 <Play size={12} />

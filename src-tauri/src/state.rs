@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::{mpsc, Arc, Mutex};
 
@@ -49,6 +50,9 @@ pub struct AppState {
     /// and transiently holding two models in memory. tokio Mutex: held across await.
     #[cfg(feature = "local-stt")]
     pub local_model_load_lock: tokio::sync::Mutex<()>,
+    /// App icons already rendered for the UI, keyed by bundle id (None = no icon).
+    /// Icons are a few KB each and only apps the user dictated into are ever asked for.
+    pub app_icon_cache: Mutex<HashMap<String, Option<String>>>,
     /// Incremented by audio callback, read+reset by watchdog to detect runaway callbacks.
     pub audio_callback_count: Arc<AtomicU64>,
     /// Epoch millis when recording started, 0 when idle. Used by watchdog for max-duration check.
@@ -74,6 +78,7 @@ impl AppState {
             model_idle_unload_secs: AtomicU64::new(DEFAULT_MODEL_IDLE_UNLOAD_SECS),
             #[cfg(feature = "local-stt")]
             local_model_load_lock: tokio::sync::Mutex::new(()),
+            app_icon_cache: Mutex::new(HashMap::new()),
             audio_callback_count: Arc::new(AtomicU64::new(0)),
             recording_started_at: AtomicU64::new(0),
         }

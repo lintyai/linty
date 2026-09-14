@@ -2455,6 +2455,7 @@ dependencies = [
 name = "linty"
 version = "0.0.28"
 dependencies = [
+ "base64 0.22.1",
  "block2 0.5.1",
  "cocoa",
  "cpal",

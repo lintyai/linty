@@ -9,7 +9,9 @@ import {
 } from "lucide-react";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useAppStore } from "@/store/app.store";
+import { AppIcon } from "@/components/shared/AppIcon.component";
 import { StatCard } from "@/components/shared/StatCard.component";
+import { useAppIcons } from "@/hooks/useAppIcons.hook";
 import { cn } from "@/lib/utils";
 import {
   filterByPeriod,
@@ -46,11 +48,11 @@ export function AppsPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const asOf = Math.max(now, Date.now());
-  const filtered = useMemo(
-    () => filterByPeriod(allTranscripts, period, asOf),
-    [allTranscripts, period, asOf],
-  );
+  const { filtered, asOf } = useMemo(() => {
+    // One clock for the cards and the table when a session crosses midnight.
+    const asOf = Math.max(now, Date.now());
+    return { filtered: filterByPeriod(allTranscripts, period, asOf), asOf };
+  }, [allTranscripts, period, now]);
   const stats = summarizeUsage(filtered);
   const apps = useMemo(
     () =>
@@ -60,6 +62,7 @@ export function AppsPage() {
     [filtered, sort],
   );
   const attributed = apps.filter((app) => app.attributed);
+  const icons = useAppIcons(attributed.map((app) => app.bundleId));
   const attributedWords = attributed.reduce((sum, app) => sum + app.words, 0);
   const attributedSeconds = attributed.reduce((sum, app) => sum + app.seconds, 0);
   const topApp = [...attributed].sort((a, b) => b.words - a.words)[0];
@@ -219,9 +222,10 @@ export function AppsPage() {
                               : "Older sessions or app attribution unavailable"
                           }
                         >
-                          <span className="app-avatar">
-                            {app.attributed ? app.name.slice(0, 1).toUpperCase() : "?"}
-                          </span>
+                          <AppIcon
+                            name={app.attributed ? app.name : "?"}
+                            icon={app.bundleId ? icons[app.bundleId] : null}
+                          />
                           <span className="min-w-0">
                             <strong>{app.name}</strong>
                             <span className="app-share-track">

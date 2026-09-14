@@ -31,6 +31,8 @@ export function useModelDownload() {
     null,
   );
   const [isLocalAvailable, setIsLocalAvailable] = useState(false);
+  /** Model currently being loaded into memory (after a download or via Load). */
+  const [loadingFilename, setLoadingFilename] = useState<string | null>(null);
   const globalLoadedModel = useAppStore((s) => s.loadedModelFilename);
   const [loadedModel, setLoadedModel] = useState<string | null>(null);
 
@@ -147,7 +149,9 @@ export function useModelDownload() {
         setDownloadedModels((prev) => new Set([...prev, model.filename]));
         setIsLocalModelDownloaded(true);
 
-        // Auto-load the model after download
+        // Auto-load the model after download. Parakeet's first load compiles
+        // for the Neural Engine and can take ~30 s, so keep a loading state.
+        setLoadingFilename(model.filename);
         try {
           await invoke("load_local_model", { filename: model.filename });
           setLoadedModel(model.filename);
@@ -157,6 +161,8 @@ export function useModelDownload() {
         } catch (loadErr) {
           console.error("[model] Auto-load after download failed:", loadErr);
           useAppStore.getState().addToast({ type: "error", message: "Model downloaded but could not load. Choose Load to try again." });
+        } finally {
+          setLoadingFilename(null);
         }
       } catch (err) {
         console.error("Download failed:", err);
@@ -170,6 +176,7 @@ export function useModelDownload() {
   );
 
   const loadModel = useCallback(async (filename: string) => {
+    setLoadingFilename(filename);
     try {
       await invoke("load_local_model", { filename });
       setLoadedModel(filename);
@@ -179,6 +186,8 @@ export function useModelDownload() {
     } catch (err) {
       console.error("Failed to load model:", err);
       throw err;
+    } finally {
+      setLoadingFilename(null);
     }
   }, [setLoadedModelFilename, persistModelSelection]);
 
@@ -190,6 +199,7 @@ export function useModelDownload() {
     downloadingFilename,
     isLocalAvailable,
     loadedModel,
+    loadingFilename,
     downloadModel,
     loadModel,
   };

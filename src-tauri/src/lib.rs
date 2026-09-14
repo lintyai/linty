@@ -134,8 +134,11 @@ async fn load_local_engine(
                 started.elapsed().as_millis()
             );
             let engine = Arc::new(engine);
-            *state.whisper_ctx.lock().map_err(|e| e.to_string())? = None;
+            // Evict whisper outside its lock: freeing a model can take a moment
+            // and other threads probe these slots while inference runs.
+            let previous = state.whisper_ctx.lock().map_err(|e| e.to_string())?.take();
             *state.parakeet_engine.lock().map_err(|e| e.to_string())? = Some(Arc::clone(&engine));
+            drop(previous);
             return Ok(LocalEngine::Parakeet(engine));
         }
         #[cfg(not(feature = "parakeet"))]
@@ -143,11 +146,13 @@ async fn load_local_engine(
     }
 
     let ctx = Arc::new(load_whisper_ctx(app, filename).await?);
+    // Same eviction rule as above: take the old engine out, release the lock,
+    // then let it drop (ParakeetEngine::drop blocks on the Swift actor's cleanup).
     #[cfg(feature = "parakeet")]
-    {
-        *state.parakeet_engine.lock().map_err(|e| e.to_string())? = None;
-    }
+    let previous = state.parakeet_engine.lock().map_err(|e| e.to_string())?.take();
     *state.whisper_ctx.lock().map_err(|e| e.to_string())? = Some(Arc::clone(&ctx));
+    #[cfg(feature = "parakeet")]
+    drop(previous);
     Ok(LocalEngine::Whisper(ctx))
 }
 
@@ -714,6 +719,37 @@ fn reset_all_data(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> R
 
 // ── Local STT commands ──
 
+/// App icons for the given bundle ids as PNG data URLs (None when unresolvable).
+/// Synchronous on purpose: it runs on the main thread, where AppKit's
+/// NSWorkspace/NSImage calls belong. Results are cached for the app's lifetime.
+#[tauri::command]
+fn get_app_icons(
+    state: tauri::State<'_, AppState>,
+    bundle_ids: Vec<String>,
+) -> std::collections::HashMap<String, Option<String>> {
+    use base64::Engine as _;
+    let mut cache = state
+        .app_icon_cache
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut icons = std::collections::HashMap::with_capacity(bundle_ids.len());
+    for bundle_id in bundle_ids {
+        let icon = cache
+            .entry(bundle_id.clone())
+            .or_insert_with(|| {
+                application::app_icon_png(&bundle_id).map(|png| {
+                    format!(
+                        "data:image/png;base64,{}",
+                        base64::engine::general_purpose::STANDARD.encode(png)
+                    )
+                })
+            })
+            .clone();
+        icons.insert(bundle_id, icon);
+    }
+    icons
+}
+
 #[tauri::command]
 fn get_available_models() -> Vec<transcribe::ModelInfo> {
     #[cfg(feature = "parakeet")]
@@ -1253,6 +1289,7 @@ pub fn run() {
             open_system_settings,
             check_microphone,
             request_microphone,
+            get_app_icons,
             get_available_models,
             get_models_dir,
             check_model_exists,

@@ -25,6 +25,7 @@ export const fixture = ({ empty = false, onboarding = false, theme = 'light' } =
       if (command === 'check_microphone') return 'authorized';
       if (['check_accessibility', 'request_microphone', 'request_accessibility', 'is_local_stt_available'].includes(command)) return true;
       if (command === 'check_fn_key_conflict') return { conflict: false, usage_type: 0 };
+      if (command === 'get_app_icons') return Object.fromEntries(args.bundleIds.map(id => [id, id === 'com.apple.Safari' ? 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR42mOwbvpGEmIY1TCqYfhqAACHB7MQtp/9lwAAAABJRU5ErkJggg==' : null]));
       if (command === 'check_model_exists') return args.filename === 'ggml-large-v3-turbo-q5_0.bin';
       if (command === 'get_available_models') return [
         { filename: 'parakeet-tdt-0.6b-v3', name: 'Parakeet TDT v3 (~500 MB) ★ Recommended', description: 'Neural Engine · sub-second', size_mb: 500, backend: 'parakeet' },
