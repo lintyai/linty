@@ -27,6 +27,7 @@ cpal = "0.15"
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
+base64 = "0.22"          # app icons as data URLs
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2" }
 
 # Local STT (behind feature flag — long compile with Metal)
@@ -46,6 +47,11 @@ local-stt = ["whisper-rs", "hound"]
 # Parakeet TDT v3 on the Neural Engine via the Swift bridge in swift/ (see build.rs).
 # Needs Xcode 16+; SwiftPM fetches FluidAudio on the first build.
 parakeet = ["local-stt"]
+
+# The engine benchmark links both local engines; Cargo skips it otherwise.
+[[example]]
+name = "stt_bench"
+required-features = ["local-stt", "parakeet"]
 
 [lints.rust]
 unexpected_cfgs = "allow"

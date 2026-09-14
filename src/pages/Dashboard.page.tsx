@@ -11,7 +11,9 @@ import {
 } from "lucide-react";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useAppStore } from "@/store/app.store";
+import { AppIcon } from "@/components/shared/AppIcon.component";
 import { StatCard } from "@/components/shared/StatCard.component";
+import { useAppIcons } from "@/hooks/useAppIcons.hook";
 import { TranscriptRow } from "@/components/shared/TranscriptRow.component";
 import { TranscriptActions } from "@/components/shared/TranscriptActions.component";
 import { cn } from "@/lib/utils";
@@ -50,6 +52,7 @@ export function DashboardPage() {
     .filter((app) => app.attributed)
     .sort((a, b) => b.words - a.words || a.name.localeCompare(b.name))
     .slice(0, 3);
+  const appIcons = useAppIcons(topApps.map((app) => app.bundleId));
   const maxWords = Math.max(1, ...timeline.map((day) => day.words));
   const hasHistory = allTranscripts.length > 0;
   const openHistory = (query = "") => {
@@ -314,9 +317,10 @@ export function DashboardPage() {
                             onClick={() => openHistory(app.name)}
                             title={`View ${app.name} transcripts`}
                           >
-                            <span className="app-avatar">
-                              {app.name.slice(0, 1).toUpperCase()}
-                            </span>
+                            <AppIcon
+                              name={app.name}
+                              icon={app.bundleId ? appIcons[app.bundleId] : null}
+                            />
                             <span className="min-w-0">
                               <strong>{app.name}</strong>
                               <span className="app-share-track">

@@ -60,7 +60,7 @@ gh api repos/lintyai/linty/pulls/{pr_number}/reviews --jq '
 | Risk | Path Patterns | Depth |
 |------|--------------|-------|
 | **Critical** | `src-tauri/src/permissions.rs`, `src-tauri/src/fnkey.rs`, `src-tauri/Entitlements.plist`, `src-tauri/Info.plist`, `.env*`, `**/secret*`, `**/token*` | Full + security pass |
-| **High** | `src-tauri/src/*.rs`, `src/store/**`, `src/hooks/**`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` | Deep line-by-line |
+| **High** | `src-tauri/src/*.rs`, `src-tauri/build.rs`, `src-tauri/swift/**`, `src/store/**`, `src/hooks/**`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` | Deep line-by-line |
 | **Medium** | `src/pages/**`, `src/components/**`, `src/services/**`, `src/types/**` | Standard |
 | **Low** | `**/*.md`, `**/package.json`, `**/*.config.*`, `scripts/**`, `.claude/**` | Light |
 
@@ -156,7 +156,7 @@ DRY (3+ duplications), KISS (over-engineering), YAGNI (speculative code), SRP (5
 | File naming mismatch (`.component.tsx`, `.dialogue.tsx`, `.store.ts`, etc.) | Minor |
 | Import order wrong (external -> internal -> relative) | Minor |
 | ID fields without collection prefix (`id` instead of `userId`) | Minor |
-| Missing `#[cfg(feature = "local-stt")]` on whisper code | Major |
+| Missing `#[cfg(feature = "local-stt")]` on whisper code, or `#[cfg(feature = "parakeet")]` on FluidAudio bridge code | Major |
 | Wrong entitlement key in `Entitlements.plist` | Major |
 | Custom UI when shadcn/ui component exists | Minor |
 
@@ -349,6 +349,7 @@ For findings without code suggestion, use `**Action**: What to do.` instead of d
 ```bash
 yarn build
 cargo check --features local-stt
+cargo check --features local-stt,parakeet   # also compiles the Swift bridge; required when build.rs, parakeet.rs or swift/ changed
 ```
 
 Report: PASS (clean or pre-existing only) or FAIL (new errors, list them).
@@ -439,11 +440,12 @@ After posting the review on GitHub, **automatically chain into `/pr-resolve`** i
 
 | Scenario | Action |
 |----------|--------|
-| Already merged | Warn, still review |
+| Already merged | Warn, still review; post as `COMMENT`. Do not chain `/pr-resolve` on the merged branch — roll fixes into a follow-up branch + PR |
 | Draft | Note it, review anyway |
 | 50+ files | Flag "consider splitting" |
 | Empty diff | Exit |
 | `gh api` fails | Retry once, fallback to `gh pr review --comment --body` |
+| `422 "Line could not be resolved"` | An inline `line` is not part of this PR's diff (e.g. the finding is in a hunk from an earlier PR). Move that finding to "Findings Outside Diff" in the body and re-post |
 | Own PR (self-review) | GitHub rejects APPROVE/REQUEST_CHANGES on own PRs. Use `COMMENT` event instead |
 
 ---

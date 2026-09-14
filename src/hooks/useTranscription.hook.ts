@@ -5,13 +5,8 @@ import { useAppStore } from "@/store/app.store";
 import { correctText } from "@/services/correction.service";
 import type { TranscriptRecord } from "@/types/transcript.types";
 import type { StopResult } from "./useRecording.hook";
+import { modelLabel } from "@/lib/model-labels.util";
 
-const MODEL_LABELS: Record<string, string> = {
-  "ggml-small.bin": "Small",
-  "ggml-medium.bin": "Medium",
-  "ggml-large-v3-turbo-q5_0.bin": "Large Turbo Q5",
-  "parakeet-tdt-0.6b-v3": "Parakeet TDT v3",
-};
 
 function emitCapsule(state: string, text?: string, error?: string) {
   invoke("emit_capsule_state", { state, text: text ?? null, error: error ?? null }).catch(() => {});
@@ -198,7 +193,7 @@ export function useTranscription() {
               ? translateToEnglish
                 ? "Groq Whisper Large V3"
                 : "Groq Whisper Large V3 Turbo"
-              : (loadedModelFilename && MODEL_LABELS[loadedModelFilename]) || "Local",
+              : modelLabel(loadedModelFilename),
           durationSeconds: recordingDuration,
           processingTimeMs,
           sttTimeMs,

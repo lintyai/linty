@@ -1,6 +1,8 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { showTranscriptMenu } from "@/lib/transcript-menu.util";
 import { Cloud, Cpu } from "lucide-react";
+import { AppIcon } from "@/components/shared/AppIcon.component";
+import { useAppIcon } from "@/hooks/useAppIcons.hook";
 import { cn } from "@/lib/utils";
 import type { TranscriptRecord } from "@/types/transcript.types";
 
@@ -14,11 +16,12 @@ interface TranscriptRowProps {
 }
 
 export function TranscriptRow({ transcript: t, selected, onClick, onDelete, actions, className }: TranscriptRowProps) {
+  const appIcon = useAppIcon(t.application?.bundleId);
   const content = <>
     <p className="transcript-preview">{t.finalText}</p>
     <span className="transcript-metadata">
       <time dateTime={new Date(t.timestamp).toISOString()}>{new Date(t.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
-      {t.application && <><span aria-hidden="true">·</span><span>{t.application.name}</span></>}
+      {t.application && <><span aria-hidden="true">·</span><span className="transcript-app"><AppIcon size="sm" name={t.application.name} icon={appIcon} />{t.application.name}</span></>}
       <span aria-hidden="true">·</span><span>{t.wordCount} words</span>
       <span className="transcript-engine" title={t.modelName}>{t.engine === "cloud" ? <Cloud size={11} /> : <Cpu size={11} />}{t.engine === "cloud" ? "Cloud" : "Local"}</span>
     </span>

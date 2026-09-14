@@ -43,6 +43,8 @@ export function summarizeUsage(records: TranscriptRecord[]) {
 export interface ApplicationUsage {
   id: string;
   name: string;
+  /** Bundle identifier when known; used to look up the app icon. */
+  bundleId: string | null;
   attributed: boolean;
   words: number;
   seconds: number;
@@ -66,6 +68,7 @@ export function usageByApplication(records: TranscriptRecord[]): ApplicationUsag
     const app = apps.get(id) ?? {
       id,
       name: t.application?.name ?? "Unattributed",
+      bundleId: t.application?.bundleId ?? null,
       attributed: !!t.application,
       words: 0,
       seconds: 0,

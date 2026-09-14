@@ -15,32 +15,20 @@ import {
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useToast } from "@/hooks/useToast.hook";
+import { AppIcon } from "@/components/shared/AppIcon.component";
 import { EmptyState } from "@/components/shared/EmptyState.component";
+import { useAppIcon } from "@/hooks/useAppIcons.hook";
+import { formatDayLabel } from "@/lib/usage.util";
 import { TranscriptRow } from "@/components/shared/TranscriptRow.component";
 import { TranscriptActions } from "@/components/shared/TranscriptActions.component";
 import type { TranscriptRecord } from "@/types/transcript.types";
-
-function formatDate(timestamp: number): string {
-  const date = new Date(timestamp);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  if (date.toDateString() === today.toDateString()) return "Today";
-  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return date.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-    year: date.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
-  });
-}
 
 function groupByDate(
   transcripts: TranscriptRecord[],
 ): { date: string; items: TranscriptRecord[] }[] {
   const groups = new Map<string, TranscriptRecord[]>();
   for (const t of transcripts) {
-    const dateKey = formatDate(t.timestamp);
+    const dateKey = formatDayLabel(t.timestamp);
     if (!groups.has(dateKey)) groups.set(dateKey, []);
     groups.get(dateKey)!.push(t);
   }
@@ -66,6 +54,7 @@ export function HistoryPage() {
     (t) => t.transcriptId === selectedTranscriptId,
   );
   const visibleTranscriptId = selectedTranscript?.transcriptId;
+  const selectedAppIcon = useAppIcon(selectedTranscript?.application?.bundleId);
 
   useEffect(() => {
     if (!visibleTranscriptId) return;
@@ -201,7 +190,15 @@ export function HistoryPage() {
               <div>
                 <p className="text-[12px] text-text-secondary mb-4">
                   {new Date(selectedTranscript.timestamp).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
-                  {selectedTranscript.application && ` · ${selectedTranscript.application.name}`}
+                  {selectedTranscript.application && (
+                    <>
+                      {" · "}
+                      <span className="transcript-app">
+                        <AppIcon size="sm" name={selectedTranscript.application.name} icon={selectedAppIcon} />
+                        {selectedTranscript.application.name}
+                      </span>
+                    </>
+                  )}
                 </p>
                 <p className="text-[14px] leading-[1.75] text-text-primary select-text whitespace-pre-wrap">
                   {selectedTranscript.finalText}

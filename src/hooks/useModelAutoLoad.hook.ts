@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store/app.store";
+import { modelLabel } from "@/lib/model-labels.util";
 
 /**
  * Auto-activates the user's preferred local model (whisper or Parakeet) on startup.
@@ -39,6 +40,7 @@ export function useModelAutoLoad() {
         if (!isAvailable) return;
 
         // If user previously selected a model, try that first
+        let missingSelection: string | null = null;
         if (selectedModelFilename) {
           try {
             const exists = await invoke<boolean>("check_model_exists", {
@@ -48,10 +50,21 @@ export function useModelAutoLoad() {
               await activateModel(selectedModelFilename);
               return;
             }
+            // Retired from the catalog (deleted on launch) or removed by hand.
+            missingSelection = selectedModelFilename;
           } catch {
             console.warn("[auto-load] Saved model failed, falling back");
           }
         }
+        const explainFallback = (replacement: string | null) => {
+          if (!missingSelection) return;
+          useAppStore.getState().addToast({
+            type: "warning",
+            message: replacement
+              ? `${modelLabel(missingSelection)} is no longer available. Using ${modelLabel(replacement)} instead.`
+              : `${modelLabel(missingSelection)} is no longer available. Choose a model in Settings → Speech engine.`,
+          });
+        };
 
         // Fallback: best available by preference (Parakeet is the default).
         const preferred = [
@@ -68,6 +81,7 @@ export function useModelAutoLoad() {
             });
             if (exists) {
               await activateModel(filename);
+              explainFallback(filename);
               return;
             }
           } catch {
@@ -76,6 +90,7 @@ export function useModelAutoLoad() {
         }
 
         console.log("[auto-load] No local models found");
+        explainFallback(null);
       } catch (err) {
         console.error("[auto-load] Failed:", err);
       }
