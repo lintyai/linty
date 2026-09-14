@@ -7,7 +7,11 @@ import type { SttMode } from "@/store/slices/settings.slice";
 export function useTraySync(saveSttMode: (mode: SttMode) => Promise<void>) {
   const status = useAppStore((s) => s.status);
   const sttMode = useAppStore((s) => s.sttMode);
+  const selectedModelFilename = useAppStore((s) => s.selectedModelFilename);
+  const loadedModelFilename = useAppStore((s) => s.loadedModelFilename);
   const settingsLoaded = useAppStore((s) => s.settingsLoaded);
+  // The menu names the local engine that will actually run: the selection, else what is loaded.
+  const localEngine = (selectedModelFilename ?? loadedModelFilename) === "parakeet-tdt-0.6b-v3" ? "Parakeet" : "Whisper";
   const transcripts = useAppStore((s) => s.transcripts);
   const recentTranscripts = useMemo(
     () =>
@@ -21,10 +25,10 @@ export function useTraySync(saveSttMode: (mode: SttMode) => Promise<void>) {
   // Keep the menu in sync with new, restored, and deleted transcripts.
   useEffect(() => {
     if (!settingsLoaded) return;
-    emit("tray-state-changed", { status, sttMode, recentTranscripts }).catch((err) => {
+    emit("tray-state-changed", { status, sttMode, localEngine, recentTranscripts }).catch((err) => {
       console.error("Failed to update tray menu:", err);
     });
-  }, [status, sttMode, settingsLoaded, recentTranscripts]);
+  }, [status, sttMode, localEngine, settingsLoaded, recentTranscripts]);
 
   useEffect(() => {
     const unlisten = listen<string>("tray-copy-transcript", async (event) => {
