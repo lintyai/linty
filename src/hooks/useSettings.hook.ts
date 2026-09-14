@@ -24,6 +24,8 @@ async function getStore() {
         modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
         triggerKey: DEFAULT_TRIGGER_KEY,
         trackApplicationUsage: true,
+        dictionaryEnabled: true,
+        autoLearnWords: false,
       },
       autoSave: true,
     });
@@ -58,6 +60,10 @@ export function useSettings() {
     setSettingsLoaded,
     trackApplicationUsage,
     setTrackApplicationUsage,
+    dictionaryEnabled,
+    setDictionaryEnabled,
+    autoLearnWords,
+    setAutoLearnWords,
   } = useAppStore();
 
   // Load settings on mount
@@ -78,6 +84,10 @@ export function useSettings() {
         const savedTriggerKey = await store.get<string>("triggerKey");
         const savedAppTracking = await store.get<boolean>("trackApplicationUsage");
         setTrackApplicationUsage(savedAppTracking ?? true);
+        const savedDictionaryEnabled = await store.get<boolean>("dictionaryEnabled");
+        setDictionaryEnabled(savedDictionaryEnabled ?? true);
+        const savedAutoLearn = await store.get<boolean>("autoLearnWords");
+        setAutoLearnWords(savedAutoLearn ?? false);
 
         if (key) setGroqApiKey(key);
         if (mode) setSttMode(mode);
@@ -109,7 +119,7 @@ export function useSettings() {
         setSettingsLoaded(true);
       }
     })();
-  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setSelectedModelFilename, setModelIdleUnloadMinutes, setTriggerKey, setSettingsLoaded, setTrackApplicationUsage]);
+  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setSelectedModelFilename, setModelIdleUnloadMinutes, setTriggerKey, setSettingsLoaded, setTrackApplicationUsage, setDictionaryEnabled, setAutoLearnWords]);
 
   const saveGroqApiKey = useCallback(
     async (key: string) => {
@@ -126,6 +136,18 @@ export function useSettings() {
     await store.save();
     setTrackApplicationUsage(enabled);
   }, [setTrackApplicationUsage]);
+
+  const saveDictionaryEnabled = useCallback(async (enabled: boolean) => {
+    setDictionaryEnabled(enabled);
+    const store = await getStore();
+    await store.set("dictionaryEnabled", enabled);
+  }, [setDictionaryEnabled]);
+
+  const saveAutoLearnWords = useCallback(async (enabled: boolean) => {
+    setAutoLearnWords(enabled);
+    const store = await getStore();
+    await store.set("autoLearnWords", enabled);
+  }, [setAutoLearnWords]);
 
   const saveSttMode = useCallback(
     async (mode: SttMode) => {
@@ -221,6 +243,10 @@ export function useSettings() {
   return {
     trackApplicationUsage,
     saveTrackApplicationUsage,
+    dictionaryEnabled,
+    saveDictionaryEnabled,
+    autoLearnWords,
+    saveAutoLearnWords,
     groqApiKey,
     sttMode,
     correctionEnabled,

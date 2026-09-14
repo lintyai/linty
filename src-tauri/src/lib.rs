@@ -678,12 +678,18 @@ fn reset_all_data(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> R
         eprintln!("[reset] Deleted settings store");
     }
 
-    // Delete history store
-    let history_path = data_dir.join("linty-history.json");
-    if history_path.exists() {
-        std::fs::remove_file(&history_path)
-            .map_err(|e| format!("Failed to delete history: {}", e))?;
-        eprintln!("[reset] Deleted history store");
+    // Delete history, corrections and dictionary stores
+    for (name, label) in [
+        ("linty-history.json", "history"),
+        ("linty-corrections.json", "corrections"),
+        ("linty-dictionary.json", "dictionary"),
+    ] {
+        let path = data_dir.join(name);
+        if path.exists() {
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("Failed to delete {}: {}", label, e))?;
+            eprintln!("[reset] Deleted {} store", label);
+        }
     }
 
     // Delete all downloaded models

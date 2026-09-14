@@ -68,6 +68,10 @@ export interface SettingsSlice {
   transcriptionLanguage: string;
   loadedModelFilename: string | null;
   selectedModelFilename: string | null;
+  /** Apply the personal dictionary (replacements + engine hints) to new dictations. */
+  dictionaryEnabled: boolean;
+  /** Promote ready suggestions into the dictionary without asking. */
+  autoLearnWords: boolean;
   /** Minutes of inactivity before the local model is unloaded (0 = never). */
   modelIdleUnloadMinutes: number;
   /** Push-to-talk trigger: TRIGGER_KEY_FN or a global-shortcut accelerator string. */
@@ -88,6 +92,8 @@ export interface SettingsSlice {
   setOnboardingComplete: (complete: boolean) => void;
   setTranscriptionLanguage: (language: string) => void;
   setModelIdleUnloadMinutes: (minutes: number) => void;
+  setDictionaryEnabled: (enabled: boolean) => void;
+  setAutoLearnWords: (enabled: boolean) => void;
   setTriggerKey: (triggerKey: string) => void;
   setSettingsLoaded: (loaded: boolean) => void;
 }
@@ -108,6 +114,8 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   loadedModelFilename: null,
   selectedModelFilename: null,
   modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
+  dictionaryEnabled: true,
+  autoLearnWords: false,
   triggerKey: DEFAULT_TRIGGER_KEY,
   settingsLoaded: false,
   trackApplicationUsage: true,
@@ -126,6 +134,8 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   setOnboardingComplete: (onboardingComplete) => set({ onboardingComplete }),
   setTranscriptionLanguage: (transcriptionLanguage) => set({ transcriptionLanguage }),
   setModelIdleUnloadMinutes: (modelIdleUnloadMinutes) => set({ modelIdleUnloadMinutes }),
+  setDictionaryEnabled: (dictionaryEnabled) => set({ dictionaryEnabled }),
+  setAutoLearnWords: (autoLearnWords) => set({ autoLearnWords }),
   setTriggerKey: (triggerKey) => set({ triggerKey }),
   setSettingsLoaded: (settingsLoaded) => set({ settingsLoaded }),
 });

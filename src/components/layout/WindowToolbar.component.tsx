@@ -3,7 +3,7 @@ import { useAppStore } from "@/store/app.store";
 import { SETTINGS_SECTIONS, type AppView, type SettingsSection } from "@/store/slices/navigation.slice";
 
 const TITLES: Record<AppView, string> = {
-  dashboard: "Overview", history: "History", apps: "Apps", settings: "Settings",
+  dashboard: "Overview", history: "History", apps: "Apps", dictionary: "Dictionary", settings: "Settings",
   "system-check": "System Check", shortcuts: "Shortcuts", about: "About Linty",
 };
 

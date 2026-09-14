@@ -1,6 +1,6 @@
 import type { StateCreator } from "zustand";
 
-export type AppView = "history" | "apps" | "settings" | "dashboard" | "system-check" | "shortcuts" | "about";
+export type AppView = "history" | "apps" | "dictionary" | "settings" | "dashboard" | "system-check" | "shortcuts" | "about";
 export type SettingsSection = "general" | "audio" | "models" | "language" | "appearance" | "privacy";
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string }[] = [

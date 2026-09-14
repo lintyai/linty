@@ -21,6 +21,9 @@ import { HistoryPage } from "@/pages/History.page";
 import { SettingsPage } from "@/pages/Settings.page";
 import { DashboardPage } from "@/pages/Dashboard.page";
 import { AppsPage } from "@/pages/Apps.page";
+import { DictionaryPage } from "@/pages/Dictionary.page";
+import { initializeDictionary } from "@/services/dictionary.service";
+import { initializeCorrections } from "@/services/user-corrections.service";
 import { SystemCheckPage } from "@/pages/SystemCheck.page";
 import { ShortcutsPage } from "@/pages/Shortcuts.page";
 import { AboutPage } from "@/pages/About.page";
@@ -161,6 +164,12 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [currentView, setCurrentView, onboardingComplete]);
 
+  // The dictionary must be in memory before the first dictation applies it.
+  useEffect(() => {
+    initializeDictionary().catch((error) => console.error("Failed to load dictionary:", error));
+    initializeCorrections().catch((error) => console.error("Failed to load corrections:", error));
+  }, []);
+
   useEffect(() => {
     const unlisten = listen("menu-settings", () => setCurrentView("settings"));
     return () => { unlisten.then((fn) => fn()); };
@@ -194,6 +203,7 @@ export default function App() {
           {currentView === "settings" && <SettingsPage />}
           {currentView === "dashboard" && <DashboardPage />}
           {currentView === "apps" && <AppsPage />}
+          {currentView === "dictionary" && <DictionaryPage />}
           {currentView === "system-check" && <SystemCheckPage />}
           {currentView === "shortcuts" && <ShortcutsPage />}
           {currentView === "about" && <AboutPage />}
