@@ -15,7 +15,7 @@ import { useSettings } from "@/hooks/useSettings.hook";
 import { useToast } from "@/hooks/useToast.hook";
 import { useAppStore } from "@/store/app.store";
 import { StatCard } from "@/components/shared/StatCard.component";
-import { correctionsPer100Words } from "@/lib/dictionary.util";
+import { correctionsPer100Words, timesHelped } from "@/lib/dictionary.util";
 import { formatDayLabel } from "@/lib/usage.util";
 import { cn } from "@/lib/utils";
 import type { DictionaryEntry } from "@/types/correction.types";
@@ -55,9 +55,10 @@ export function DictionaryPage() {
     [allTranscripts],
   );
   const rate = correctionsPer100Words(corrections, totalWords);
-  const applied = entries.reduce((sum, e) => sum + e.timesApplied, 0);
+  const recognized = entries.reduce((sum, e) => sum + (e.timesRecognized ?? 0), 0);
+  const corrected = entries.reduce((sum, e) => sum + e.timesApplied, 0);
   const sortedEntries = useMemo(
-    () => [...entries].sort((a, b) => b.timesApplied - a.timesApplied || b.createdAt - a.createdAt),
+    () => [...entries].sort((a, b) => timesHelped(b) - timesHelped(a) || b.createdAt - a.createdAt),
     [entries],
   );
 
@@ -116,9 +117,9 @@ export function DictionaryPage() {
           />
           <StatCard
             icon={<Check size={17} />}
-            value={number(applied)}
-            label="Fixes applied"
-            detail="Dictionary replacements before paste"
+            value={number(recognized + corrected)}
+            label="Times helped"
+            detail={`${number(recognized)} recognised by the engine · ${number(corrected)} corrected after`}
           />
         </div>
 
@@ -201,7 +202,8 @@ export function DictionaryPage() {
                   <tr>
                     <th>Word</th>
                     <th>Heard as</th>
-                    <th>Applied</th>
+                    <th title="The speech engine got the word right because your dictionary was handed to it">Recognised</th>
+                    <th title="Linty replaced a misheard spelling with this word after transcription">Corrected</th>
                     <th>Origin</th>
                     <th>On</th>
                     <th><span className="sr-only">Remove</span></th>
@@ -212,6 +214,7 @@ export function DictionaryPage() {
                     <tr key={e.entryId} className={cn(!e.enabled && "is-disabled")}>
                       <td><strong>{e.right}</strong></td>
                       <td className="dictionary-wrong">{e.wrong.length ? e.wrong.join(", ") : <span className="text-text-muted">hint only</span>}</td>
+                      <td>{number(e.timesRecognized ?? 0)}</td>
                       <td>{number(e.timesApplied)}</td>
                       <td className="text-text-muted">{ORIGIN_LABEL[e.origin]}</td>
                       <td>

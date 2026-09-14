@@ -7,7 +7,7 @@ import type { TranscriptRecord } from "@/types/transcript.types";
 import type { StopResult } from "./useRecording.hook";
 import { modelLabel } from "@/lib/model-labels.util";
 import { applyDictionary, engineTerms, promptWithDictionary } from "@/lib/dictionary.util";
-import { noteDictionaryApplied } from "@/services/dictionary.service";
+import { noteDictionaryUse } from "@/services/dictionary.service";
 
 
 function emitCapsule(state: string, text?: string, error?: string) {
@@ -107,6 +107,8 @@ export function useTranscription() {
         setStatus("transcribing");
         emitCapsule("transcribing");
         let transcript: string;
+        // Dictionary words the engine itself corrected (Parakeet vocabulary).
+        let engineApplied: { from: string; to: string }[] = [];
 
         const langParam = transcriptionLanguage === "auto" ? null : transcriptionLanguage;
         // The vocabulary prompt: what the person typed, then the dictionary's
@@ -124,11 +126,13 @@ export function useTranscription() {
         if (effectiveMode === "local") {
           // No cloud fallback — the user chose local; surface errors instead
           // of silently sending audio to the cloud.
-          transcript = await invoke<string>("transcribe_buffer", {
+          const output = await invoke<{ text: string; vocabularyApplied: { from: string; to: string }[] }>("transcribe_buffer", {
             prompt: enginePrompt || null,
             language: langParam,
             vocabulary: vocabulary.length ? vocabulary : null,
           });
+          transcript = output.text;
+          engineApplied = output.vocabularyApplied ?? [];
         } else {
           transcript = await invoke<string>("transcribe_buffer_cloud", {
             apiKey: groqApiKey,
@@ -166,17 +170,25 @@ export function useTranscription() {
           }
         }
 
-        // Step 2b: personal dictionary — whole-word fixes for words the engine still misses
-        let dictionaryApplied: { from: string; to: string }[] = [];
+        // Step 2b: personal dictionary — whole-word fixes for words the engine still misses.
+        // Engine-side fixes count too, so "Applied" reflects every time a word helped.
+        const dictionaryApplied: { from: string; to: string }[] = engineApplied.map(({ from, to }) => ({ from, to }));
+        const recognizedIds = engineApplied
+          .map((a) => dictionaryEntries.find((e) => e.right === a.to)?.entryId)
+          .filter((id): id is string => Boolean(id));
+        const correctedIds: string[] = [];
         if (dictionaryEnabled && dictionaryEntries.length) {
           const applied = applyDictionary(finalResult, dictionaryEntries);
           if (applied.applied.length) {
             finalResult = applied.text;
-            dictionaryApplied = applied.applied.map(({ from, to }) => ({ from, to }));
-            noteDictionaryApplied(applied.applied.map((a) => a.entryId)).catch((err) => {
-              console.error("Failed to record dictionary use:", err);
-            });
+            dictionaryApplied.push(...applied.applied.map(({ from, to }) => ({ from, to })));
+            correctedIds.push(...applied.applied.map((a) => a.entryId));
           }
+        }
+        if (recognizedIds.length || correctedIds.length) {
+          noteDictionaryUse({ recognized: recognizedIds, corrected: correctedIds }).catch((err) => {
+            console.error("Failed to record dictionary use:", err);
+          });
         }
 
         setFinalText(finalResult);

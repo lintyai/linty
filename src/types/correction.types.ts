@@ -42,7 +42,10 @@ export interface DictionaryEntry {
   wrong: string[];
   enabled: boolean;
   origin: DictionaryOrigin;
+  /** Times Linty replaced a misheard spelling after transcription ("Corrected"). */
   timesApplied: number;
+  /** Times the engine produced the right word because the dictionary was handed to it ("Recognised"). */
+  timesRecognized?: number;
   createdAt: number;
   lastAppliedAt?: number;
 }

@@ -96,16 +96,30 @@ export const dismissSuggestion = (suggestionId: string) =>
     suggestions: suggestions.filter((x) => x.suggestionId !== suggestionId),
   }));
 
-/** Count applications so the most useful entries are the ones sent to the engine. */
-export const noteDictionaryApplied = (entryIds: string[]) => {
-  if (!entryIds.length) return Promise.resolve();
-  const counts = new Map<string, number>();
-  for (const id of entryIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+/**
+ * Count how entries helped, so the most useful ones are the ones sent to the
+ * engine: `recognized` = the engine got the word right thanks to the dictionary,
+ * `corrected` = Linty replaced a misheard spelling after transcription.
+ */
+export const noteDictionaryUse = (use: { recognized: string[]; corrected: string[] }) => {
+  if (!use.recognized.length && !use.corrected.length) return Promise.resolve();
+  const tally = (ids: string[]) => {
+    const counts = new Map<string, number>();
+    for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
+    return counts;
+  };
+  const recognized = tally(use.recognized);
+  const corrected = tally(use.corrected);
   const now = Date.now();
   return updateDictionary(({ entries, suggestions }) => ({
     entries: entries.map((e) =>
-      counts.has(e.entryId)
-        ? { ...e, timesApplied: e.timesApplied + (counts.get(e.entryId) ?? 0), lastAppliedAt: now }
+      recognized.has(e.entryId) || corrected.has(e.entryId)
+        ? {
+            ...e,
+            timesApplied: e.timesApplied + (corrected.get(e.entryId) ?? 0),
+            timesRecognized: (e.timesRecognized ?? 0) + (recognized.get(e.entryId) ?? 0),
+            lastAppliedAt: now,
+          }
         : e,
     ),
     suggestions,

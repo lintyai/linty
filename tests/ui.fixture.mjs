@@ -6,7 +6,7 @@ export const fixture = ({ empty = false, onboarding = false, theme = 'light' } =
   // One correction already made in History, and a dictionary with one word each engine keeps missing.
   const corrections = empty ? [] : [{ correctionId: 'corr-1', transcriptId: 'qa-2', timestamp: now - 3600000, source: 'edit', engine: 'local', modelName: 'Large Turbo Q5', language: 'auto', application: { name: 'Safari', bundleId: 'com.apple.Safari' }, wordCount: 17, changedRatio: 0.06, rewrite: false, pairs: [{ kind: 'substitution', from: 'stems', to: 'steps' }] }];
   const dictionary = empty ? { entries: [], suggestions: [] } : {
-    entries: [{ entryId: 'dict-1', right: 'Linty', wrong: ['Linti', 'Lindy'], enabled: true, origin: 'manual', timesApplied: 12, createdAt: now - 7 * 86400000, lastAppliedAt: now - 3600000 }],
+    entries: [{ entryId: 'dict-1', right: 'Linty', wrong: ['Linti', 'Lindy'], enabled: true, origin: 'manual', timesApplied: 12, timesRecognized: 3, createdAt: now - 7 * 86400000, lastAppliedAt: now - 3600000 }],
     suggestions: [{ suggestionId: 'sugg-1', right: 'Tauri', wrong: 'Tory', seenCount: 2, firstSeenAt: now - 2 * 86400000, lastSeenAt: now - 3600000, correctionIds: ['corr-0', 'corr-1'] }],
   };
   const stores = { 1: { theme, onboardingComplete: !onboarding, sttMode: 'local', selectedModelFilename: 'ggml-large-v3-turbo-q5_0.bin', groqApiKey: '', triggerKey: 'fn', correctionEnabled: false }, 2: { transcripts }, 3: { corrections }, 4: dictionary };

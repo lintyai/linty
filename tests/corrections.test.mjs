@@ -8,6 +8,7 @@ import {
   isSuggestionReady,
   learnablePairs,
   promptWithDictionary,
+  engineTerms,
   suggestionsFromCorrection,
 } from "../src/lib/dictionary.util.ts";
 
@@ -84,6 +85,17 @@ test("dictionary replaces whole words, keeps punctuation and matches casing", ()
   assert.deepEqual(applied.map((a) => `${a.from}>${a.to}`), ["Tari>Tauri", "TARI>TAURI", "Zustan>Zustand"]);
   const disabled = entries.map((e) => ({ ...e, enabled: false }));
   assert.equal(applyDictionary("Tari", disabled).text, "Tari");
+});
+
+test("engine terms rank by every time an entry helped, recognised or corrected", () => {
+  let entries = addToDictionary([], "Tauri", ["Tari"], "manual", now);
+  entries = addToDictionary(entries, "Zustand", ["Zustan"], "manual", now);
+  entries = addToDictionary(entries, "Groq", ["Groke"], "manual", now);
+  entries[0] = { ...entries[0], timesApplied: 2, timesRecognized: 4 }; // Tauri: 6
+  entries[1] = { ...entries[1], timesApplied: 5 }; // Zustand: 5
+  entries[2] = { ...entries[2], timesRecognized: 7 }; // Groq: 7
+  assert.deepEqual(engineTerms(entries).map((e) => e.right), ["Groq", "Tauri", "Zustand"]);
+  assert.deepEqual(engineTerms(entries, 1).map((e) => e.right), ["Groq"]);
 });
 
 test("engine prompt appends dictionary terms after the manual prompt within the budget", () => {

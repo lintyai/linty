@@ -139,6 +139,7 @@ export function addToDictionary(
       enabled: true,
       origin,
       timesApplied: 0,
+      timesRecognized: 0,
       createdAt: now,
     },
   ];
@@ -187,11 +188,16 @@ export function applyDictionary(
   return { text: out, applied };
 }
 
-/** Right forms most worth telling the engine about, most-applied first. */
+/** Every time an entry helped: recognised by the engine or corrected by Linty afterwards. */
+export function timesHelped(entry: DictionaryEntry): number {
+  return entry.timesApplied + (entry.timesRecognized ?? 0);
+}
+
+/** Right forms most worth telling the engine about, most-helpful first. */
 export function engineTerms(entries: DictionaryEntry[], limit = ENGINE_TERM_BUDGET): DictionaryEntry[] {
   return entries
     .filter((e) => e.enabled)
-    .sort((a, b) => b.timesApplied - a.timesApplied || b.createdAt - a.createdAt)
+    .sort((a, b) => timesHelped(b) - timesHelped(a) || b.createdAt - a.createdAt)
     .slice(0, limit);
 }
 

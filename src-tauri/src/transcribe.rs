@@ -397,6 +397,21 @@ pub fn transcribe_parakeet(
     Ok(text)
 }
 
+/// What a local transcription produced: the text, plus any dictionary words the
+/// engine itself corrected (Parakeet vocabulary), so the UI can count them.
+#[derive(serde::Serialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Transcription {
+    pub text: String,
+    pub vocabulary_applied: Vec<crate::vocabulary::AppliedReplacement>,
+}
+
+impl From<String> for Transcription {
+    fn from(text: String) -> Self {
+        Self { text, vocabulary_applied: Vec::new() }
+    }
+}
+
 /// Parakeet with dictionary terms: the TDT transcript is rescored against the
 /// terms by FluidAudio's CTC keyword spotter, and only candidates that resemble a
 /// term (or one of its known wrong spellings) are applied.
@@ -406,7 +421,7 @@ pub fn transcribe_parakeet_with_vocabulary(
     samples: &[f32],
     language: Option<&str>,
     terms: &[crate::vocabulary::VocabTerm],
-) -> Result<String, String> {
+) -> Result<Transcription, String> {
     let duration_secs = samples.len() as f64 / 16000.0;
     eprintln!(
         "[transcribe] Starting Parakeet with {} dictionary terms: {} samples ({:.1}s)",
@@ -424,7 +439,7 @@ pub fn transcribe_parakeet_with_vocabulary(
 
     if !audio_has_speech(samples) {
         eprintln!("[transcribe] Parakeet: audio too quiet, skipping");
-        return Ok(String::new());
+        return Ok(Transcription::default());
     }
 
     let hint = language.filter(|l| *l != "auto" && !l.is_empty());
@@ -447,9 +462,9 @@ pub fn transcribe_parakeet_with_vocabulary(
     eprintln!("[transcribe] Final text: {:?}", text);
     if is_hallucination(&text) {
         eprintln!("[transcribe] Parakeet: filtered degenerate output: {:?}", text);
-        return Ok(String::new());
+        return Ok(Transcription::default());
     }
-    Ok(text)
+    Ok(Transcription { text, vocabulary_applied: applied })
 }
 
 // ── Model catalog & download ──
