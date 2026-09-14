@@ -112,7 +112,19 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.LINTY_APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LINTY_TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.LINTY_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: yarn tauri build --bundles dmg,app -- --features local-stt,parakeet
+        run: |
+          # Tauri's bundle_dmg.sh (hdiutil + Finder) fails intermittently on hosted
+          # macOS runners after the app has already been signed and notarized
+          # (e.g. runs 34694558903, 34873986016). Cargo output is cached within
+          # the job, so a retry only re-signs, re-notarizes and re-bundles.
+          for attempt in 1 2 3; do
+            if yarn tauri build --bundles dmg,app -- --features local-stt,parakeet; then
+              exit 0
+            fi
+            echo "::warning::tauri build failed (attempt $attempt/3); retrying in 20s"
+            sleep 20
+          done
+          exit 1
 
       - name: Notarize & staple DMG
         env:
