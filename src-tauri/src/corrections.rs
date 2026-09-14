@@ -45,8 +45,9 @@ extern "C" {
 /// How long after a paste the field is watched.
 const WATCH_SECS: u64 = 60;
 const POLL: Duration = Duration::from_millis(1000);
-/// Let the target app apply the Cmd+V before the first read.
+/// Let the target app apply the Cmd+V before the first read, and retry a few times.
 const SETTLE_MS: u64 = 400;
+const FIRST_READ_ATTEMPTS: u32 = 4;
 /// Skip whole documents (a long note or an editor buffer).
 const MAX_DIFF_CHARS: usize = 20_000;
 const MAX_MISSES: u8 = 3;
@@ -194,25 +195,46 @@ fn is_current(app: &tauri::AppHandle, generation: u64) -> bool {
         == generation
 }
 
+/// Read the focused field and find the pasted words in it.
+fn locate_paste(pasted_words: &[String]) -> Result<(FocusSnapshot, String, Vec<String>, usize), &'static str> {
+    let snap = snapshot_focus().ok_or("no focused element")?;
+    if snap.bundle.as_deref() == Some(LINTY_BUNDLE_ID) {
+        return Err("focus is on Linty itself");
+    }
+    let Some(value) = snap.value.clone() else {
+        return Err("the field does not expose its text");
+    };
+    if value.chars().count() > MAX_DIFF_CHARS {
+        return Err("the field is too long to diff");
+    }
+    let base = words(&value);
+    let start = find_span(&base, pasted_words).ok_or("pasted text not found in the field")?;
+    Ok((snap, value, base, start))
+}
+
 fn watch(app: tauri::AppHandle, generation: u64, transcript_id: String, pasted: String) {
-    std::thread::sleep(Duration::from_millis(SETTLE_MS));
-    let Some(first) = snapshot_focus() else {
-        return;
-    };
-    if first.bundle.as_deref() == Some(LINTY_BUNDLE_ID) {
-        return;
-    }
-    let Some(value0) = first.value else {
-        eprintln!("[corrections] {} does not expose its text field; nothing to learn from", first.app);
-        return;
-    };
-    if value0.chars().count() > MAX_DIFF_CHARS {
-        return;
-    }
     let pasted_words = words(&pasted);
-    let base = words(&value0);
-    let Some(start) = find_span(&base, &pasted_words) else {
-        eprintln!("[corrections] pasted text not found in the {} field; nothing to learn from", first.app);
+    if pasted_words.is_empty() {
+        return;
+    }
+    // The target app may take a moment to apply the Cmd+V: retry the first read briefly.
+    let mut located = None;
+    let mut reason = "no focused element";
+    for _ in 0..FIRST_READ_ATTEMPTS {
+        std::thread::sleep(Duration::from_millis(SETTLE_MS));
+        if !is_current(&app, generation) {
+            return;
+        }
+        match locate_paste(&pasted_words) {
+            Ok(found) => {
+                located = Some(found);
+                break;
+            }
+            Err(why) => reason = why,
+        }
+    }
+    let Some((first, value0, base, start)) = located else {
+        eprintln!("[corrections] nothing to learn from this paste: {}", reason);
         return;
     };
     let span = start..start + pasted_words.len();
