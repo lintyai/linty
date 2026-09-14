@@ -12,9 +12,15 @@ yarn build:mac        # Full release build: sign + notarize .app + .dmg (require
 
 # Rust only
 cd src-tauri
-cargo check --features local-stt   # Type check Rust code
-cargo build --features local-stt   # Build Rust backend
+cargo check --features local-stt            # Type check Rust code (Whisper only, no Swift needed)
+cargo check --features local-stt,parakeet   # + Parakeet bridge (compiles swift/ via SwiftPM, slow first time)
+cargo build --features local-stt,parakeet   # Build Rust backend as shipped
+
+# Engine benchmark (uses the app's real transcription code paths)
+cargo run --release --example stt_bench --features local-stt,parakeet -- clip.wav
 ```
+
+Release builds (`build:mac`, CI) use `--features local-stt,parakeet`.
 
 Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separated).
 
@@ -31,7 +37,7 @@ Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separat
 - **Zero-copy audio**: Samples never cross IPC — stay in Rust, transcribed in-place
 - **macOS FFI over plugins**: Permissions, fn key, clipboard use raw ObjC FFI for reliability
 - **Two windows**: Main app + capsule overlay (NSPanel, always-on-top, separate Z-order)
-- **Feature-gated STT**: `local-stt` Cargo feature enables whisper-rs with Metal GPU
+- **Feature-gated STT**: `local-stt` Cargo feature enables whisper-rs with Metal GPU; `parakeet` (implies `local-stt`) adds NVIDIA Parakeet TDT v3 on the Neural Engine through a Swift bridge (`src-tauri/swift/`, built by `build.rs`, wraps FluidAudio 0.14.8). Only one local engine is resident at a time; `transcribe_buffer` dispatches on the selected model id (`parakeet-tdt-0.6b-v3` = Parakeet bundle dir, anything else = whisper .bin). Parakeet needs macOS 14+ and Apple Silicon, has no vocabulary prompt or translation, and its bundle is a directory FluidAudio downloads into the models dir. It is the recommended default: the catalog lists it first and onboarding auto-downloads the first catalog entry (falls back to whisper Turbo Q5 where Parakeet is unsupported).
 - **Activation policy**: Programmatic `set_activation_policy_accessory/regular()` for tray behavior (NOT `LSUIElement` in Info.plist)
 
 ### State Management

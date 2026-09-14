@@ -6,12 +6,12 @@ import {
   FileText,
   Layers3,
   ShieldCheck,
-  Sparkles,
   TrendingUp,
   Zap,
 } from "lucide-react";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useAppStore } from "@/store/app.store";
+import { StatCard } from "@/components/shared/StatCard.component";
 import { TranscriptRow } from "@/components/shared/TranscriptRow.component";
 import { TranscriptActions } from "@/components/shared/TranscriptActions.component";
 import { cn } from "@/lib/utils";
@@ -33,7 +33,6 @@ export function DashboardPage() {
   const triggerKey = useAppStore((s) => s.triggerKey);
   const tracking = useAppStore((s) => s.trackApplicationUsage);
   const [period, setPeriod] = useState<UsagePeriod>("7d");
-  const [sort, setSort] = useState<"words" | "seconds">("words");
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
@@ -46,13 +45,12 @@ export function DashboardPage() {
     return { filtered, timeline: usageTimeline(filtered, period, asOf) };
   }, [allTranscripts, period, now]);
   const stats = summarizeUsage(filtered);
-  const apps = usageByApplication(filtered).sort(
-    (a, b) => b[sort] - a[sort] || a.name.localeCompare(b.name),
-  );
-  const maxWords = Math.max(1, ...timeline.map((day) => day.words));
-  const topApp = apps
+  // The full per-app breakdown lives on the Apps page; show the top three here.
+  const topApps = usageByApplication(filtered)
     .filter((app) => app.attributed)
-    .sort((a, b) => b.words - a.words)[0];
+    .sort((a, b) => b.words - a.words || a.name.localeCompare(b.name))
+    .slice(0, 3);
+  const maxWords = Math.max(1, ...timeline.map((day) => day.words));
   const hasHistory = allTranscripts.length > 0;
   const openHistory = (query = "") => {
     setSearchQuery(query);
@@ -289,108 +287,65 @@ export function DashboardPage() {
               </h2>
               <p>See where you use Linty most</p>
             </div>
-            <label className="sort-control">
-              <span>Sort by</span>
-              <select
-                aria-label="Sort applications"
-                value={sort}
-                onChange={(event) =>
-                  setSort(event.target.value as "words" | "seconds")
-                }
-              >
-                <option value="words">Words</option>
-                <option value="seconds">Dictation time</option>
-              </select>
-            </label>
+            <button className="text-link" onClick={() => setCurrentView("apps")}>
+              View all apps <ArrowRight size={13} />
+            </button>
           </div>
-          {apps.length > 0 ? (
+          {topApps.length > 0 ? (
             <div className="app-table-scroll">
               <table className="app-usage-table">
                 <thead>
                   <tr>
                     <th>Application</th>
                     <th>Words</th>
-                    <th>Dictation time</th>
-                    <th>Sessions</th>
+                    <th>Share</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {apps.map((app) => (
-                    <tr key={app.id}>
-                      <td>
-                        <button
-                          className="app-name"
-                          disabled={!app.attributed}
-                          onClick={() => openHistory(app.name)}
-                          title={
-                            app.attributed
-                              ? `View ${app.name} transcripts`
-                              : "Older sessions or app attribution unavailable"
-                          }
-                        >
-                          <span className="app-avatar">
-                            {app.attributed
-                              ? app.name.slice(0, 1).toUpperCase()
-                              : "?"}
-                          </span>
-                          <span className="min-w-0">
-                            <strong>{app.name}</strong>
-                            <span className="app-share-track">
-                              <span
-                                style={{
-                                  width: `${stats.words ? (app.words / stats.words) * 100 : 0}%`,
-                                }}
-                              />
+                  {topApps.map((app) => {
+                    const share = stats.words
+                      ? Math.round((app.words / stats.words) * 100)
+                      : 0;
+                    return (
+                      <tr key={app.id}>
+                        <td>
+                          <button
+                            className="app-name"
+                            onClick={() => openHistory(app.name)}
+                            title={`View ${app.name} transcripts`}
+                          >
+                            <span className="app-avatar">
+                              {app.name.slice(0, 1).toUpperCase()}
                             </span>
-                          </span>
-                        </button>
-                      </td>
-                      <td className="font-semibold">{number(app.words)}</td>
-                      <td title={`${(app.seconds / 3600).toFixed(3)} hours`}>
-                        {formatDuration(app.seconds)}
-                      </td>
-                      <td>{number(app.sessions)}</td>
-                    </tr>
-                  ))}
+                            <span className="min-w-0">
+                              <strong>{app.name}</strong>
+                              <span className="app-share-track">
+                                <span style={{ width: `${share}%` }} />
+                              </span>
+                            </span>
+                          </button>
+                        </td>
+                        <td className="font-semibold">{number(app.words)}</td>
+                        <td>{share}%</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           ) : (
             <div className="app-empty">
               <h3>
-                {tracking
-                  ? "No app activity yet"
-                  : "App attribution is paused"}
+                {tracking ? "No app activity yet" : "App attribution is paused"}
               </h3>
               <p>
                 {tracking
-                  ? "Dictate in your favorite apps to see their words, time, and sessions here."
+                  ? "Dictate in your favorite apps to see where your words go."
                   : "Turn on app attribution in Settings → Privacy & Storage for new dictations."}
               </p>
             </div>
           )}
-          <div className="app-usage-note">
-            <ShieldCheck size={13} />
-            <span>
-              App captured when dictation starts. Time counts dictation only.{" "}
-              {tracking
-                ? "Saved locally."
-                : "Attribution paused for new sessions."}
-            </span>
-          </div>
         </section>
-
-        {topApp && (
-          <div className="usage-insight">
-            <Sparkles size={16} />
-            <p>
-              <strong>{topApp.name}</strong> is your most used app by words in
-              this period, with <strong>{number(topApp.words)}</strong> words
-              across {topApp.sessions} dictation
-              {topApp.sessions === 1 ? "" : "s"}.
-            </p>
-          </div>
-        )}
 
         <p className="dashboard-footnote">
           Based on your last 500 saved transcriptions. Deleting history also
@@ -401,27 +356,3 @@ export function DashboardPage() {
   );
 }
 
-function StatCard({
-  icon,
-  value,
-  label,
-  detail,
-}: {
-  icon: React.ReactNode;
-  value: string;
-  label: string;
-  detail: string;
-}) {
-  return (
-    <section className="stat-card">
-      <div className="stat-card-top">
-        <span>{label}</span>
-        <span className="stat-icon">{icon}</span>
-      </div>
-      <div className="stat-value">
-        {value}
-      </div>
-      <p>{detail}</p>
-    </section>
-  );
-}

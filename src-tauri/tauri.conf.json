@@ -73,7 +73,7 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "13.0",
+      "minimumSystemVersion": "14.0",
       "signingIdentity": "Developer ID Application: Hari Shekhar (3RPKRQ84N3)",
       "hardenedRuntime": true,
       "entitlements": "../src-tauri/Entitlements.plist"

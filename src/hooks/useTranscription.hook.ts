@@ -10,8 +10,7 @@ const MODEL_LABELS: Record<string, string> = {
   "ggml-small.bin": "Small",
   "ggml-medium.bin": "Medium",
   "ggml-large-v3-turbo-q5_0.bin": "Large Turbo Q5",
-  "ggml-large-v3-turbo.bin": "Large Turbo",
-  "ggml-large-v3.bin": "Large V3",
+  "parakeet-tdt-0.6b-v3": "Parakeet TDT v3",
 };
 
 function emitCapsule(state: string, text?: string, error?: string) {

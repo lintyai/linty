@@ -90,14 +90,14 @@ pub fn start(app: tauri::AppHandle) {
             }
 
             // ── Check 3: idle model unload (local STT) ──
-            // The whisper model keeps 0.6–3.1 GB resident. Drop it after the
+            // A local model keeps ~0.5 GB resident. Drop it after the
             // user-configured idle time (Settings; 0 = never); transcribe_buffer
             // reloads it transparently on the next dictation. An in-flight
             // inference is safe — it holds its own Arc clone.
             #[cfg(feature = "local-stt")]
             {
                 let unload_secs = state.model_idle_unload_secs.load(Ordering::Relaxed);
-                let last_used = state.whisper_last_used_at.load(Ordering::Relaxed);
+                let last_used = state.local_model_last_used_at.load(Ordering::Relaxed);
                 if unload_secs > 0 && last_used > 0 {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -105,15 +105,11 @@ pub fn start(app: tauri::AppHandle) {
                         .as_millis() as u64;
                     let idle_secs = now.saturating_sub(last_used) / 1000;
                     if idle_secs > unload_secs {
-                        let unloaded = state
-                            .whisper_ctx
-                            .lock()
-                            .map(|mut guard| guard.take().is_some())
-                            .unwrap_or(false);
-                        state.whisper_last_used_at.store(0, Ordering::Relaxed);
+                        let unloaded = state.unload_local_models();
+                        state.local_model_last_used_at.store(0, Ordering::Relaxed);
                         if unloaded {
                             eprintln!(
-                                "[watchdog] Whisper model idle for {}min — unloaded to free memory",
+                                "[watchdog] Local model idle for {}min — unloaded to free memory",
                                 idle_secs / 60
                             );
                             let _ = app.emit("model-idle-unloaded", ());

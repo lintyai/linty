@@ -3,10 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store/app.store";
 
 /**
- * Auto-activates the user's preferred whisper model on startup.
+ * Auto-activates the user's preferred local model (whisper or Parakeet) on startup.
  * If the engine preference is Local, loads the model into memory; if Cloud,
  * only registers the filename so it lazy-loads on a later switch to Local —
- * no point keeping 0.6–3.1 GB resident for an engine the user isn't using.
+ * no point keeping ~0.5 GB resident for an engine the user isn't using.
  * If a saved preference exists and the model file is present, uses that;
  * otherwise falls back to the best available model by quality order.
  */
@@ -22,12 +22,12 @@ export function useModelAutoLoad() {
 
     const activateModel = async (filename: string) => {
       if (sttMode === "local") {
-        console.log("[auto-load] Loading whisper model:", filename);
-        await invoke("load_whisper_model", { filename });
+        console.log("[auto-load] Loading local model:", filename);
+        await invoke("load_local_model", { filename });
         console.log("[auto-load] Model loaded:", filename);
       } else {
         console.log("[auto-load] Cloud engine active — registering model lazily:", filename);
-        await invoke("register_whisper_model", { filename });
+        await invoke("register_local_model", { filename });
       }
       setLoadedModelFilename(filename);
       loadedRef.current = true;
@@ -53,10 +53,9 @@ export function useModelAutoLoad() {
           }
         }
 
-        // Fallback: best available by quality order
+        // Fallback: best available by preference (Parakeet is the default).
         const preferred = [
-          "ggml-large-v3.bin",
-          "ggml-large-v3-turbo.bin",
+          "parakeet-tdt-0.6b-v3",
           "ggml-large-v3-turbo-q5_0.bin",
           "ggml-medium.bin",
           "ggml-small.bin",
@@ -76,7 +75,7 @@ export function useModelAutoLoad() {
           }
         }
 
-        console.log("[auto-load] No whisper models found");
+        console.log("[auto-load] No local models found");
       } catch (err) {
         console.error("[auto-load] Failed:", err);
       }

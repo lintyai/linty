@@ -73,6 +73,11 @@ git rebase origin/main
 git pull --rebase origin {branch-name}
 ```
 
+**If still on `main` with uncommitted work and `origin/main` moved ahead** (typical: CI version-bump commits), `git rebase` refuses a dirty tree — stash, fast-forward, re-apply:
+```bash
+git stash push -u -m ship && git merge --ff-only origin/main && git stash pop
+```
+
 ---
 
 ### Step 3: Pre-Ship Checks
@@ -83,8 +88,9 @@ Before proceeding, verify the code is sound:
 # Frontend build (includes TypeScript check)
 cd /Users/hari/2026/linty && yarn build
 
-# Rust type check
-cd /Users/hari/2026/linty/src-tauri && cargo check --features local-stt
+# Rust type check — both feature sets ship (release builds use local-stt,parakeet;
+# the parakeet check also compiles the Swift bridge in src-tauri/swift/)
+cd /Users/hari/2026/linty/src-tauri && cargo check --features local-stt && cargo check --features local-stt,parakeet
 ```
 
 If `cargo` is not on PATH (non-login shell), use the rustup toolchain directly:
@@ -92,7 +98,7 @@ If `cargo` is not on PATH (non-login shell), use the rustup toolchain directly:
 
 **Checklist**:
 - [ ] Frontend build passes (`yarn build`)
-- [ ] Rust compiles (`cargo check --features local-stt`)
+- [ ] Rust compiles (`cargo check --features local-stt` and `--features local-stt,parakeet`)
 - [ ] No console.log statements in changed files
 - [ ] No hardcoded secrets (.env values, API keys)
 - [ ] Changes are tested locally
@@ -137,7 +143,7 @@ type(scope): short description
 
 Longer description if needed.
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+{attribution lines from the current session's guidance, e.g. Co-Authored-By + Claude-Session}
 EOF
 )"
 ```
@@ -189,15 +195,15 @@ Explain why the issue occurred (omit this section for features)
 - Any breaking changes?
 
 ## Test plan
-- [ ] Tested locally with `yarn tauri dev`
+- [ ] Tested locally with `yarn tauri dev -- --features local-stt,parakeet`
 - [ ] Frontend build passes (`yarn build`)
-- [ ] Rust compiles (`cargo check --features local-stt`)
+- [ ] Rust compiles (`cargo check --features local-stt` and `--features local-stt,parakeet`)
 - [ ] No console errors
 
 ---
 *Shipped by [`/ship`](https://github.com/lintyai/linty/blob/main/.claude/skills/ship/SKILL.md)*
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+{attribution lines from the current session's guidance, e.g. "🤖 Generated with Claude Code", session link, Co-Authored-By}
 EOF
 )"
 ```
@@ -267,7 +273,7 @@ After shipping is complete and the PR URL is available, **automatically chain in
 - Use screenshots for UI changes
 - Tag relevant reviewers based on changed files
 - Test from Finder/DMG for permission-related changes (terminal bypasses entitlement checks)
-- Include `--features local-stt` when checking Rust code that touches whisper-rs
+- Include `--features local-stt` when checking Rust code that touches whisper-rs, and `--features local-stt,parakeet` for anything touching `parakeet.rs`, `build.rs` or `src-tauri/swift/`
 
 ---
 

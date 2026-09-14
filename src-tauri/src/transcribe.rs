@@ -41,7 +41,7 @@ const SILENCE_RMS_THRESHOLD: f32 = 0.01;
 const MIN_SPEECH_RATIO: f32 = 0.02;
 
 /// Returns true if enough of the audio contains speech-level energy.
-fn audio_has_speech(samples: &[f32]) -> bool {
+pub(crate) fn audio_has_speech(samples: &[f32]) -> bool {
     // 800 samples = 50ms at 16kHz
     let window_size = 800;
     let total_windows = samples.len() / window_size;
@@ -81,8 +81,10 @@ const HALLUCINATION_PHRASES: &[&str] = &[
     "see you next time",
 ];
 
-/// Returns true if the text is a known Whisper hallucination.
-fn is_hallucination(text: &str) -> bool {
+/// Returns true if the text is a known Whisper hallucination (or degenerate
+/// output any engine can produce on near-silence: empty, 1–2 chars, or one
+/// word repeated).
+pub(crate) fn is_hallucination(text: &str) -> bool {
     let normalized = text.trim().to_lowercase();
     if normalized.is_empty() || normalized.len() <= 2 {
         return true;
@@ -230,16 +232,23 @@ pub async fn transcribe_cloud(
 
 // ── Local STT via whisper-rs ──
 
+/// Run whisper.cpp over `samples`. `on_partial` receives the accumulated text
+/// as each segment decodes; `on_progress` receives 0–100. Both may fire from
+/// whisper's worker thread.
 #[cfg(feature = "local-stt")]
-pub fn transcribe_local_with_events(
+pub fn transcribe_local<P, G>(
     ctx: &whisper_rs::WhisperContext,
     samples: &[f32],
     prompt: Option<&str>,
     language: Option<&str>,
     translate: bool,
-    app: tauri::AppHandle,
-) -> Result<String, String> {
-    use tauri::Emitter;
+    mut on_partial: P,
+    on_progress: G,
+) -> Result<String, String>
+where
+    P: FnMut(&str) + 'static,
+    G: FnMut(i32) + 'static,
+{
     use whisper_rs::{FullParams, SamplingStrategy};
 
     let duration_secs = samples.len() as f64 / 16000.0;
@@ -305,19 +314,15 @@ pub fn transcribe_local_with_events(
         }
     }
 
-    // ── Streaming segment callback — emit partial text to capsule as words appear ──
-    let app_seg = app.clone();
+    // ── Streaming segment callback — partial text as words appear ──
     let mut accumulated = String::new();
     params.set_segment_callback_safe_lossy(move |data: whisper_rs::SegmentCallbackData| {
         accumulated.push_str(&data.text);
-        let _ = app_seg.emit_to("capsule", "capsule-partial-text", &accumulated);
+        on_partial(&accumulated);
     });
 
-    // ── Progress callback — emit 0-100% to capsule ──
-    let app_prog = app;
-    params.set_progress_callback_safe(move |progress: i32| {
-        let _ = app_prog.emit_to("capsule", "capsule-stt-progress", progress);
-    });
+    // ── Progress callback — 0-100% ──
+    params.set_progress_callback_safe(on_progress);
 
     eprintln!(
         "[transcribe] Params: threads={}, single_seg={}",
@@ -361,42 +366,114 @@ pub fn transcribe_local_with_events(
     Ok(result)
 }
 
-// ── Model download ──
+// ── Local STT via Parakeet (Neural Engine) ──
 
-/// Available model variants with HuggingFace URLs and sizes.
+/// Run Parakeet TDT over `samples` with the same silence and degenerate-output
+/// guards as the whisper path. `language` is an ISO 639-1 hint; "auto"/None
+/// lets the model detect it. Parakeet has no prompt or translation support.
+#[cfg(feature = "parakeet")]
+pub fn transcribe_parakeet(
+    engine: &crate::parakeet::ParakeetEngine,
+    samples: &[f32],
+    language: Option<&str>,
+) -> Result<String, String> {
+    let duration_secs = samples.len() as f64 / 16000.0;
+    eprintln!(
+        "[transcribe] Starting Parakeet: {} samples ({:.1}s)",
+        samples.len(),
+        duration_secs
+    );
+
+    if samples.len() < 1600 {
+        return Err(format!(
+            "Audio too short ({:.1}s) — need at least 0.1s",
+            duration_secs
+        ));
+    }
+
+    if !audio_has_speech(samples) {
+        eprintln!("[transcribe] Parakeet: audio too quiet, skipping");
+        return Ok(String::new());
+    }
+
+    let hint = language.filter(|l| *l != "auto" && !l.is_empty());
+    let started = std::time::Instant::now();
+    let result = engine.transcribe(samples, hint)?;
+    eprintln!(
+        "[transcribe] Parakeet done in {:.0}ms (inference {:.0}ms)",
+        started.elapsed().as_millis(),
+        result.processing_secs * 1000.0
+    );
+
+    let text = result.text.trim().to_string();
+    eprintln!("[transcribe] Final text: {:?}", text);
+    if is_hallucination(&text) {
+        eprintln!("[transcribe] Parakeet: filtered degenerate output: {:?}", text);
+        return Ok(String::new());
+    }
+    Ok(text)
+}
+
+// ── Model catalog & download ──
+
+/// Which local inference engine a catalog entry runs on.
+#[derive(serde::Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelBackend {
+    /// whisper.cpp GGML file (Metal GPU).
+    Whisper,
+    /// NVIDIA Parakeet TDT CoreML bundle (Neural Engine) via FluidAudio.
+    Parakeet,
+}
+
+/// Bundle id (directory name inside the models dir) for Parakeet TDT 0.6B v3.
+/// FluidAudio derives this name from its HuggingFace repo, so it must match.
+pub const PARAKEET_V3_ID: &str = "parakeet-tdt-0.6b-v3";
+
+/// True when `filename` refers to the Parakeet bundle rather than a whisper file.
+pub fn is_parakeet_model(filename: &str) -> bool {
+    filename == PARAKEET_V3_ID
+}
+
+/// Available model variants with download URLs and sizes.
 #[derive(serde::Serialize, Clone)]
 pub struct ModelInfo {
     pub name: String,
+    /// Whisper: GGML filename. Parakeet: bundle directory name.
     pub filename: String,
+    /// Whisper: direct download URL. Parakeet: informational (FluidAudio fetches the bundle).
     pub url: String,
     pub size_mb: u64,
     pub description: String,
+    pub backend: ModelBackend,
 }
 
-pub fn available_models() -> Vec<ModelInfo> {
-    vec![
-        ModelInfo {
-            name: "Large Turbo Q5 (574 MB) ★ Recommended".into(),
-            filename: "ggml-large-v3-turbo-q5_0.bin".into(),
-            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin".into(),
-            size_mb: 574,
-            description: "2-3x faster than Large, near-identical accuracy, quantized for speed".into(),
-        },
-        ModelInfo {
-            name: "Large Turbo (1.6 GB)".into(),
-            filename: "ggml-large-v3-turbo.bin".into(),
-            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin".into(),
-            size_mb: 1600,
-            description: "2-3x faster than Large, full precision turbo variant".into(),
-        },
-        ModelInfo {
-            name: "Large (3.1 GB)".into(),
-            filename: "ggml-large-v3.bin".into(),
-            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin".into(),
-            size_mb: 3100,
-            description: "Best accuracy, same model as Cloud mode but runs locally".into(),
-        },
-    ]
+/// Catalog shown in Settings/Onboarding, best first. The first entry is the
+/// recommended default that onboarding downloads automatically: Parakeet when
+/// this build includes the bridge and the machine can run it (Apple Silicon),
+/// otherwise whisper Turbo Q5.
+pub fn available_models(parakeet_supported: bool) -> Vec<ModelInfo> {
+    let mut models = Vec::with_capacity(2);
+    if parakeet_supported {
+        models.push(ModelInfo {
+            name: "Parakeet TDT v3 (~500 MB)".into(),
+            filename: PARAKEET_V3_ID.into(),
+            url: "https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml".into(),
+            size_mb: 500,
+            description: "Runs on the Neural Engine · sub-second · 25 European languages · no prompt or translation".into(),
+            backend: ModelBackend::Parakeet,
+        });
+    }
+    models.push(ModelInfo {
+        name: "Whisper Large Turbo Q5 (574 MB)".into(),
+        filename: "ggml-large-v3-turbo-q5_0.bin".into(),
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin".into(),
+        size_mb: 574,
+        description: "Runs on the GPU · 99 languages · vocabulary prompt · translation".into(),
+        backend: ModelBackend::Whisper,
+    });
+    models[0].name.push_str(" ★ Recommended");
+    models
 }
 
 /// Download a model file with progress events.

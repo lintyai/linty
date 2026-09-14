@@ -397,6 +397,8 @@ interface ModelInfo {
   url: string;
   size_mb: number;
   description: string;
+  /** Inference engine: whisper.cpp GGML file or Parakeet CoreML bundle. */
+  backend: "whisper" | "parakeet";
 }
 
 interface DownloadProgress {
@@ -405,7 +407,9 @@ interface DownloadProgress {
   progress: number;
 }
 
-const RECOMMENDED_FILENAME = "ggml-large-v3-turbo-q5_0.bin";
+/** Onboarding picks the first of these present in the catalog: Parakeet on
+ *  Apple Silicon builds, otherwise the whisper Turbo Q5 file. */
+const PREFERRED_FILENAMES = ["parakeet-tdt-0.6b-v3", "ggml-large-v3-turbo-q5_0.bin"];
 
 function ModelDownloadStep({
   onNext,
@@ -448,7 +452,7 @@ function ModelDownloadStep({
 
       // Download complete — now load into GPU
       setStatus("loading");
-      await invoke("load_whisper_model", { filename: targetModel.filename });
+      await invoke("load_local_model", { filename: targetModel.filename });
       await persistSettings(targetModel.filename);
       setStatus("ready");
     } catch (err) {
@@ -470,7 +474,9 @@ function ModelDownloadStep({
         }
 
         const models = await invoke<ModelInfo[]>("get_available_models");
-        const recommended = models.find((m) => m.filename === RECOMMENDED_FILENAME) ?? models[0];
+        const recommended =
+          PREFERRED_FILENAMES.map((filename) => models.find((m) => m.filename === filename)).find(Boolean) ??
+          models[0];
         if (!recommended) {
           onSkipToCloud();
           return;
@@ -482,7 +488,7 @@ function ModelDownloadStep({
         if (exists) {
           // Already downloaded — load and auto-advance
           setStatus("loading");
-          await invoke("load_whisper_model", { filename: recommended.filename });
+          await invoke("load_local_model", { filename: recommended.filename });
           await persistSettings(recommended.filename);
           setStatus("ready");
           return;
@@ -538,7 +544,9 @@ function ModelDownloadStep({
       </h1>
       <p className="text-[14px] text-text-secondary leading-relaxed mb-6">
         {status === "downloading" && "Downloading the speech model so transcription works offline."}
-        {status === "loading" && "Loading the model into memory..."}
+        {status === "loading" && (model?.backend === "parakeet"
+          ? "Preparing the model for the Neural Engine. The first load can take up to 30 seconds."
+          : "Loading the model into memory...")}
         {status === "ready" && "Local transcription is ready to go."}
         {status === "error" && "Something went wrong. Check your internet connection and try again."}
         {status === "checking" && "Preparing speech engine..."}
@@ -560,7 +568,7 @@ function ModelDownloadStep({
           </div>
           {model && (
             <p className="text-[12px] text-text-muted">
-              {model.filename} · {model.size_mb} MB
+              {model.name.replace(/\s*★.*$/, "")} · about {model.size_mb} MB
             </p>
           )}
         </div>
