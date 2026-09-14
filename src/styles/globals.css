@@ -381,9 +381,14 @@ input[type="search"]::-webkit-search-cancel-button { display: none; }
 input, textarea, select { border-radius: var(--radius-control); }
 input::placeholder { color: var(--color-text-muted); }
 kbd { border: 1px solid var(--color-border); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; font: inherit; font-size: 11px; color: var(--color-text-secondary); background: var(--color-bg-elevated); white-space: nowrap; }
-.standard-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 4px 12px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-bg-elevated); color: var(--color-text-primary); font-size: 13px; font-weight: 500; box-shadow: 0 1px 1px color-mix(in srgb, var(--color-shadow) 10%, transparent); }
-.standard-button:hover { background: var(--color-bg-hover); }
+.standard-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 4px 12px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-bg-elevated); color: var(--color-text-primary); font-size: 13px; font-weight: 500; box-shadow: 0 1px 1px color-mix(in srgb, var(--color-shadow) 10%, transparent); transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .1s ease; }
+.standard-button:hover { background: var(--color-bg-hover); border-color: color-mix(in srgb, var(--color-border) 40%, var(--color-text-muted)); box-shadow: 0 2px 4px color-mix(in srgb, var(--color-shadow) 14%, transparent); }
+.standard-button:active { transform: translateY(1px); box-shadow: none; }
+.standard-button:disabled { opacity: .45; pointer-events: none; }
+/* Primary keeps its accent on hover (the generic hover would drop the inverted text onto a neutral ground). */
 .primary-button { background: var(--color-accent); color: var(--color-text-inverted); border-color: transparent; }
+.standard-button.primary-button:hover, .primary-button:hover { background: var(--color-accent-soft); color: var(--color-text-inverted); border-color: transparent; box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent) 40%, transparent); }
+@media (prefers-reduced-motion: reduce) { .standard-button { transition: none; } .standard-button:active { transform: none; } }
 .destructive-button { color: var(--color-error); }
 .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px; color: var(--color-text-secondary); flex-shrink: 0; }
 .icon-button:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
@@ -689,7 +694,7 @@ button.bg-accent { color: var(--color-text-inverted); }
 .dictionary-form label { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 11px; color: var(--color-text-secondary); }
 .dictionary-form input { min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-bg); color: var(--color-text-primary); font-size: 13px; }
 .dictionary-form input:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; border-color: transparent; }
-.dictionary-table td:first-child, .dictionary-table th:first-child, .dictionary-table .dictionary-wrong, .dictionary-table th:nth-child(2), .dictionary-table th:nth-child(4), .dictionary-table td:nth-child(4) { text-align: left; }
+.dictionary-table td:first-child, .dictionary-table th:first-child, .dictionary-table .dictionary-wrong, .dictionary-table th:nth-child(2), .dictionary-table th:nth-child(5), .dictionary-table td:nth-child(5) { text-align: left; }
 .dictionary-table .dictionary-wrong { white-space: normal; overflow-wrap: anywhere; }
 .dictionary-table tr.is-disabled td:first-child strong { font-weight: 400; color: var(--color-text-secondary); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--color-text-muted) 60%, transparent); }
 .mini-switch { position: relative; display: inline-block; width: 30px; height: 18px; border-radius: 999px; background: var(--color-border); vertical-align: middle; transition: background .2s; }
