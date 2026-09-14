@@ -6,7 +6,7 @@ import { correctText } from "@/services/correction.service";
 import type { TranscriptRecord } from "@/types/transcript.types";
 import type { StopResult } from "./useRecording.hook";
 import { modelLabel } from "@/lib/model-labels.util";
-import { applyDictionary, promptWithDictionary } from "@/lib/dictionary.util";
+import { applyDictionary, engineTerms, promptWithDictionary } from "@/lib/dictionary.util";
 import { noteDictionaryApplied } from "@/services/dictionary.service";
 
 
@@ -114,6 +114,11 @@ export function useTranscription() {
         const enginePrompt = dictionaryEnabled
           ? promptWithDictionary(whisperPrompt, dictionaryEntries)
           : whisperPrompt;
+        // Parakeet has no prompt: it gets the most-used dictionary words (with the
+        // spellings they were heard as) as keyword-spotter terms instead.
+        const vocabulary = dictionaryEnabled
+          ? engineTerms(dictionaryEntries).map((e) => ({ text: e.right, aliases: e.wrong }))
+          : [];
 
         const sttStart = Date.now();
         if (effectiveMode === "local") {
@@ -122,6 +127,7 @@ export function useTranscription() {
           transcript = await invoke<string>("transcribe_buffer", {
             prompt: enginePrompt || null,
             language: langParam,
+            vocabulary: vocabulary.length ? vocabulary : null,
           });
         } else {
           transcript = await invoke<string>("transcribe_buffer_cloud", {

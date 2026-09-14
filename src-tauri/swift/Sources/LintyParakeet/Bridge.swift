@@ -14,6 +14,12 @@ import Foundation
 final class ParakeetEngine {
     let manager: AsrManager
     let models: AsrModels
+    /// CTC keyword-spotter models for custom-vocabulary rescoring (optional; see linty_parakeet_load_ctc).
+    var ctcModels: CtcModels?
+    var ctcDirectory: URL?
+    /// Tokenizer for the CTC vocabulary; terms must carry CTC token ids or the
+    /// keyword spotter silently skips them.
+    var ctcTokenizer: CtcTokenizer?
 
     init(manager: AsrManager, models: AsrModels) {
         self.manager = manager
@@ -215,4 +221,147 @@ public func linty_parakeet_free(_ handle: UnsafeMutableRawPointer?) {
 @_cdecl("linty_parakeet_free_string")
 public func linty_parakeet_free_string(_ s: UnsafeMutablePointer<CChar>?) {
     free(s)
+}
+
+// MARK: - Custom vocabulary (CTC keyword spotter)
+
+private struct VocabTermDTO: Decodable {
+    let text: String
+    let aliases: [String]?
+}
+
+private struct ReplacementDTO: Encodable {
+    let from: String
+    let to: String
+    /// Whether FluidAudio's rescorer would apply it on its own.
+    let apply: Bool
+    let reason: String
+}
+
+/// Download (if needed) and load the Parakeet CTC 110M models into `dir`.
+/// They power FluidAudio's custom-vocabulary rescoring alongside the TDT model.
+@_cdecl("linty_parakeet_load_ctc")
+public func linty_parakeet_load_ctc(
+    _ handle: UnsafeMutableRawPointer?,
+    _ dir: UnsafePointer<CChar>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    guard let handle else {
+        setError(outError, "engine not loaded")
+        return -1
+    }
+    guard let dir else {
+        setError(outError, "missing CTC model directory")
+        return -1
+    }
+    let engine = Unmanaged<ParakeetEngine>.fromOpaque(handle).takeUnretainedValue()
+    let url = modelDirectory(dir)
+    let result = runBlocking { () -> (CtcModels, CtcTokenizer) in
+        let models = try await CtcModels.downloadAndLoad(to: url, variant: .ctc110m)
+        let tokenizer = try await CtcTokenizer.load(from: url)
+        return (models, tokenizer)
+    }
+    switch result {
+    case .success(let (models, tokenizer)):
+        engine.ctcModels = models
+        engine.ctcTokenizer = tokenizer
+        engine.ctcDirectory = url
+        return 0
+    case .failure(let error):
+        setError(outError, describe(error))
+        return -1
+    }
+}
+
+/// Transcribe, then rescore the transcript against `termsJson`
+/// (`[{"text":"Tauri","aliases":["Tari"]}]`) using the CTC keyword spotter.
+/// `outReplacementsJson` receives `[{"from":"Tari","to":"Tauri"}]` for every
+/// word the rescorer swapped.
+@_cdecl("linty_parakeet_transcribe_vocab")
+public func linty_parakeet_transcribe_vocab(
+    _ handle: UnsafeMutableRawPointer?,
+    _ samples: UnsafePointer<Float>?,
+    _ count: UInt32,
+    _ language: UnsafePointer<CChar>?,
+    _ termsJson: UnsafePointer<CChar>?,
+    _ outText: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+    _ outReplacementsJson: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+    _ outProcessingSecs: UnsafeMutablePointer<Double>?,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    guard let handle else {
+        setError(outError, "engine not loaded")
+        return -1
+    }
+    guard let samples, count > 0 else {
+        setError(outError, "no audio samples")
+        return -1
+    }
+    let engine = Unmanaged<ParakeetEngine>.fromOpaque(handle).takeUnretainedValue()
+    guard let ctcModels = engine.ctcModels, let tokenizer = engine.ctcTokenizer else {
+        setError(outError, "CTC models not loaded; call linty_parakeet_load_ctc first")
+        return -1
+    }
+    let terms: [VocabTermDTO]
+    do {
+        let json = termsJson.map { String(cString: $0) } ?? "[]"
+        terms = try JSONDecoder().decode([VocabTermDTO].self, from: Data(json.utf8))
+    } catch {
+        setError(outError, "invalid vocabulary JSON: \(describe(error))")
+        return -1
+    }
+    let vocabulary = CustomVocabularyContext(
+        terms: terms.map {
+            CustomVocabularyTerm(text: $0.text, aliases: $0.aliases, ctcTokenIds: tokenizer.encode($0.text))
+        }
+    )
+    let audio = Array(UnsafeBufferPointer(start: samples, count: Int(count)))
+    let hint: Language? = language.flatMap { Language(rawValue: String(cString: $0)) }
+    let decoderLayers = engine.models.version.decoderLayers
+    let ctcDirectory = engine.ctcDirectory
+
+    let result = runBlocking { () -> (String, [ReplacementDTO], Double) in
+        let started = Date()
+        var state = try TdtDecoderState(decoderLayers: decoderLayers)
+        let asr = try await engine.manager.transcribe(audio, decoderState: &state, language: hint)
+        guard let timings = asr.tokenTimings, !timings.isEmpty else {
+            return (asr.text, [], Date().timeIntervalSince(started))
+        }
+        let spotter = CtcKeywordSpotter(models: ctcModels, blankId: ctcModels.vocabulary.count)
+        let spot = try await spotter.spotKeywordsWithLogProbs(
+            audioSamples: audio, customVocabulary: vocabulary, minScore: nil)
+        guard !spot.logProbs.isEmpty else {
+            return (asr.text, [], Date().timeIntervalSince(started))
+        }
+        let rescorer = try await VocabularyRescorer.create(
+            spotter: spotter, vocabulary: vocabulary, config: .default, ctcModelDirectory: ctcDirectory)
+        let sizeConfig = ContextBiasingConstants.rescorerConfig(forVocabSize: vocabulary.terms.count)
+        let minSimilarity = max(sizeConfig.minSimilarity, vocabulary.minSimilarity)
+        let output = rescorer.ctcTokenRescore(
+            transcript: asr.text,
+            tokenTimings: timings,
+            logProbs: spot.logProbs,
+            frameDuration: spot.frameDuration,
+            cbw: sizeConfig.cbw,
+            marginSeconds: 0.5,
+            minSimilarity: minSimilarity)
+        let pairs = output.replacements.compactMap { r -> ReplacementDTO? in
+            guard let to = r.replacementWord else { return nil }
+            return ReplacementDTO(from: r.originalWord, to: to, apply: r.shouldReplace, reason: r.reason)
+        }
+        // Hand back the untouched TDT text; the caller decides which candidates to apply.
+        return (asr.text, pairs, Date().timeIntervalSince(started))
+    }
+
+    switch result {
+    case .success(let (text, pairs, secs)):
+        outText?.pointee = strdup(text)
+        let json = (try? JSONEncoder().encode(pairs)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        outReplacementsJson?.pointee = strdup(json)
+        outProcessingSecs?.pointee = secs
+        return 0
+    case .failure(let error):
+        setError(outError, describe(error))
+        return -1
+    }
 }

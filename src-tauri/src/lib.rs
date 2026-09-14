@@ -18,6 +18,7 @@ pub mod parakeet;
 mod state;
 pub mod transcribe;
 mod tray;
+pub mod vocabulary;
 mod watchdog;
 
 use state::{AppState, AudioCommand};
@@ -127,6 +128,7 @@ async fn load_local_engine(
         #[cfg(feature = "parakeet")]
         {
             let dir = models_dir(app)?.join(filename);
+            let ctc_dir = models_dir(app)?.join(transcribe::PARAKEET_CTC_ID);
             eprintln!("[stt] Loading Parakeet bundle from: {}", dir.display());
             let started = std::time::Instant::now();
             let engine = tokio::task::spawn_blocking(move || parakeet::ParakeetEngine::load(&dir))
@@ -142,6 +144,22 @@ async fn load_local_engine(
             let previous = state.whisper_ctx.lock().map_err(|e| e.to_string())?.take();
             *state.parakeet_engine.lock().map_err(|e| e.to_string())? = Some(Arc::clone(&engine));
             drop(previous);
+            // Once downloaded (prepare_parakeet_vocabulary), the vocabulary models
+            // load in the background so an idle reload keeps them without holding
+            // up the first dictation for the CoreML compile.
+            if ctc_dir.is_dir() {
+                let vocab_engine = Arc::clone(&engine);
+                std::thread::spawn(move || {
+                    let started = std::time::Instant::now();
+                    match vocab_engine.load_ctc(&ctc_dir) {
+                        Ok(()) => eprintln!(
+                            "[stt] Parakeet vocabulary models ready in {:.0}ms",
+                            started.elapsed().as_millis()
+                        ),
+                        Err(e) => eprintln!("[stt] Parakeet vocabulary models not loaded: {}", e),
+                    }
+                });
+            }
             return Ok(LocalEngine::Parakeet(engine));
         }
         #[cfg(not(feature = "parakeet"))]
@@ -330,7 +348,10 @@ async fn transcribe_buffer(
     state: tauri::State<'_, AppState>,
     prompt: Option<String>,
     language: Option<String>,
+    vocabulary: Option<Vec<vocabulary::VocabTerm>>,
 ) -> Result<String, String> {
+    // Dictionary terms are used by Parakeet only; whisper gets them via `prompt`.
+    let _ = &vocabulary;
     #[cfg(feature = "local-stt")]
     {
         state
@@ -377,10 +398,21 @@ async fn transcribe_buffer(
             }
             #[cfg(feature = "parakeet")]
             LocalEngine::Parakeet(engine) => {
-                // Parakeet has no vocabulary prompt.
+                // Parakeet has no vocabulary prompt; dictionary words reach it as
+                // CTC keyword-spotter terms once those models are loaded.
                 let _ = prompt;
+                let terms = vocabulary.unwrap_or_default();
                 tokio::task::spawn_blocking(move || {
-                    transcribe::transcribe_parakeet(&engine, &samples, language.as_deref())
+                    if !terms.is_empty() && engine.has_vocabulary_models() {
+                        transcribe::transcribe_parakeet_with_vocabulary(
+                            &engine,
+                            &samples,
+                            language.as_deref(),
+                            &terms,
+                        )
+                    } else {
+                        transcribe::transcribe_parakeet(&engine, &samples, language.as_deref())
+                    }
                 })
                 .await
                 .map_err(|e| format!("Task join error: {}", e))?
@@ -936,6 +968,43 @@ async fn load_local_model(
     Err("Local STT not available — rebuild with `local-stt` feature".into())
 }
 
+/// Download (first time, ~100 MB) and load the CTC keyword-spotter models that
+/// let Parakeet recognise dictionary words. Returns true when a download happened.
+#[tauri::command(async)]
+async fn prepare_parakeet_vocabulary(
+    #[allow(unused_variables)] app: tauri::AppHandle,
+    #[allow(unused_variables)] state: tauri::State<'_, AppState>,
+) -> Result<bool, String> {
+    #[cfg(feature = "parakeet")]
+    {
+        // Reloads the model after an idle unload, exactly like a dictation would.
+        let engine = match resolve_local_engine(&app, &state).await? {
+            LocalEngine::Parakeet(engine) => engine,
+            LocalEngine::Whisper(_) => return Err("Parakeet is not the selected engine".to_string()),
+        };
+        state
+            .local_model_last_used_at
+            .store(now_epoch_ms(), Ordering::Relaxed);
+        if engine.has_vocabulary_models() {
+            return Ok(false);
+        }
+        let dir = models_dir(&app)?.join(transcribe::PARAKEET_CTC_ID);
+        let downloaded = !dir.is_dir();
+        eprintln!("[stt] Preparing Parakeet vocabulary models in {}", dir.display());
+        let started = std::time::Instant::now();
+        tokio::task::spawn_blocking(move || engine.load_ctc(&dir))
+            .await
+            .map_err(|e| format!("Task join error: {}", e))??;
+        eprintln!(
+            "[stt] Parakeet vocabulary models ready in {:.0}ms",
+            started.elapsed().as_millis()
+        );
+        Ok(downloaded)
+    }
+    #[cfg(not(feature = "parakeet"))]
+    Err("This build does not include Parakeet support".to_string())
+}
+
 /// Remember which model to use for local STT WITHOUT loading it into memory.
 /// Used when the user's engine preference is Cloud — the model lazy-loads in
 /// transcribe_buffer if they switch to Local.
@@ -1327,6 +1396,7 @@ pub fn run() {
             set_model_idle_unload_minutes,
             register_local_model,
             load_local_model,
+            prepare_parakeet_vocabulary,
             reset_all_data,
             capsule::show_capsule,
             capsule::hide_capsule,

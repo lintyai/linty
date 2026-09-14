@@ -565,7 +565,7 @@ function PrivacySection() {
             enabled={dictionaryEnabled}
             onChange={(enabled) => savePreference(saveDictionaryEnabled(enabled))}
             label="Apply my dictionary"
-            description="Fix words you have corrected before and send them to the speech engine as spelling hints."
+            description="Fix words you have corrected before and teach the speech engine your words. Parakeet fetches a 100 MB vocabulary model the first time."
           />
         </div>
         <div className="border-b border-border-subtle">
