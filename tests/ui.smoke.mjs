@@ -61,6 +61,20 @@ try {
   assert.equal(await page.locator('[data-transcript-id]').count(), 18);
   await page.locator('[data-transcript-id]').first().click();
   await audit('history-light'); await screenshot('history-light');
+  // Editing a transcript records the correction, shows the diff and offers to learn the word.
+  await page.locator('.history-detail').getByLabel('Edit transcription', {exact:true}).click();
+  const editor = page.getByLabel('Edit transcription text', {exact:true});
+  await editor.fill((await editor.inputValue()).replace('experience', 'expereince'));
+  await page.getByRole('button', {name:'Save', exact:true}).click();
+  await page.getByText('Saved. 1 suggestion waiting on the Dictionary page.').waitFor();
+  await page.locator('.correction-pair ins', {hasText:'expereince'}).waitFor();
+  assert.equal(await page.evaluate(() => window.__QA__.stores[3].corrections[0].pairs[0].from), 'experience');
+  assert.equal(await page.evaluate(() => window.__QA__.stores[4].suggestions.length), 2);
+  await page.getByRole('button', {name:'Add expereince to dictionary, replacing experience', exact:true}).click();
+  await page.getByText('“expereince” added to your dictionary').waitFor();
+  await page.locator('.correction-known').waitFor();
+  assert.equal(await page.evaluate(() => window.__QA__.stores[4].entries.some(e => e.right === 'expereince' && e.wrong.includes('experience'))), true);
+  await audit('history-correction'); await screenshot('history-correction');
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('.history-detail').count(), 0);
   await page.keyboard.press('Meta+k');
@@ -86,11 +100,12 @@ try {
       await audit(`${section}-${theme}`);
       if (section === 'models' || section === 'appearance' || section === 'language') await screenshot(`${section}-${theme}`);
     }
-    for (const name of ['Overview', 'History', 'Apps', 'Shortcuts', 'System Check', 'About']) {
+    for (const name of ['Overview', 'History', 'Apps', 'Dictionary', 'Shortcuts', 'System Check', 'About']) {
       await page.getByRole('navigation', {name:'Main navigation'}).getByRole('button', {name,exact:true}).click();
       await audit(`${name}-${theme}`);
       if (name === 'Overview') await screenshot(`overview-${theme}`);
       if (name === 'Apps') await screenshot(`apps-${theme}`);
+      if (name === 'Dictionary') await screenshot(`dictionary-${theme}`);
     }
     await page.keyboard.press('Meta+,');
   }
@@ -103,6 +118,32 @@ try {
   await page.evaluate(() => { delete window.__QA__.failures['plugin:updater|check']; });
   await page.getByRole('button', {name:'Retry',exact:true}).click();
   await page.getByText('You’re using the latest version of Linty.').waitFor();
+  // Dictionary page: accept a suggestion, add a word by hand, pause one, and see the learning switches.
+  await page.getByRole('navigation', {name:'Main navigation'}).getByRole('button', {name:'Dictionary',exact:true}).click();
+  await page.getByRole('main').getByRole('heading', {name:'Dictionary', exact:true}).waitFor();
+  await page.locator('.dictionary-row', {hasText:'Tauri'}).getByRole('button', {name:'Add', exact:true}).click();
+  await page.getByText('“Tauri” added to your dictionary').waitFor();
+  assert.equal(await page.evaluate(() => window.__QA__.stores[4].entries.some(e => e.right === 'Tauri' && e.wrong.includes('Tory'))), true);
+  assert.equal(await page.evaluate(() => window.__QA__.stores[4].suggestions.some(s => s.right === 'Tauri')), false);
+  await page.locator('#dictionary-right').fill('Zustand');
+  await page.locator('#dictionary-wrong').fill('Zoo stand, Sustained');
+  await page.getByRole('button', {name:'Add to dictionary', exact:true}).click();
+  await page.getByText('“Zustand” added to your dictionary').waitFor();
+  assert.deepEqual(await page.evaluate(() => window.__QA__.stores[4].entries.find(e => e.right === 'Zustand').wrong), ['Zoo stand', 'Sustained']);
+  await page.getByRole('switch', {name:'Disable Linty', exact:true}).click();
+  await page.getByRole('switch', {name:'Enable Linty', exact:true}).waitFor();
+  assert.equal(await page.evaluate(() => window.__QA__.stores[4].entries.find(e => e.right === 'Linty').enabled), false);
+  await page.getByRole('button', {name:'Remove Zustand', exact:true}).click();
+  await page.getByText('“Zustand” removed').waitFor();
+  await audit('dictionary-edited'); await screenshot('dictionary-edited');
+  await page.keyboard.press('Meta+,');
+  await page.getByLabel('Settings category').selectOption('privacy');
+  await page.getByRole('switch', {name:'Learn new words automatically', exact:true}).click();
+  assert.equal(await page.evaluate(() => window.__QA__.stores[1].autoLearnWords), true);
+  await page.getByRole('switch', {name:'Apply my dictionary', exact:true}).click();
+  assert.equal(await page.evaluate(() => window.__QA__.stores[1].dictionaryEnabled), false);
+  await page.getByRole('switch', {name:'Apply my dictionary', exact:true}).click();
+  await screenshot('privacy-light');
   await page.keyboard.press('Meta+,');
   await page.getByLabel('Settings category').selectOption('models');
   await page.getByRole('button',{name:'Cloud',exact:true}).click();
@@ -208,6 +249,6 @@ try {
   await capsuleContext.close();
   assert.deepEqual(errors, [], 'Unexpected runtime errors');
   assert.deepEqual(failures, [], 'Accessibility failures');
-  console.log('UI checks passed: both themes, all screens, settings persistence, keyboard navigation, copy, delete/undo, modal focus, sidebar, minimum window, and onboarding.');
+  console.log('UI checks passed: both themes, all screens, settings persistence, keyboard navigation, copy, delete/undo, corrections and dictionary, modal focus, sidebar, minimum window, and onboarding.');
   console.log(`Screenshots: ${output}`);
 } finally { await browser?.close(); server.kill(); }

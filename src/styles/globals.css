@@ -655,3 +655,48 @@ button.bg-accent { color: var(--color-text-inverted); }
   .detail-close-label, .detail-back-icon { display: inline; font-size: 12px; }
   .detail-x-icon { display: none; }
 }
+
+/* History edits and the correction panel: the person fixes a word, Linty offers to learn it. */
+.transcript-editor { display: flex; flex-direction: column; gap: 10px; }
+.transcript-editor textarea { width: 100%; resize: vertical; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-bg); color: var(--color-text-primary); font: inherit; font-size: 14px; line-height: 1.75; }
+.transcript-editor textarea:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; border-color: transparent; }
+.transcript-editor-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.transcript-editor-actions > span { margin-right: auto; }
+.correction-panel { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--color-border-subtle); }
+.correction-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px; }
+.correction-rewrite { color: var(--color-text-muted); }
+.correction-pairs { display: flex; flex-direction: column; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.correction-pair { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.correction-pair del, .dictionary-word del { color: var(--color-text-muted); text-decoration-color: color-mix(in srgb, var(--color-text-muted) 60%, transparent); }
+.correction-pair ins { text-decoration: none; font-weight: 500; color: var(--color-text-primary); background: var(--color-accent-glow); border-radius: 4px; padding: 0 4px; }
+.correction-pair > span[aria-hidden] , .dictionary-word > span[aria-hidden] { color: var(--color-text-muted); }
+.correction-add, .correction-known { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-size: 11px; font-weight: 500; white-space: nowrap; }
+.correction-add { color: var(--color-accent); }
+.correction-add:hover { text-decoration: underline; text-underline-offset: 3px; }
+.correction-known { color: var(--color-text-muted); }
+.dictionary-applied-note { margin-top: 12px; font-size: 11px; color: var(--color-text-muted); }
+
+/* Dictionary page: suggestions to review, a small add form, and the word table. */
+.dictionary-status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--color-border-subtle); border-radius: 999px; font-size: 11px; color: var(--color-text-secondary); white-space: nowrap; }
+.dictionary-status:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.dictionary-list { list-style: none; margin: 0; padding: 0 0 8px; }
+.dictionary-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 20px; border-top: 1px solid var(--color-border-subtle); }
+.dictionary-word { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; flex: 1; font-size: 13px; }
+.dictionary-word strong { font-weight: 500; }
+.dictionary-note { font-size: 11px; color: var(--color-text-muted); }
+.dictionary-actions { display: flex; gap: 6px; margin-left: auto; }
+.dictionary-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 12px; align-items: end; padding: 0 20px 20px; }
+.dictionary-form label { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 11px; color: var(--color-text-secondary); }
+.dictionary-form input { min-width: 0; height: 30px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-bg); color: var(--color-text-primary); font-size: 13px; }
+.dictionary-form input:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; border-color: transparent; }
+.dictionary-table td:first-child, .dictionary-table th:first-child, .dictionary-table .dictionary-wrong, .dictionary-table th:nth-child(2), .dictionary-table th:nth-child(4), .dictionary-table td:nth-child(4) { text-align: left; }
+.dictionary-table .dictionary-wrong { white-space: normal; overflow-wrap: anywhere; }
+.dictionary-table tr.is-disabled td:first-child strong { font-weight: 400; color: var(--color-text-secondary); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--color-text-muted) 60%, transparent); }
+.mini-switch { position: relative; display: inline-block; width: 30px; height: 18px; border-radius: 999px; background: var(--color-border); vertical-align: middle; transition: background .2s; }
+.mini-switch.is-on { background: var(--color-accent); }
+.mini-switch i { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px color-mix(in srgb, var(--color-shadow) 30%, transparent); transition: left .2s; }
+.mini-switch.is-on i { left: 14px; }
+@media (max-width: 800px) {
+  .dictionary-form { grid-template-columns: 1fr; }
+  .dictionary-actions { margin-left: 0; }
+}

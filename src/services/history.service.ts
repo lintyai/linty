@@ -51,3 +51,9 @@ export function updateHistory(
 
 export const saveTranscript = (record: TranscriptRecord) =>
   updateHistory((records) => [record, ...records]);
+
+/** Patch one saved transcript in place (used when the person edits it in History). */
+export const updateTranscript = (transcriptId: string, patch: Partial<TranscriptRecord>) =>
+  updateHistory((records) =>
+    records.map((t) => (t.transcriptId === transcriptId ? { ...t, ...patch } : t)),
+  );

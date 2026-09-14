@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/store/app.store";
 import { formatTriggerLabel } from "@/lib/trigger.util";
 import {
@@ -11,11 +11,20 @@ import {
   Timer,
   Cloud,
   Cpu,
+  Pencil,
+  Check,
 } from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useToast } from "@/hooks/useToast.hook";
 import { AppIcon } from "@/components/shared/AppIcon.component";
+import { CorrectionPanel } from "@/components/shared/CorrectionPanel.component";
+import { useDictionary } from "@/hooks/useDictionary.hook";
+import { addDictionaryEntry, ingestCorrection } from "@/services/dictionary.service";
+import { updateTranscript } from "@/services/history.service";
+import { recordCorrection } from "@/services/user-corrections.service";
+import { diffCorrection } from "@/lib/correction-diff.util";
+import type { CorrectionRecord } from "@/types/correction.types";
 import { EmptyState } from "@/components/shared/EmptyState.component";
 import { useAppIcon } from "@/hooks/useAppIcons.hook";
 import { formatDayLabel } from "@/lib/usage.util";
@@ -47,7 +56,13 @@ export function HistoryPage() {
   } = useHistory();
   const { success, error } = useToast();
   const triggerKey = useAppStore((s) => s.triggerKey);
+  const transcriptionLanguage = useAppStore((s) => s.transcriptionLanguage);
+  const autoLearnWords = useAppStore((s) => s.autoLearnWords);
+  const { corrections, entries } = useDictionary();
   const readingRef = useRef<HTMLDivElement>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const groups = groupByDate(transcripts);
   const selectedTranscript = transcripts.find(
@@ -55,6 +70,84 @@ export function HistoryPage() {
   );
   const visibleTranscriptId = selectedTranscript?.transcriptId;
   const selectedAppIcon = useAppIcon(selectedTranscript?.application?.bundleId);
+  const selectedCorrections = selectedTranscript
+    ? corrections.filter((c) => c.transcriptId === selectedTranscript.transcriptId)
+    : [];
+
+  // Leaving a transcript discards an unsaved draft.
+  useEffect(() => {
+    setEditing(false);
+  }, [visibleTranscriptId]);
+
+  const startEdit = () => {
+    if (!selectedTranscript) return;
+    setDraft(selectedTranscript.finalText);
+    setEditing(true);
+  };
+
+  const saveEdit = async () => {
+    if (!selectedTranscript) return;
+    const edited = draft.trim();
+    if (!edited || edited === selectedTranscript.finalText) {
+      setEditing(false);
+      return;
+    }
+    const diff = diffCorrection(selectedTranscript.finalText, edited);
+    setSaving(true);
+    // Only spacing changed: keep the edit, but there is no correction to learn from.
+    if (!diff.pairs.length) {
+      try {
+        await updateTranscript(selectedTranscript.transcriptId, { finalText: edited });
+        success("Saved.");
+        setEditing(false);
+      } catch {
+        error("Could not save the edit. Please try again.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+    const record: CorrectionRecord = {
+      correctionId: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      transcriptId: selectedTranscript.transcriptId,
+      timestamp: Date.now(),
+      source: "edit",
+      engine: selectedTranscript.engine,
+      modelName: selectedTranscript.modelName,
+      language: transcriptionLanguage,
+      application: selectedTranscript.application ?? null,
+      wordCount: diff.wordCount,
+      changedRatio: diff.changedRatio,
+      rewrite: diff.rewrite,
+      pairs: diff.pairs,
+    };
+    try {
+      // Word count stays as dictated: usage statistics count what was spoken, not the edit.
+      await updateTranscript(selectedTranscript.transcriptId, { finalText: edited });
+      await recordCorrection(record);
+      const { suggested, learned } = await ingestCorrection(record, autoLearnWords);
+      success(
+        learned
+          ? `Saved. ${learned} word${learned === 1 ? "" : "s"} added to your dictionary.`
+          : suggested
+            ? `Saved. ${suggested} suggestion${suggested === 1 ? "" : "s"} waiting on the Dictionary page.`
+            : diff.rewrite
+              ? "Saved as a rewrite; rewrites are not used for learning."
+              : "Correction saved.",
+      );
+      setEditing(false);
+    } catch {
+      error("Could not save the edit. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addPairToDictionary = (right: string, wrong: string) => {
+    addDictionaryEntry(right, [wrong], "learned")
+      .then(() => success(`“${right}” added to your dictionary`))
+      .catch(() => error("Could not update the dictionary. Please try again."));
+  };
 
   useEffect(() => {
     if (!visibleTranscriptId) return;
@@ -166,6 +259,17 @@ export function HistoryPage() {
             {/* Close button */}
             <div className="detail-toolbar">
               <span>Transcription</span>
+              {!editing && (
+                <button
+                  type="button"
+                  aria-label="Edit transcription"
+                  title="Edit transcription"
+                  className="detail-edit icon-button"
+                  onClick={startEdit}
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
               <TranscriptActions transcript={selectedTranscript} onDelete={handleDeleteWithDeselect} />
               <button aria-label="Back to history" title="Back to history (Esc)"
                 onClick={() => {
@@ -200,10 +304,42 @@ export function HistoryPage() {
                     </>
                   )}
                 </p>
-                <p className="text-[14px] leading-[1.75] text-text-primary select-text whitespace-pre-wrap">
-                  {selectedTranscript.finalText}
-                </p>
+                {editing ? (
+                  <div className="transcript-editor">
+                    <textarea
+                      id="transcript-editor"
+                      aria-label="Edit transcription text"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      rows={Math.min(14, Math.max(4, draft.split("\n").length + 2))}
+                      autoFocus
+                      spellCheck
+                    />
+                    <div className="transcript-editor-actions">
+                      <span className="text-[11px] text-text-muted">Fix what the engine got wrong. Linty learns from single-word fixes.</span>
+                      <button type="button" className="standard-button" onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
+                      <button type="button" className="standard-button primary-button" onClick={() => void saveEdit()} disabled={saving}>
+                        <Check size={12} /> Save
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[14px] leading-[1.75] text-text-primary select-text whitespace-pre-wrap">
+                    {selectedTranscript.finalText}
+                  </p>
+                )}
               </div>
+              <CorrectionPanel
+                corrections={selectedCorrections}
+                entries={entries}
+                onAddToDictionary={addPairToDictionary}
+              />
+              {selectedTranscript.dictionaryApplied?.length ? (
+                <p className="dictionary-applied-note">
+                  Dictionary applied before paste:{" "}
+                  {selectedTranscript.dictionaryApplied.map((a) => `${a.from} → ${a.to}`).join(", ")}
+                </p>
+              ) : null}
               {selectedTranscript.corrected && selectedTranscript.rawText !== selectedTranscript.finalText && (
                 <details className="original-transcript">
                   <summary>Original dictation</summary>

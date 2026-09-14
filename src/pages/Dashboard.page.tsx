@@ -14,6 +14,8 @@ import { useAppStore } from "@/store/app.store";
 import { AppIcon } from "@/components/shared/AppIcon.component";
 import { StatCard } from "@/components/shared/StatCard.component";
 import { useAppIcons } from "@/hooks/useAppIcons.hook";
+import { useDictionary } from "@/hooks/useDictionary.hook";
+import { correctionsPer100Words } from "@/lib/dictionary.util";
 import { TranscriptRow } from "@/components/shared/TranscriptRow.component";
 import { TranscriptActions } from "@/components/shared/TranscriptActions.component";
 import { cn } from "@/lib/utils";
@@ -53,6 +55,15 @@ export function DashboardPage() {
     .sort((a, b) => b.words - a.words || a.name.localeCompare(b.name))
     .slice(0, 3);
   const appIcons = useAppIcons(topApps.map((app) => app.bundleId));
+  const { corrections } = useDictionary();
+  // Real-use accuracy proxy: corrections the person made per 100 pasted words, per engine.
+  const fixRate = (engine: "local" | "cloud") => {
+    const ids = new Set(filtered.filter((t) => t.engine === engine).map((t) => t.transcriptId));
+    const words = filtered.filter((t) => t.engine === engine).reduce((sum, t) => sum + t.wordCount, 0);
+    return correctionsPer100Words(corrections.filter((c) => ids.has(c.transcriptId)), words);
+  };
+  const localFixRate = fixRate("local");
+  const cloudFixRate = fixRate("cloud");
   const maxWords = Math.max(1, ...timeline.map((day) => day.words));
   const hasHistory = allTranscripts.length > 0;
   const openHistory = (query = "") => {
@@ -277,7 +288,7 @@ export function DashboardPage() {
               </div>
             </div>
             <p className="privacy-caption">
-              App usage stays on this Mac, with either speech engine.
+              Corrections per 100 words: Local {localFixRate === null ? "—" : localFixRate.toFixed(1)} · Cloud {cloudFixRate === null ? "—" : cloudFixRate.toFixed(1)}. Counted from your edits in History.
             </p>
           </section>
         </div>

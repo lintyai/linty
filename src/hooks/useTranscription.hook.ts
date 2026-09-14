@@ -6,6 +6,8 @@ import { correctText } from "@/services/correction.service";
 import type { TranscriptRecord } from "@/types/transcript.types";
 import type { StopResult } from "./useRecording.hook";
 import { modelLabel } from "@/lib/model-labels.util";
+import { applyDictionary, promptWithDictionary } from "@/lib/dictionary.util";
+import { noteDictionaryApplied } from "@/services/dictionary.service";
 
 
 function emitCapsule(state: string, text?: string, error?: string) {
@@ -26,6 +28,8 @@ export function useTranscription() {
     correctionPrompt,
     transcriptionLanguage,
     loadedModelFilename,
+    dictionaryEnabled,
+    dictionaryEntries,
     setStatus,
     setRawTranscript,
     setCorrectedTranscript,
@@ -104,19 +108,24 @@ export function useTranscription() {
         let transcript: string;
 
         const langParam = transcriptionLanguage === "auto" ? null : transcriptionLanguage;
+        // The vocabulary prompt: what the person typed, then the dictionary's
+        // most-used words as spelling hints (Whisper and Groq honour it).
+        const enginePrompt = dictionaryEnabled
+          ? promptWithDictionary(whisperPrompt, dictionaryEntries)
+          : whisperPrompt;
 
         const sttStart = Date.now();
         if (effectiveMode === "local") {
           // No cloud fallback — the user chose local; surface errors instead
           // of silently sending audio to the cloud.
           transcript = await invoke<string>("transcribe_buffer", {
-            prompt: whisperPrompt || null,
+            prompt: enginePrompt || null,
             language: langParam,
           });
         } else {
           transcript = await invoke<string>("transcribe_buffer_cloud", {
             apiKey: groqApiKey,
-            prompt: whisperPrompt || null,
+            prompt: enginePrompt || null,
             language: langParam,
           });
         }
@@ -147,6 +156,19 @@ export function useTranscription() {
           } catch {
             correctionTimeMs = Date.now() - correctionStart;
             finalResult = transcript;
+          }
+        }
+
+        // Step 2b: personal dictionary — whole-word fixes for words the engine still misses
+        let dictionaryApplied: { from: string; to: string }[] = [];
+        if (dictionaryEnabled && dictionaryEntries.length) {
+          const applied = applyDictionary(finalResult, dictionaryEntries);
+          if (applied.applied.length) {
+            finalResult = applied.text;
+            dictionaryApplied = applied.applied.map(({ from, to }) => ({ from, to }));
+            noteDictionaryApplied(applied.applied.map((a) => a.entryId)).catch((err) => {
+              console.error("Failed to record dictionary use:", err);
+            });
           }
         }
 
@@ -198,6 +220,7 @@ export function useTranscription() {
           timestamp: Date.now(),
           corrected: correctionEnabled && groqApiKey !== "",
           application: result.application ?? null,
+          dictionaryApplied: dictionaryApplied.length ? dictionaryApplied : undefined,
         };
         saveTranscript(record).catch((err) => {
           console.error("Failed to persist transcript:", err);
@@ -242,6 +265,8 @@ export function useTranscription() {
       correctionPrompt,
       transcriptionLanguage,
       loadedModelFilename,
+      dictionaryEnabled,
+      dictionaryEntries,
       clearPendingTimers,
       setStatus,
       setRawTranscript,

@@ -19,6 +19,8 @@ export interface TranscriptRecord {
   corrected: boolean;
   /** Foreground app when dictation started; absent for older/private sessions. */
   application?: ApplicationIdentity | null;
+  /** Dictionary replacements applied before paste, as wrong → right pairs. */
+  dictionaryApplied?: { from: string; to: string }[];
 }
 
 export interface UsageStats {

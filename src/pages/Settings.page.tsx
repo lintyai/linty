@@ -543,8 +543,11 @@ function LanguageSection() {
 
 /* ═══ Privacy ═══ */
 function PrivacySection() {
-  const { trackApplicationUsage, saveTrackApplicationUsage } = useSettings();
+  const { trackApplicationUsage, saveTrackApplicationUsage, dictionaryEnabled, saveDictionaryEnabled, autoLearnWords, saveAutoLearnWords } = useSettings();
   const addToast = useAppStore((s) => s.addToast);
+  const setCurrentView = useAppStore((s) => s.setCurrentView);
+  const savePreference = (work: Promise<void>) =>
+    work.catch(() => addToast({ type: "error", message: "Could not save that preference." }));
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title="Privacy & Storage" />
@@ -555,6 +558,25 @@ function PrivacySection() {
           label="Attribute dictations to apps"
           description="Save the active app’s name when dictation starts. See words and dictation time per app in your dashboard."
         />
+      </SectionCard>
+      <SectionCard>
+        <div className="border-b border-border-subtle">
+          <Toggle
+            enabled={dictionaryEnabled}
+            onChange={(enabled) => savePreference(saveDictionaryEnabled(enabled))}
+            label="Apply my dictionary"
+            description="Fix words you have corrected before and send them to the speech engine as spelling hints."
+          />
+        </div>
+        <Toggle
+          enabled={autoLearnWords}
+          onChange={(enabled) => savePreference(saveAutoLearnWords(enabled))}
+          label="Learn new words automatically"
+          description="Add a correction to the dictionary without asking once it has been seen twice, or once for names."
+        />
+        <div className="px-4 pb-3">
+          <button className="text-link" onClick={() => setCurrentView("dictionary")}>Open your dictionary</button>
+        </div>
       </SectionCard>
       <SectionCard>
         <SettingRow label="History retention" description="The latest 500 transcriptions. Dashboard statistics use this saved history." right={<ValueBadge>500 records</ValueBadge>} />
