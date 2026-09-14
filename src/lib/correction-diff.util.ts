@@ -76,14 +76,19 @@ export interface CorrectionDiff {
   rewrite: boolean;
 }
 
-/** Diff a pasted text against the person's edit and judge whether it is a fix or a rewrite. */
-export function diffCorrection(pasted: string, edited: string): CorrectionDiff {
-  const pairs = wordDiff(pasted, edited);
-  const wordCount = tokenize(pasted).length;
+/** Judge a set of changes: how much of the pasted text moved, and whether that makes it a rewrite. */
+export function judgeCorrection(pairs: CorrectionPair[], wordCount: number): { changedRatio: number; rewrite: boolean } {
   const changedWords = pairs.reduce(
     (sum, p) => sum + Math.max(tokenize(p.from).length, tokenize(p.to).length),
     0,
   );
   const changedRatio = wordCount ? Math.min(1, changedWords / wordCount) : pairs.length ? 1 : 0;
-  return { pairs, wordCount, changedRatio, rewrite: changedRatio > REWRITE_THRESHOLD };
+  return { changedRatio, rewrite: changedRatio > REWRITE_THRESHOLD };
+}
+
+/** Diff a pasted text against the person's edit and judge whether it is a fix or a rewrite. */
+export function diffCorrection(pasted: string, edited: string): CorrectionDiff {
+  const pairs = wordDiff(pasted, edited);
+  const wordCount = tokenize(pasted).length;
+  return { pairs, wordCount, ...judgeCorrection(pairs, wordCount) };
 }

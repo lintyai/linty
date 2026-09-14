@@ -543,7 +543,7 @@ function LanguageSection() {
 
 /* ═══ Privacy ═══ */
 function PrivacySection() {
-  const { trackApplicationUsage, saveTrackApplicationUsage, dictionaryEnabled, saveDictionaryEnabled, autoLearnWords, saveAutoLearnWords } = useSettings();
+  const { trackApplicationUsage, saveTrackApplicationUsage, dictionaryEnabled, saveDictionaryEnabled, autoLearnWords, saveAutoLearnWords, observeCorrections, saveObserveCorrections } = useSettings();
   const addToast = useAppStore((s) => s.addToast);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const savePreference = (work: Promise<void>) =>
@@ -568,11 +568,19 @@ function PrivacySection() {
             description="Fix words you have corrected before and send them to the speech engine as spelling hints."
           />
         </div>
+        <div className="border-b border-border-subtle">
+          <Toggle
+            enabled={autoLearnWords}
+            onChange={(enabled) => savePreference(saveAutoLearnWords(enabled))}
+            label="Learn new words automatically"
+            description="Add a correction to the dictionary without asking once it has been seen twice, or once for names."
+          />
+        </div>
         <Toggle
-          enabled={autoLearnWords}
-          onChange={(enabled) => savePreference(saveAutoLearnWords(enabled))}
-          label="Learn new words automatically"
-          description="Add a correction to the dictionary without asking once it has been seen twice, or once for names."
+          enabled={observeCorrections}
+          onChange={(enabled) => savePreference(saveObserveCorrections(enabled))}
+          label="Learn from corrections in other apps"
+          description="For a minute after each paste, notice words you fix in the field you dictated into. Uses the Accessibility permission Linty already has; the field’s text is compared in memory and never saved. Works in most apps, not all."
         />
         <div className="px-4 pb-3">
           <button className="text-link" onClick={() => setCurrentView("dictionary")}>Open your dictionary</button>

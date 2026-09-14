@@ -30,6 +30,7 @@ export function useTranscription() {
     loadedModelFilename,
     dictionaryEnabled,
     dictionaryEntries,
+    observeCorrections,
     setStatus,
     setRawTranscript,
     setCorrectedTranscript,
@@ -183,9 +184,11 @@ export function useTranscription() {
         await invoke("snapshot_clipboard");
         clipboardDirty = true;
         await invoke("write_transient_text", { text: finalResult });
+        const transcriptId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
         try {
-          await invoke("paste_text");
+          // observe: let the Rust side watch the target field for fixes to this paste.
+          await invoke("paste_text", { observe: observeCorrections, transcriptId });
         } catch (pasteErr) {
           console.warn("Paste failed (accessibility?):", pasteErr);
           addToast({
@@ -203,7 +206,7 @@ export function useTranscription() {
 
         // Save to history
         const record: TranscriptRecord = {
-          transcriptId: `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          transcriptId,
           rawText: transcript,
           finalText: finalResult,
           engine: effectiveMode,
@@ -267,6 +270,7 @@ export function useTranscription() {
       loadedModelFilename,
       dictionaryEnabled,
       dictionaryEntries,
+      observeCorrections,
       clearPendingTimers,
       setStatus,
       setRawTranscript,

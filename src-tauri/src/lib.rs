@@ -6,6 +6,9 @@ mod capsule;
 #[cfg(target_os = "macos")]
 mod clipboard;
 #[cfg(target_os = "macos")]
+#[allow(deprecated)]
+mod corrections;
+#[cfg(target_os = "macos")]
 mod fnkey;
 mod paste;
 #[cfg(target_os = "macos")]
@@ -426,8 +429,28 @@ async fn transcribe_buffer_cloud(
 // inside simulate_paste (main-thread-only on macOS 26). CGEvent posting is
 // thread-safe and stays on the worker.
 #[tauri::command(async)]
-fn paste_text(app: tauri::AppHandle) -> Result<(), String> {
+fn paste_text(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    observe: Option<bool>,
+    transcript_id: Option<String>,
+) -> Result<(), String> {
     let result = paste::simulate_paste(&app);
+    // Learn from corrections in other apps (Settings → Privacy & storage): watch
+    // the target field for edits to the text that was just pasted. Every paste
+    // bumps the generation so an older watch ends.
+    #[cfg(target_os = "macos")]
+    {
+        let generation = state.correction_watch_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let pasted = state.last_pasted_text.lock().ok().and_then(|mut g| g.take());
+        if result.is_ok() && observe.unwrap_or(false) {
+            if let (Some(text), Some(id)) = (pasted, transcript_id) {
+                corrections::watch_after_paste(app.clone(), generation, id, text);
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (&state, observe, transcript_id);
     // Time-based restore (not read-triggered): clipboard managers reading the
     // pasteboard on change must not cause a restore that beats the target
     // app's Cmd+V read. Scheduled even on paste failure so the user's
@@ -550,7 +573,10 @@ fn restore_clipboard() -> Result<(), String> {
 }
 
 #[tauri::command(async)]
-fn write_transient_text(text: String) -> Result<(), String> {
+fn write_transient_text(state: tauri::State<'_, AppState>, text: String) -> Result<(), String> {
+    if let Ok(mut last) = state.last_pasted_text.lock() {
+        *last = Some(text.clone());
+    }
     #[cfg(target_os = "macos")]
     {
         clipboard::cmd_write_transient(&text)
