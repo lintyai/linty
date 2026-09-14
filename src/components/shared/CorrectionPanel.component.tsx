@@ -1,4 +1,5 @@
 import { BookPlus, Check, Pencil, ScanLine } from "lucide-react";
+import { normalizeWord } from "@/lib/correction-diff.util";
 import { isKnownToDictionary, learnablePairs } from "@/lib/dictionary.util";
 import { cn } from "@/lib/utils";
 import type { CorrectionRecord, DictionaryEntry } from "@/types/correction.types";
@@ -27,7 +28,9 @@ export function CorrectionPanel({ corrections, entries, onAddToDictionary }: Cor
             </p>
             <ul className="correction-pairs">
               {record.pairs.map((pair, i) => {
-                const learn = learnable.find((l) => pair.kind === "substitution" && pair.from.includes(l.from) && pair.to.includes(l.to));
+                const learn = pair.kind === "substitution"
+                  ? learnable.find((l) => normalizeWord(pair.from) === normalizeWord(l.from) && normalizeWord(pair.to) === normalizeWord(l.to))
+                  : undefined;
                 const known = learn ? isKnownToDictionary(entries, learn.from, learn.to) : false;
                 return (
                   <li key={i} className={cn("correction-pair", `is-${pair.kind}`)}>

@@ -93,6 +93,20 @@ export function HistoryPage() {
       return;
     }
     const diff = diffCorrection(selectedTranscript.finalText, edited);
+    setSaving(true);
+    // Only spacing changed: keep the edit, but there is no correction to learn from.
+    if (!diff.pairs.length) {
+      try {
+        await updateTranscript(selectedTranscript.transcriptId, { finalText: edited });
+        success("Saved.");
+        setEditing(false);
+      } catch {
+        error("Could not save the edit. Please try again.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     const record: CorrectionRecord = {
       correctionId: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       transcriptId: selectedTranscript.transcriptId,
@@ -107,7 +121,6 @@ export function HistoryPage() {
       rewrite: diff.rewrite,
       pairs: diff.pairs,
     };
-    setSaving(true);
     try {
       // Word count stays as dictated: usage statistics count what was spoken, not the edit.
       await updateTranscript(selectedTranscript.transcriptId, { finalText: edited });

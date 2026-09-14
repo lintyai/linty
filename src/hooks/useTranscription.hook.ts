@@ -166,7 +166,9 @@ export function useTranscription() {
           if (applied.applied.length) {
             finalResult = applied.text;
             dictionaryApplied = applied.applied.map(({ from, to }) => ({ from, to }));
-            noteDictionaryApplied(applied.applied.map((a) => a.entryId)).catch(() => {});
+            noteDictionaryApplied(applied.applied.map((a) => a.entryId)).catch((err) => {
+              console.error("Failed to record dictionary use:", err);
+            });
           }
         }
 

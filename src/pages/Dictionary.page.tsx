@@ -35,6 +35,7 @@ export function DictionaryPage() {
     readySuggestions,
     pendingSuggestions,
     corrections,
+    loaded,
     addEntry,
     setEntryEnabled,
     removeEntry,
@@ -136,7 +137,7 @@ export function DictionaryPage() {
                     <span aria-hidden="true">→</span>
                     <strong>{s.right}</strong>
                     <span className="dictionary-note">
-                      seen {s.seenCount}×, last {formatDayLabel(s.lastSeenAt)}
+                      seen {s.seenCount}×, last {formatDayLabel(s.lastSeenAt).toLowerCase()}
                     </span>
                   </div>
                   <div className="dictionary-actions">
@@ -150,7 +151,7 @@ export function DictionaryPage() {
                 </li>
               ))}
             </ul>
-          ) : (
+          ) : loaded ? (
             <div className="app-empty">
               <h3>Nothing to review</h3>
               <p>
@@ -159,7 +160,7 @@ export function DictionaryPage() {
                   : "Open a transcript in History, choose Edit, and fix a word. Linty suggests words it should learn."}
               </p>
             </div>
-          )}
+          ) : null}
         </section>
 
         <section className="insight-card applications-card">
@@ -234,12 +235,12 @@ export function DictionaryPage() {
                 </tbody>
               </table>
             </div>
-          ) : (
+          ) : loaded ? (
             <div className="app-empty">
               <h3>Your dictionary is empty</h3>
               <p>Add a word above, or accept a suggestion once Linty has seen you correct one.</p>
             </div>
-          )}
+          ) : null}
         </section>
 
         <p className="dashboard-footnote">
