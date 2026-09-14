@@ -21,8 +21,16 @@ struct TrayTranscript {
 struct TrayState {
     status: String,
     stt_mode: String,
+    /// Name of the selected local engine ("Parakeet" or "Whisper"), for the menu label.
+    #[serde(default)]
+    local_engine: Option<String>,
     #[serde(default)]
     recent_transcripts: Vec<TrayTranscript>,
+}
+
+/// "Local (Parakeet)" / "Local (Whisper)": the menu names the engine that will actually run.
+fn local_engine_label(local_engine: Option<&str>) -> String {
+    format!("Local ({})", local_engine.filter(|s| !s.is_empty()).unwrap_or("Whisper"))
 }
 
 fn transcript_preview(text: &str) -> String {
@@ -46,11 +54,11 @@ fn status_label(status: &str) -> &str {
     }
 }
 
-fn tooltip_text(status: &str, stt_mode: &str) -> String {
+fn tooltip_text(status: &str, stt_mode: &str, local_engine: Option<&str>) -> String {
     let engine = if stt_mode == "local" {
-        "Local (Whisper)"
+        local_engine_label(local_engine)
     } else {
-        "Cloud (Groq)"
+        "Cloud (Groq)".to_string()
     };
     match status {
         "recording" => format!("Linty — Recording... [{}]", engine),
@@ -65,6 +73,7 @@ fn build_tray_menu(
     app: &tauri::AppHandle,
     status: &str,
     stt_mode: &str,
+    local_engine: Option<&str>,
     recent_transcripts: &[TrayTranscript],
 ) -> Result<Menu<tauri::Wry>, tauri::Error> {
     let latest_item = match recent_transcripts.first() {
@@ -119,7 +128,7 @@ fn build_tray_menu(
     let local_item = CheckMenuItem::with_id(
         app,
         "engine-local",
-        "Local (Whisper)",
+        local_engine_label(local_engine),
         true,
         local_checked,
         None::<&str>,
@@ -154,7 +163,7 @@ pub fn init_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         .tray_by_id(TRAY_ID)
         .expect("tray icon must exist from tauri.conf.json trayIcon config");
 
-    let menu = build_tray_menu(app.handle(), "idle", "cloud", &[])?;
+    let menu = build_tray_menu(app.handle(), "idle", "cloud", None, &[])?;
     tray.set_menu(Some(menu))?;
     tray.set_show_menu_on_left_click(false)?; // left-click toggles window, right-click opens menu
 
@@ -221,14 +230,30 @@ pub fn init_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
             &handle,
             &state.status,
             &state.stt_mode,
+            state.local_engine.as_deref(),
             &state.recent_transcripts,
         ) {
             if let Some(tray) = handle.tray_by_id(TRAY_ID) {
                 let _ = tray.set_menu(Some(menu));
-                let _ = tray.set_tooltip(Some(&tooltip_text(&state.status, &state.stt_mode)));
+                let _ = tray.set_tooltip(Some(&tooltip_text(&state.status, &state.stt_mode, state.local_engine.as_deref())));
             }
         }
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{local_engine_label, tooltip_text};
+
+    #[test]
+    fn menu_names_the_selected_local_engine() {
+        assert_eq!(local_engine_label(Some("Parakeet")), "Local (Parakeet)");
+        assert_eq!(local_engine_label(Some("Whisper")), "Local (Whisper)");
+        assert_eq!(local_engine_label(None), "Local (Whisper)");
+        assert_eq!(local_engine_label(Some("")), "Local (Whisper)");
+        assert_eq!(tooltip_text("idle", "local", Some("Parakeet")), "Linty — Hold fn to record [Local (Parakeet)]");
+        assert_eq!(tooltip_text("recording", "cloud", Some("Parakeet")), "Linty — Recording... [Cloud (Groq)]");
+    }
 }
