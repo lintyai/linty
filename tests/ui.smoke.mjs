@@ -68,8 +68,8 @@ try {
   await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
   await page.getByLabel('Settings category').waitFor();
   assert.equal(await page.getByLabel('Settings category').inputValue(), 'language');
-  await page.getByLabel('Transcription language', {exact:true}).selectOption('hi');
-  assert.equal(await page.evaluate(() => window.__QA__.stores[1].transcriptionLanguage), 'hi');
+  await page.getByLabel('Transcription language', {exact:true}).selectOption('es');
+  assert.equal(await page.evaluate(() => window.__QA__.stores[1].transcriptionLanguage), 'es');
   for (const theme of ['light', 'dark']) {
     await page.getByLabel('Settings category').selectOption('appearance');
     await page.getByRole('button', {name: theme === 'light' ? 'Light' : 'Dark', exact:true}).click();
@@ -84,7 +84,7 @@ try {
     for (const section of ['general', 'audio', 'models', 'language', 'appearance', 'privacy']) {
       await page.getByLabel('Settings category').selectOption(section);
       await audit(`${section}-${theme}`);
-      if (section === 'models' || section === 'appearance') await screenshot(`${section}-${theme}`);
+      if (section === 'models' || section === 'appearance' || section === 'language') await screenshot(`${section}-${theme}`);
     }
     for (const name of ['Overview', 'History', 'Apps', 'Shortcuts', 'System Check', 'About']) {
       await page.getByRole('navigation', {name:'Main navigation'}).getByRole('button', {name,exact:true}).click();

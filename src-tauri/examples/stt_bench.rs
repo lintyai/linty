@@ -162,7 +162,7 @@ fn main() {
         let audio_s = samples.len() as f64 / 16000.0;
         if let Some(ctx) = &whisper_ctx {
             let timing = bench(args.runs, || {
-                transcribe::transcribe_local(ctx, samples, None, Some("en"), false, |_| {}, |_| {})
+                transcribe::transcribe_local(ctx, samples, None, Some("en"), |_| {}, |_| {})
             });
             println!(
                 "{:<28} {:>6.1}s {:<9} {:>9.0} {:>9.0}  {}",

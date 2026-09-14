@@ -327,7 +327,6 @@ async fn transcribe_buffer(
     state: tauri::State<'_, AppState>,
     prompt: Option<String>,
     language: Option<String>,
-    translate: bool,
 ) -> Result<String, String> {
     #[cfg(feature = "local-stt")]
     {
@@ -361,7 +360,6 @@ async fn transcribe_buffer(
                         &samples,
                         prompt.as_deref(),
                         language.as_deref(),
-                        translate,
                         // Stream partial text / progress to the capsule as whisper decodes.
                         move |partial| {
                             let _ = app_seg.emit_to("capsule", "capsule-partial-text", partial);
@@ -376,8 +374,8 @@ async fn transcribe_buffer(
             }
             #[cfg(feature = "parakeet")]
             LocalEngine::Parakeet(engine) => {
-                // Parakeet has no vocabulary prompt or translation mode.
-                let _ = (prompt, translate);
+                // Parakeet has no vocabulary prompt.
+                let _ = prompt;
                 tokio::task::spawn_blocking(move || {
                     transcribe::transcribe_parakeet(&engine, &samples, language.as_deref())
                 })
@@ -388,7 +386,7 @@ async fn transcribe_buffer(
     }
     #[cfg(not(feature = "local-stt"))]
     {
-        let _ = (app, state, prompt, language, translate);
+        let _ = (app, state, prompt, language);
         Err("Local STT not available — rebuild with `local-stt` feature".into())
     }
 }
@@ -401,7 +399,6 @@ async fn transcribe_buffer_cloud(
     api_key: String,
     prompt: Option<String>,
     language: Option<String>,
-    translate: bool,
 ) -> Result<String, String> {
     // Take samples from recording state
     let samples = {
@@ -420,7 +417,6 @@ async fn transcribe_buffer_cloud(
         &api_key,
         prompt.as_deref(),
         language.as_deref(),
-        translate,
     )
     .await
 }

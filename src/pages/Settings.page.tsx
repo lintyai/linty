@@ -24,6 +24,7 @@ import { Toggle } from "@/components/shared/Toggle.component";
 import { SegmentedControl } from "@/components/shared/SegmentedControl.component";
 import { SectionHeader, SectionCard, SettingRow, ValueBadge } from "@/components/shared/SettingsLayout.component";
 import { cn } from "@/lib/utils";
+import { AUTO_LANGUAGE, TRANSCRIPTION_LANGUAGES, languageLabel } from "@/lib/languages.util";
 import { DEFAULT_CORRECTION_PROMPT } from "@/services/correction.service";
 import { SETTINGS_SECTIONS } from "@/store/slices/navigation.slice";
 import type { SttMode, ThemePreference } from "@/store/slices/settings.slice";
@@ -315,7 +316,7 @@ function ModelsSection() {
           <SectionCard>
             <SettingRow
               label="Transcription model"
-              description="Whisper Large V3 Turbo via Groq (translation uses Large V3)"
+              description="Whisper Large V3 Turbo via Groq"
               right={
                 <span className="flex items-center gap-1.5 text-[12px] text-text-secondary bg-bg-hover rounded-md px-2.5 py-1">
                   <Cloud size={11} />
@@ -487,31 +488,8 @@ function ModelsSection() {
 
 /* ═══ Language ═══ */
 
-const LANGUAGES = [
-  { code: "auto", label: "Auto-detect" },
-  { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
-  { code: "es", label: "Spanish" },
-  { code: "fr", label: "French" },
-  { code: "de", label: "German" },
-  { code: "ja", label: "Japanese" },
-  { code: "zh", label: "Chinese" },
-  { code: "ko", label: "Korean" },
-  { code: "pt", label: "Portuguese" },
-  { code: "ru", label: "Russian" },
-  { code: "ar", label: "Arabic" },
-  { code: "it", label: "Italian" },
-  { code: "nl", label: "Dutch" },
-  { code: "tr", label: "Turkish" },
-  { code: "pl", label: "Polish" },
-  { code: "sv", label: "Swedish" },
-  { code: "th", label: "Thai" },
-  { code: "vi", label: "Vietnamese" },
-  { code: "id", label: "Indonesian" },
-];
-
 function LanguageSection() {
-  const { transcriptionLanguage, translateToEnglish, saveTranscriptionLanguage, saveTranslateToEnglish } = useSettings();
+  const { transcriptionLanguage, saveTranscriptionLanguage } = useSettings();
 
   return (
     <div className="flex flex-col gap-4">
@@ -522,7 +500,7 @@ function LanguageSection() {
           <div className="flex flex-col gap-0.5 min-w-0">
             <span className="text-[13px] text-text-primary">Transcription language</span>
             <span className="text-[12px] text-text-muted leading-snug">
-              Set the spoken language or let Whisper auto-detect
+              Set the spoken language or let the speech engine auto-detect
             </span>
           </div>
           <div className="shrink-0 ml-4 relative">
@@ -537,7 +515,7 @@ function LanguageSection() {
                 "focus:border-border-focus focus:bg-bg-elevated",
               )}
             >
-              {LANGUAGES.map((lang) => (
+              {TRANSCRIPTION_LANGUAGES.map((lang) => (
                 <option key={lang.code} value={lang.code}>
                   {lang.label}
                 </option>
@@ -551,25 +529,12 @@ function LanguageSection() {
         </div>
       </SectionCard>
 
-      {transcriptionLanguage !== "en" && (
-        <SectionCard className="animate-fade-in">
-          <Toggle
-            enabled={translateToEnglish}
-            onChange={saveTranslateToEnglish}
-            label="Translate to English"
-            description="Translate speech to English regardless of spoken language"
-          />
-        </SectionCard>
-      )}
-
       <div className="flex items-start gap-2.5 rounded-[10px] bg-bg-elevated border border-border-subtle px-4 py-3">
         <Languages size={13} className="text-text-muted shrink-0 mt-px" />
         <p className="text-[12px] text-text-secondary leading-relaxed">
-          {transcriptionLanguage === "auto"
-            ? "Whisper will automatically detect the spoken language. For best accuracy, select the language explicitly."
-            : translateToEnglish
-              ? "Speech will be transcribed and translated to English."
-              : `Speech will be transcribed in ${LANGUAGES.find((l) => l.code === transcriptionLanguage)?.label ?? transcriptionLanguage}.`}
+          {transcriptionLanguage === AUTO_LANGUAGE
+            ? "The speech engine will detect the spoken language automatically. For best accuracy, select it explicitly. Every listed language works with both Parakeet and Whisper."
+            : `Speech will be transcribed in ${languageLabel(transcriptionLanguage)}.`}
         </p>
       </div>
     </div>

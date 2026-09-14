@@ -2,6 +2,7 @@ import { useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { load } from "@tauri-apps/plugin-store";
 import { useAppStore } from "@/store/app.store";
+import { AUTO_LANGUAGE, isSupportedLanguage } from "@/lib/languages.util";
 import { DEFAULT_MODEL_IDLE_UNLOAD_MINUTES, DEFAULT_TRIGGER_KEY } from "@/store/slices/settings.slice";
 import type { SttMode, ThemePreference } from "@/store/slices/settings.slice";
 
@@ -20,7 +21,6 @@ async function getStore() {
         whisperPrompt: "",
         correctionPrompt: "",
         transcriptionLanguage: "auto",
-        translateToEnglish: false,
         modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
         triggerKey: DEFAULT_TRIGGER_KEY,
         trackApplicationUsage: true,
@@ -41,7 +41,6 @@ export function useSettings() {
     correctionPrompt,
     onboardingComplete,
     transcriptionLanguage,
-    translateToEnglish,
     setGroqApiKey,
     setSttMode,
     setCorrectionEnabled,
@@ -50,7 +49,6 @@ export function useSettings() {
     setCorrectionPrompt,
     setOnboardingComplete,
     setTranscriptionLanguage,
-    setTranslateToEnglish,
     setSelectedModelFilename,
     modelIdleUnloadMinutes,
     setModelIdleUnloadMinutes,
@@ -75,7 +73,6 @@ export function useSettings() {
         const savedCorrectionPrompt = await store.get<string>("correctionPrompt");
         const savedOnboarding = await store.get<boolean>("onboardingComplete");
         const savedLanguage = await store.get<string>("transcriptionLanguage");
-        const savedTranslate = await store.get<boolean>("translateToEnglish");
         const savedSelectedModel = await store.get<string>("selectedModelFilename");
         const savedIdleUnload = await store.get<number>("modelIdleUnloadMinutes");
         const savedTriggerKey = await store.get<string>("triggerKey");
@@ -90,9 +87,13 @@ export function useSettings() {
         if (savedWhisperPrompt) setWhisperPrompt(savedWhisperPrompt);
         if (savedCorrectionPrompt) setCorrectionPrompt(savedCorrectionPrompt);
         if (savedOnboarding) setOnboardingComplete(savedOnboarding);
-        if (savedLanguage) setTranscriptionLanguage(savedLanguage);
-        if (savedTranslate !== null && savedTranslate !== undefined)
-          setTranslateToEnglish(savedTranslate);
+        if (savedLanguage) {
+          // Languages dropped from the catalog (e.g. ones Parakeet can't
+          // transcribe) fall back to auto-detect instead of a blank select.
+          const language = isSupportedLanguage(savedLanguage) ? savedLanguage : AUTO_LANGUAGE;
+          setTranscriptionLanguage(language);
+          if (language !== savedLanguage) await store.set("transcriptionLanguage", language);
+        }
         if (savedSelectedModel) setSelectedModelFilename(savedSelectedModel);
         if (savedTriggerKey) setTriggerKey(savedTriggerKey);
 
@@ -108,7 +109,7 @@ export function useSettings() {
         setSettingsLoaded(true);
       }
     })();
-  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setTranslateToEnglish, setSelectedModelFilename, setModelIdleUnloadMinutes, setTriggerKey, setSettingsLoaded, setTrackApplicationUsage]);
+  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setSelectedModelFilename, setModelIdleUnloadMinutes, setTriggerKey, setSettingsLoaded, setTrackApplicationUsage]);
 
   const saveGroqApiKey = useCallback(
     async (key: string) => {
@@ -189,15 +190,6 @@ export function useSettings() {
     [setTranscriptionLanguage],
   );
 
-  const saveTranslateToEnglish = useCallback(
-    async (translate: boolean) => {
-      setTranslateToEnglish(translate);
-      const store = await getStore();
-      await store.set("translateToEnglish", translate);
-    },
-    [setTranslateToEnglish],
-  );
-
   const saveSelectedModelFilename = useCallback(
     async (filename: string | null) => {
       setSelectedModelFilename(filename);
@@ -244,9 +236,7 @@ export function useSettings() {
     onboardingComplete,
     saveOnboardingComplete,
     transcriptionLanguage,
-    translateToEnglish,
     saveTranscriptionLanguage,
-    saveTranslateToEnglish,
     saveSelectedModelFilename,
     modelIdleUnloadMinutes,
     saveModelIdleUnloadMinutes,

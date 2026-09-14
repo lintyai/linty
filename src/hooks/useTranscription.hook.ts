@@ -25,7 +25,6 @@ export function useTranscription() {
     whisperPrompt,
     correctionPrompt,
     transcriptionLanguage,
-    translateToEnglish,
     loadedModelFilename,
     setStatus,
     setRawTranscript,
@@ -113,14 +112,12 @@ export function useTranscription() {
           transcript = await invoke<string>("transcribe_buffer", {
             prompt: whisperPrompt || null,
             language: langParam,
-            translate: translateToEnglish,
           });
         } else {
           transcript = await invoke<string>("transcribe_buffer_cloud", {
             apiKey: groqApiKey,
             prompt: whisperPrompt || null,
             language: langParam,
-            translate: translateToEnglish,
           });
         }
         const sttTimeMs = Date.now() - sttStart;
@@ -190,9 +187,7 @@ export function useTranscription() {
           engine: effectiveMode,
           modelName:
             effectiveMode === "cloud"
-              ? translateToEnglish
-                ? "Groq Whisper Large V3"
-                : "Groq Whisper Large V3 Turbo"
+              ? "Groq Whisper Large V3 Turbo"
               : modelLabel(loadedModelFilename),
           durationSeconds: recordingDuration,
           processingTimeMs,
@@ -246,7 +241,6 @@ export function useTranscription() {
       whisperPrompt,
       correctionPrompt,
       transcriptionLanguage,
-      translateToEnglish,
       loadedModelFilename,
       clearPendingTimers,
       setStatus,
