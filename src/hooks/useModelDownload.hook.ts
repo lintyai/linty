@@ -92,6 +92,7 @@ export function useModelDownload() {
         if (!loadedModel) {
           const firstDownloaded = models.find((m) => downloaded.has(m.filename));
           if (firstDownloaded) {
+            setLoadingFilename(firstDownloaded.filename);
             try {
               console.log("[model] Auto-loading:", firstDownloaded.filename);
               await invoke("load_local_model", {
@@ -102,6 +103,8 @@ export function useModelDownload() {
               console.log("[model] Auto-loaded:", firstDownloaded.filename);
             } catch (err) {
               console.error("[model] Auto-load failed:", err);
+            } finally {
+              setLoadingFilename(null);
             }
           }
         }

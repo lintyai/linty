@@ -445,6 +445,7 @@ After posting the review on GitHub, **automatically chain into `/pr-resolve`** i
 | 50+ files | Flag "consider splitting" |
 | Empty diff | Exit |
 | `gh api` fails | Retry once, fallback to `gh pr review --comment --body` |
+| `422 "Line could not be resolved"` | An inline `line` is not part of this PR's diff (e.g. the finding is in a hunk from an earlier PR). Move that finding to "Findings Outside Diff" in the body and re-post |
 | Own PR (self-review) | GitHub rejects APPROVE/REQUEST_CHANGES on own PRs. Use `COMMENT` event instead |
 
 ---
