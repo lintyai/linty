@@ -143,7 +143,20 @@ try {
   await page.getByRole('switch', {name:'Apply my dictionary', exact:true}).click();
   assert.equal(await page.evaluate(() => window.__QA__.stores[1].dictionaryEnabled), false);
   await page.getByRole('switch', {name:'Apply my dictionary', exact:true}).click();
+  await page.getByRole('switch', {name:'Learn from corrections in other apps', exact:true}).click();
+  assert.equal(await page.evaluate(() => window.__QA__.stores[1].observeCorrections), true);
   await screenshot('privacy-light');
+  // A fix noticed in another app is recorded like a History edit; with auto-learn on (above) a name is learned at once.
+  await page.evaluate(() => window.__QA__.emit('correction-observed', { transcriptId: 'qa-3', pasted: 'The best tools make room for your ideas.', wordCount: 8, application: { name: 'Safari', bundleId: 'com.apple.Safari' }, pairs: [{ kind: 'substitution', from: 'tools', to: 'Tauri' }], secondsAfterPaste: 9 }));
+  await page.getByText('Learned 1 word from your fix in Safari.').waitFor();
+  assert.equal(await page.evaluate(() => window.__QA__.stores[3].corrections[0].source), 'observed');
+  assert.equal(await page.evaluate(() => window.__QA__.stores[4].entries.find(e => e.right === 'Tauri').wrong.includes('tools')), true);
+  await page.getByRole('navigation', {name:'Main navigation'}).getByRole('button', {name:'History',exact:true}).click();
+  await page.locator('[data-transcript-id="qa-3"]').click();
+  await page.getByText('Corrected in Safari').waitFor();
+  await page.locator('.correction-pair ins', {hasText:'Tauri'}).waitFor();
+  await audit('history-observed'); await screenshot('history-observed');
+  await page.keyboard.press('Escape');
   await page.keyboard.press('Meta+,');
   await page.getByLabel('Settings category').selectOption('models');
   await page.getByRole('button',{name:'Cloud',exact:true}).click();

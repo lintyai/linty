@@ -72,6 +72,8 @@ export interface SettingsSlice {
   dictionaryEnabled: boolean;
   /** Promote ready suggestions into the dictionary without asking. */
   autoLearnWords: boolean;
+  /** After a paste, watch the target field (Accessibility API) for fixes to the pasted text. */
+  observeCorrections: boolean;
   /** Minutes of inactivity before the local model is unloaded (0 = never). */
   modelIdleUnloadMinutes: number;
   /** Push-to-talk trigger: TRIGGER_KEY_FN or a global-shortcut accelerator string. */
@@ -94,6 +96,7 @@ export interface SettingsSlice {
   setModelIdleUnloadMinutes: (minutes: number) => void;
   setDictionaryEnabled: (enabled: boolean) => void;
   setAutoLearnWords: (enabled: boolean) => void;
+  setObserveCorrections: (enabled: boolean) => void;
   setTriggerKey: (triggerKey: string) => void;
   setSettingsLoaded: (loaded: boolean) => void;
 }
@@ -116,6 +119,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
   dictionaryEnabled: true,
   autoLearnWords: false,
+  observeCorrections: false,
   triggerKey: DEFAULT_TRIGGER_KEY,
   settingsLoaded: false,
   trackApplicationUsage: true,
@@ -136,6 +140,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   setModelIdleUnloadMinutes: (modelIdleUnloadMinutes) => set({ modelIdleUnloadMinutes }),
   setDictionaryEnabled: (dictionaryEnabled) => set({ dictionaryEnabled }),
   setAutoLearnWords: (autoLearnWords) => set({ autoLearnWords }),
+  setObserveCorrections: (observeCorrections) => set({ observeCorrections }),
   setTriggerKey: (triggerKey) => set({ triggerKey }),
   setSettingsLoaded: (settingsLoaded) => set({ settingsLoaded }),
 });

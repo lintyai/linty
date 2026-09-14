@@ -26,6 +26,7 @@ async function getStore() {
         trackApplicationUsage: true,
         dictionaryEnabled: true,
         autoLearnWords: false,
+        observeCorrections: false,
       },
       autoSave: true,
     });
@@ -64,6 +65,8 @@ export function useSettings() {
     setDictionaryEnabled,
     autoLearnWords,
     setAutoLearnWords,
+    observeCorrections,
+    setObserveCorrections,
   } = useAppStore();
 
   // Load settings on mount
@@ -88,6 +91,8 @@ export function useSettings() {
         setDictionaryEnabled(savedDictionaryEnabled ?? true);
         const savedAutoLearn = await store.get<boolean>("autoLearnWords");
         setAutoLearnWords(savedAutoLearn ?? false);
+        const savedObserve = await store.get<boolean>("observeCorrections");
+        setObserveCorrections(savedObserve ?? false);
 
         if (key) setGroqApiKey(key);
         if (mode) setSttMode(mode);
@@ -119,7 +124,7 @@ export function useSettings() {
         setSettingsLoaded(true);
       }
     })();
-  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setSelectedModelFilename, setModelIdleUnloadMinutes, setTriggerKey, setSettingsLoaded, setTrackApplicationUsage, setDictionaryEnabled, setAutoLearnWords]);
+  }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setSelectedModelFilename, setModelIdleUnloadMinutes, setTriggerKey, setSettingsLoaded, setTrackApplicationUsage, setDictionaryEnabled, setAutoLearnWords, setObserveCorrections]);
 
   const saveGroqApiKey = useCallback(
     async (key: string) => {
@@ -148,6 +153,12 @@ export function useSettings() {
     const store = await getStore();
     await store.set("autoLearnWords", enabled);
   }, [setAutoLearnWords]);
+
+  const saveObserveCorrections = useCallback(async (enabled: boolean) => {
+    setObserveCorrections(enabled);
+    const store = await getStore();
+    await store.set("observeCorrections", enabled);
+  }, [setObserveCorrections]);
 
   const saveSttMode = useCallback(
     async (mode: SttMode) => {
@@ -247,6 +258,8 @@ export function useSettings() {
     saveDictionaryEnabled,
     autoLearnWords,
     saveAutoLearnWords,
+    observeCorrections,
+    saveObserveCorrections,
     groqApiKey,
     sttMode,
     correctionEnabled,

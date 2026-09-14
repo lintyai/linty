@@ -288,7 +288,7 @@ export function DashboardPage() {
               </div>
             </div>
             <p className="privacy-caption">
-              Corrections per 100 words: Local {localFixRate === null ? "—" : localFixRate.toFixed(1)} · Cloud {cloudFixRate === null ? "—" : cloudFixRate.toFixed(1)}. Counted from your edits in History.
+              Corrections per 100 words: Local {localFixRate === null ? "—" : localFixRate.toFixed(1)} · Cloud {cloudFixRate === null ? "—" : cloudFixRate.toFixed(1)}. Counted from the fixes you make.
             </p>
           </section>
         </div>

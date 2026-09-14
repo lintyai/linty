@@ -44,6 +44,7 @@ Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separat
 - Editing a transcript in History diffs the pasted text against the edit (`src/lib/correction-diff.util.ts`), stores a `CorrectionRecord` (`linty-corrections.json`) and feeds word swaps into suggestions (`src/lib/dictionary.util.ts`, `linty-dictionary.json`). Suggestions become dictionary entries when accepted on the Dictionary page, or automatically when "Learn new words automatically" is on (off by default).
 - Dictionary entries are applied in `useTranscription.hook.ts` before paste (whole-word, case-matching) and the most-used entries seed the Whisper/Groq vocabulary prompt. "Apply my dictionary" (Settings → Privacy & storage) turns both off. `reset_all_data` deletes both JSON stores.
 - Rewrites (more than 40 % of words changed) are recorded for the corrections-per-100-words metric but never learned from.
+- "Learn from corrections in other apps" (off by default) makes `paste_text` start a 60 s Accessibility watch (`src-tauri/src/corrections.rs`, raw AX FFI) on the focused field: it locates the pasted words, diffs only that span, and emits `correction-observed`; `useCorrectionObserver.hook.ts` records it with `source: "observed"`. A newer paste ends the previous watch; fields that empty on submit keep what was seen before; unreadable fields (some editors) simply learn nothing.
 
 ### State Management
 - **Frontend**: Zustand store split into slices (recording, transcription, settings, navigation, history, toast)

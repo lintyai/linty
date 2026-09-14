@@ -50,6 +50,10 @@ pub struct AppState {
     /// and transiently holding two models in memory. tokio Mutex: held across await.
     #[cfg(feature = "local-stt")]
     pub local_model_load_lock: tokio::sync::Mutex<()>,
+    /// Text most recently written for paste; the corrections watch diffs the target field against it.
+    pub last_pasted_text: Mutex<Option<String>>,
+    /// Bumped on every paste so a running corrections watch ends when a newer paste starts.
+    pub correction_watch_generation: AtomicU64,
     /// App icons already rendered for the UI, keyed by bundle id (None = no icon).
     /// Icons are a few KB each and only apps the user dictated into are ever asked for.
     pub app_icon_cache: Mutex<HashMap<String, Option<String>>>,
@@ -78,6 +82,8 @@ impl AppState {
             model_idle_unload_secs: AtomicU64::new(DEFAULT_MODEL_IDLE_UNLOAD_SECS),
             #[cfg(feature = "local-stt")]
             local_model_load_lock: tokio::sync::Mutex::new(()),
+            last_pasted_text: Mutex::new(None),
+            correction_watch_generation: AtomicU64::new(0),
             app_icon_cache: Mutex::new(HashMap::new()),
             audio_callback_count: Arc::new(AtomicU64::new(0)),
             recording_started_at: AtomicU64::new(0),

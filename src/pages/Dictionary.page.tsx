@@ -157,7 +157,7 @@ export function DictionaryPage() {
               <p>
                 {corrections.length
                   ? "New suggestions appear after a word is corrected twice, or once for names."
-                  : "Open a transcript in History, choose Edit, and fix a word. Linty suggests words it should learn."}
+                  : "Open a transcript in History, choose Edit, and fix a word. Or turn on “Learn from corrections in other apps” in Settings and fix words where you dictate."}
               </p>
             </div>
           ) : null}
