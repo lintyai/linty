@@ -349,7 +349,7 @@ async fn transcribe_buffer(
     prompt: Option<String>,
     language: Option<String>,
     vocabulary: Option<Vec<vocabulary::VocabTerm>>,
-) -> Result<String, String> {
+) -> Result<transcribe::Transcription, String> {
     // Dictionary terms are used by Parakeet only; whisper gets them via `prompt`.
     let _ = &vocabulary;
     #[cfg(feature = "local-stt")]
@@ -392,6 +392,7 @@ async fn transcribe_buffer(
                             let _ = app_prog.emit_to("capsule", "capsule-stt-progress", progress);
                         },
                     )
+                    .map(transcribe::Transcription::from)
                 })
                 .await
                 .map_err(|e| format!("Task join error: {}", e))?
@@ -412,6 +413,7 @@ async fn transcribe_buffer(
                         )
                     } else {
                         transcribe::transcribe_parakeet(&engine, &samples, language.as_deref())
+                            .map(transcribe::Transcription::from)
                     }
                 })
                 .await
