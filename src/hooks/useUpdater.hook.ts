@@ -5,12 +5,36 @@ import { useAppStore } from "@/store/app.store";
 
 const CHECK_DELAY_MS = 5_000;
 const CHECK_INTERVAL_MS = 60 * 60 * 1_000; // 60 min
+/// The updater plugin has no timeout of its own: a stalled connection to the
+/// release feed would leave "Check for updates" spinning forever.
+const CHECK_TIMEOUT_MS = 30_000;
+const CHECK_GUARD_MS = 40_000;
 
-// Module-level singleton — shared across all hook instances so
+// Module-level singletons — shared across all hook instances so
 // downloadAndInstall always has the update object regardless of
-// which component called checkForUpdate.
+// which component called checkForUpdate, and so a manual check joins a
+// silent check that is already in flight instead of being ignored.
 let pendingUpdate: Awaited<ReturnType<typeof check>> | null = null;
+let inFlightCheck: Promise<Awaited<ReturnType<typeof check>>> | null = null;
 let autoCheckActive = false;
+
+function checkWithTimeout() {
+  let guardTimer: ReturnType<typeof setTimeout> | undefined;
+  const guard = new Promise<never>((_, reject) => {
+    guardTimer = setTimeout(() => reject(new UpdateCheckTimeout()), CHECK_GUARD_MS);
+  });
+  return Promise.race([check({ timeout: CHECK_TIMEOUT_MS }), guard]).finally(() => {
+    clearTimeout(guardTimer);
+    inFlightCheck = null;
+  });
+}
+
+class UpdateCheckTimeout extends Error {
+  constructor() {
+    super("Update check timed out");
+    this.name = "UpdateCheckTimeout";
+  }
+}
 
 export function useUpdater() {
   const setUpdateStatus = useAppStore((s) => s.setUpdateStatus);
@@ -20,11 +44,14 @@ export function useUpdater() {
   const addToast = useAppStore((s) => s.addToast);
 
   const checkForUpdate = useCallback(async (silent = false) => {
-    if (["checking", "downloading"].includes(useAppStore.getState().updateStatus)) return;
+    if (useAppStore.getState().updateStatus === "downloading") return;
+    // Reuse a check already in flight (the silent auto-check, typically) so a
+    // click during it still reports the outcome instead of doing nothing.
+    inFlightCheck ??= checkWithTimeout();
     try {
       setUpdateStatus("checking");
       setUpdateError(null);
-      const update = await check();
+      const update = await inFlightCheck;
 
       if (update) {
         pendingUpdate = update;
@@ -44,7 +71,11 @@ export function useUpdater() {
       console.error("[updater] Check failed:", err);
       if (silent) setUpdateStatus("idle");
       else {
-        setUpdateError("Could not check for updates. Check your connection and try again.");
+        setUpdateError(
+          err instanceof UpdateCheckTimeout
+            ? "The update server did not respond. Check your connection and try again."
+            : "Could not check for updates. Check your connection and try again.",
+        );
         setUpdateStatus("error");
       }
     }
