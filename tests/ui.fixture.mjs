@@ -405,6 +405,9 @@ export const fixture = ({
     calls: [],
     clipboard: "",
     failures: {},
+    setPolicy: (next) => {
+      policy = next;
+    },
     emit: (event, payload) => {
       for (const [key, listener] of listeners)
         if (listener.event === event)
@@ -465,6 +468,7 @@ export const fixture = ({
       if (command === "plugin:updater|check") return update;
       if (command === "plugin:updater|download") return 11;
       if (command === "plugin:updater|install") return null;
+      if (command === "plugin:process|restart") return null;
       if (command === "record_update_attempt") return null;
       if (command === "check_policy")
         return (

@@ -667,14 +667,15 @@ try {
     const result = await new AxeBuilder({ page: screen }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
     failures.push(...result.violations.map(v => ({ screen: name, id: v.id, targets: v.nodes.map(n => n.target), details: v.nodes.map(n => n.failureSummary) })));
   };
+  const rollbackPolicy = { update:'required', reason:'rollback', targetVersion:'0.0.24', message:null, cloudSttEnabled:true, banner:null, policySeq:7 };
+  const rollbackUpdate = { rid:9, currentVersion:'0.0.25', version:'0.0.24', date:null, body:null, rawJson:{} };
   const rollbackContext = await browser.newContext({ viewport:{width:1080,height:760}, reducedMotion:'reduce' });
   const rollback = await rollbackContext.newPage();
   rollback.on('pageerror', error => errors.push(error.message));
-  await rollback.addInitScript(fixture, {
-    policy: { update:'required', reason:'rollback', targetVersion:'0.0.24', message:null, cloudSttEnabled:true, banner:null, policySeq:7 },
-    update: { rid:9, currentVersion:'0.0.25', version:'0.0.24', date:null, body:null, rawJson:{} },
-  });
+  await rollback.clock.install();
+  await rollback.addInitScript(fixture, { policy: rollbackPolicy, update: rollbackUpdate });
   await rollback.goto(url);
+  await rollback.clock.runFor(6_000);
   const required = rollback.getByRole('dialog', {name:'Linty needs to switch versions'});
   await required.waitFor({ timeout: 15000 });
   await required.getByText('A recent update caused problems. Linty will go back to the previous version.', {exact:true}).waitFor();
@@ -688,7 +689,30 @@ try {
   assert.equal(await required.isVisible(), true, 'Escape does not dismiss a required update');
   await policyAudit(rollback, 'required-update');
   await rollback.screenshot({path:`${output}/update-required.png`,animations:'disabled'});
+  await rollback.evaluate(() => { window.__QA__.calls.length = 0; });
+  await rollback.clock.runFor(31_000);
+  await rollback.waitForFunction(() => window.__QA__.calls.includes('plugin:process|restart'));
+  const installCalls = await rollback.evaluate(() => window.__QA__.calls);
+  assert.ok(installCalls.indexOf('check_policy') < installCalls.indexOf('plugin:updater|install'), 'the policy is re-checked before installing');
+  assert.ok(installCalls.indexOf('record_update_attempt') < installCalls.indexOf('plugin:process|restart'), 'the outcome is recorded before relaunching');
   await rollbackContext.close();
+
+  const withdrawnContext = await browser.newContext({ viewport:{width:1080,height:760}, reducedMotion:'reduce' });
+  const withdrawn = await withdrawnContext.newPage();
+  withdrawn.on('pageerror', error => errors.push(error.message));
+  await withdrawn.clock.install();
+  await withdrawn.addInitScript(fixture, { policy: rollbackPolicy, update: rollbackUpdate });
+  await withdrawn.goto(url);
+  await withdrawn.clock.runFor(6_000);
+  const waiting = withdrawn.getByRole('dialog', {name:'Linty needs to switch versions'});
+  await waiting.getByText(/Linty restarts once you’ve finished dictating/).waitFor();
+  await withdrawn.evaluate(() => window.__QA__.setPolicy({ update:'none', reason:null, targetVersion:null, message:null, cloudSttEnabled:true, banner:null, policySeq:8 }));
+  await withdrawn.clock.runFor(31_000);
+  await waiting.waitFor({ state: 'hidden' });
+  const withdrawnCalls = await withdrawn.evaluate(() => window.__QA__.calls);
+  assert.ok(!withdrawnCalls.includes('plugin:updater|install'), 'a withdrawn requirement is not installed');
+  assert.ok(!withdrawnCalls.includes('plugin:process|restart'));
+  await withdrawnContext.close();
 
   const noticeContext = await browser.newContext({ viewport:{width:1080,height:760}, reducedMotion:'reduce' });
   const notice = await noticeContext.newPage();

@@ -27,8 +27,19 @@ const BUSY_UPDATE_STATUSES = new Set(["downloading", "waiting", "installing"]);
 // silent check that is already in flight instead of being ignored.
 let pendingUpdate: Update | null = null;
 let inFlightCheck: Promise<Update | null> | null = null;
-let requiredInstallRunning = false;
+/// The update a required install is working on, if any.
+let activeRequiredUpdate: Update | null = null;
 let autoCheckActive = false;
+
+/// Each found Update is a Rust-side resource; close the one being replaced
+/// unless a required install is still using it.
+function replacePendingUpdate(next: Update | null) {
+  const previous = pendingUpdate;
+  pendingUpdate = next;
+  if (previous && previous !== next && previous !== activeRequiredUpdate) {
+    previous.close().catch(() => {});
+  }
+}
 
 /// Refresh the signed update policy first: the updater only offers what the
 /// policy allows (src-tauri/src/policy.rs). A manual check skips the staged
@@ -101,8 +112,8 @@ function progressHandler() {
 /// Download now, install once dictation is quiet, then restart. The blocking
 /// screen (UpdateRequired) shows each step; failures leave a retry there.
 async function installRequiredUpdate(update: Update) {
-  if (requiredInstallRunning) return;
-  requiredInstallRunning = true;
+  if (activeRequiredUpdate) return;
+  activeRequiredUpdate = update;
   const store = useAppStore.getState();
   try {
     store.setUpdateError(null);
@@ -117,6 +128,14 @@ async function installRequiredUpdate(update: Update) {
       QUIET_BEFORE_INSTALL_MS,
     );
 
+    // The policy may have been paused or withdrawn while this waited.
+    await refreshPolicy(false);
+    if (!isRequiredUpdate(useAppStore.getState().policy, update.version)) {
+      store.setUpdateRequired(false);
+      store.setUpdateStatus("idle");
+      return;
+    }
+
     store.setUpdateStatus("installing");
     await update.install();
     await recordAttempt(update, "installed");
@@ -128,7 +147,8 @@ async function installRequiredUpdate(update: Update) {
     store.setUpdateError("The update could not be installed. Check your connection and try again.");
     store.setUpdateStatus("error");
   } finally {
-    requiredInstallRunning = false;
+    activeRequiredUpdate = null;
+    if (pendingUpdate !== update) update.close().catch(() => {});
   }
 }
 
@@ -151,8 +171,8 @@ export function useUpdater() {
       setUpdateError(null);
       const update = await inFlightCheck;
 
+      replacePendingUpdate(update);
       if (update) {
-        pendingUpdate = update;
         setUpdateVersion(update.version);
         setUpdateCurrentVersion(update.currentVersion);
         const required = isRequiredUpdate(useAppStore.getState().policy, update.version);
@@ -167,7 +187,6 @@ export function useUpdater() {
           message: `Update v${update.version} available`,
         });
       } else {
-        pendingUpdate = null;
         setUpdateVersion(null);
         setUpdateCurrentVersion(null);
         setUpdateRequired(false);
