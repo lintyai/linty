@@ -175,7 +175,7 @@ jobs:
           # Force update (docs/runbooks/force-update.md): copies below
           # minimum_version must install this release. Keep the minimum the
           # current latest release requires; a forced release raises it.
-          PREVIOUS_MINIMUM=$(curl -fsSL --max-time 30 https://github.com/lintyai/linty/releases/latest/download/latest.json | jq -r '.minimum_version // empty' || true)
+          PREVIOUS_MINIMUM=$(curl -fsSL --max-time 30 "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/latest.json" | jq -r '.minimum_version // empty' || true)
           if [ "$FORCE_UPDATE" = "true" ]; then
             MINIMUM="$VERSION"
           else
@@ -187,7 +187,7 @@ jobs:
             --arg notes "Linty v${VERSION}" \
             --arg pub_date "$PUB_DATE" \
             --arg signature "$SIGNATURE" \
-            --arg url "https://github.com/lintyai/linty/releases/download/v${VERSION}/${TAR_GZ_NAME}" \
+            --arg url "https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${TAR_GZ_NAME}" \
             --arg minimum "$MINIMUM" \
             '{version: $version, notes: $notes, pub_date: $pub_date,
               platforms: {"darwin-aarch64": {signature: $signature, url: $url}}}

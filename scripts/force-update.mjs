@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { minimumVersion, normalizeVersion, withMinimumVersion } from "../src/lib/force-update.util.ts";
 
-const REPO = "lintyai/linty";
+const REPO = "shekhardtu/linty";
 const LATEST_MANIFEST = `https://github.com/${REPO}/releases/latest/download/latest.json`;
 const PROPAGATION_MS = 120_000;
 

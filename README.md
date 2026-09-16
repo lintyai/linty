@@ -1,113 +1,155 @@
-# Linty
-
-Voice-to-text for macOS. Hold **fn**, speak, release — transcribed text is pasted instantly.
+<p align="center">
+  <img src="src-tauri/icons/icon.png" alt="Linty" width="104" height="104" />
+</p>
+<h1 align="center">Linty</h1>
+<p align="center"><strong>Privacy first. Your voice, your Mac, your words.</strong><br />Open-source dictation with offline Whisper and Parakeet. Hold a key, speak, release to paste.</p>
 
 <p align="center">
-  <img src="src-tauri/icons/icon.png" alt="Linty" width="128" />
+  <a href="https://github.com/shekhardtu/linty/releases"><img alt="Total release downloads" src="https://img.shields.io/github/downloads/shekhardtu/linty/total?style=flat-square&label=downloads&color=28756f" /></a>
+  <a href="https://github.com/shekhardtu/linty/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/shekhardtu/linty?style=flat-square&color=28756f" /></a>
+  <a href="https://github.com/shekhardtu/linty/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/shekhardtu/linty?style=flat-square&color=28756f" /></a>
+  <a href="https://github.com/shekhardtu/linty/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/shekhardtu/linty?style=flat-square&color=28756f" /></a>
+  <a href="https://github.com/shekhardtu/linty/actions/workflows/checks.yml"><img alt="Checks" src="https://img.shields.io/github/actions/workflow/status/shekhardtu/linty/checks.yml?branch=main&style=flat-square&label=checks" /></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/shekhardtu/linty?style=flat-square&color=28756f" /></a>
+  <img alt="macOS 14 or later" src="https://img.shields.io/badge/macOS-14%2B-425c6b?style=flat-square&logo=apple&logoColor=white" />
+  <img alt="Apple Silicon M1 or newer" src="https://img.shields.io/badge/Apple_Silicon-M1%2B-425c6b?style=flat-square" />
+</p>
+<p align="center">
+  <a href="https://github.com/shekhardtu/linty/releases/latest"><strong>Download for Mac</strong></a> ·
+  <a href="https://linty.ai">Website</a> ·
+  <a href="#measured-performance">Benchmarks</a> ·
+  <a href="#build-with-me">Build with me</a>
 </p>
 
-## Features
+## How Linty compares
 
-- **Hold fn to record** — release to transcribe and auto-paste
-- **Local transcription** — on-device Whisper models with Metal GPU acceleration
-- **Cloud transcription** — Groq Whisper Large v3 API for fast results
-- **Zero-copy audio** — samples stay in Rust, transcribed in-place, never cross IPC
-- **Floating capsule** — always-on-top overlay shows recording status and waveform
-- **Clipboard-safe** — snapshots and restores your clipboard around each paste
-- **Privacy first** — audio never leaves your Mac when using local mode
+Privacy first means you can dictate without sending your speech to a server. Linty keeps local engines, history, and the source code in your control. Other tools offer different platform coverage and workflows:
 
-## Requirements
+| | **Linty** | **VoiceInk** | **Superwhisper** | **Wispr Flow** |
+|---|---|---|---|---|
+| Offline speech recognition | Whisper Turbo Q5 and Parakeet TDT v3 | Local models | Local Whisper and Parakeet options | Requires an internet connection |
+| Cloud speech recognition | Optional Groq, your API key | Optional cloud providers | Optional cloud models | Cloud processing |
+| Desktop availability | macOS 14+, Apple Silicon | macOS | macOS and Windows | macOS and Windows |
+| Source / access | **MIT; free app and source** | GPL-3.0 source; paid packaged app | Free tier and paid Pro | Free tier and paid plans |
+| Build or modify the app yourself | Yes | Yes | Use the vendor's app | Use the vendor's app |
 
-- macOS 13.0+  (Apple Silicon)
-- Microphone permission
+Comparison checked **17 September 2026** against the projects' own documentation: [VoiceInk](https://github.com/Beingpax/VoiceInk), [Superwhisper models](https://superwhisper.com/models) and [downloads](https://superwhisper.com/download), [Wispr Flow requirements](https://docs.wisprflow.ai/articles/1036674442-supported-devices-and-system-requirements) and [internet requirement](https://docs.wisprflow.ai/articles/4048537120-what-to-expect-from-flow-accuracy-and-known-limitations). This is a feature comparison, not a head-to-head speed or accuracy benchmark. Features and plans can change.
 
-## Install
+## Measured performance
 
-Download the latest `.dmg` from [Releases](https://github.com/lintyai/linty/releases), open it, and drag **Linty** to Applications.
+**Thirty-minute audio file → 4.97 seconds with Parakeet, 96.62 seconds with Whisper Turbo Q5** in our repeat-inference test.
 
-On first launch, grant Microphone and Accessibility permissions when prompted.
+Measured **16 September 2026** on **Apple M3 Pro, 18 GiB unified memory, 11 CPU cores, macOS 26.5**, connected to power. The corpus is synthetic English with pauses, processed directly from WAV files. Models were already downloaded; these are inference timings, excluding model loading, recording time, the UI, and paste.
+
+| Audio length | Parakeet TDT v3 | Whisper Large v3 Turbo Q5 |
+|---|---:|---:|
+| 1 minute | 0.22 s | 3.63 s |
+| 5 minutes | 0.88 s | 16.43 s |
+| 10 minutes | 1.72 s | 32.19 s |
+| 20 minutes | 3.30 s | 63.82 s |
+| 30 minutes | **4.97 s** | **96.62 s** |
+
+**Process resources during the 30-minute file test:**
+
+| Measurement | Parakeet TDT v3 | Whisper Turbo Q5 |
+|---|---:|---:|
+| Average CPU during repeat inference | 365.4% | 5.8% |
+| Sampled peak CPU, including model loading | 402.1% | 474.3% |
+| Peak resident memory (RSS) | 352.4 MiB | 968.1 MiB |
+| Peak physical footprint | 264.4 MiB | 950.5 MiB |
+| Neural Engine footprint, reported separately | 467.7 MiB | — |
+| Word error on this synthetic 30-minute file | 0.37% | 2.16% |
+
+CPU uses macOS's convention: **100% = one fully occupied core**. Whisper uses Metal; its low CPU average does not describe GPU utilization or power consumption. Memory figures cover the benchmark process, not the complete app and system. Neural Engine and process memory use different accounting rules; do not sum the columns.
+
+These are single repeat runs on one machine, not typical-user latency or accuracy guarantees. Model loading can add time: the initial Parakeet load in this suite took 15.83 seconds. Both engines completed files up to 30 minutes, but this does not certify a 30-minute live microphone session. Long recordings remain in memory until stopped; there is no fixed recording-duration cutoff.
+
+[Full methodology and limitations](docs/TRANSCRIPTION-CAPACITY.md) · [Raw CSV](docs/benchmarks/capacity-m3-pro-2026-09-16.csv) · [Quality regression results](docs/TRANSCRIPTION-GUARDS.md)
+
+## Install and choose a model
+
+| Platform | Status |
+|---|---|
+| macOS 14+ on Apple Silicon (M1 or newer) | Supported; download the ARM64 `.dmg` |
+| Intel Mac | No official installer currently provided |
+| Windows / Linux / iOS / Android | No supported application build currently provided |
+
+1. Download the latest **`.dmg`** from [GitHub Releases](https://github.com/shekhardtu/linty/releases/latest).
+2. Open it and drag **Linty** into **Applications**.
+3. Launch Linty and grant **Microphone** and **Accessibility** access.
+4. Download a local model, select your microphone and language, then hold **fn** to dictate into a text field. Release to transcribe and paste.
+
+Official releases are Developer ID signed and notarized by Apple. Local transcription needs no account or subscription. Optional cloud services use your API key and are subject to the provider's pricing and limits.
+
+| Available engine | Processing | Accelerator | Initial model download |
+|---|---|---|---|
+| **Parakeet TDT v3 (0.6B)** | Offline after download | CoreML / Apple Neural Engine via FluidAudio | About 500 MB, as estimated in the app |
+| **Whisper Large v3 Turbo Q5** | Offline after download | Metal via whisper.cpp | About 574 MB |
+| **Groq Whisper** | Cloud; internet and your API key required | Provider infrastructure | No local speech model |
+
+Download estimates describe disk transfer, not RAM requirements. Available memory, language, background noise, and microphone quality affect results. Additional Parakeet dictionary assets may be downloaded when vocabulary support is enabled.
+
+## The app
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="website/images/overview-dark.png" />
+  <img src="website/images/overview-light.png" alt="Linty Overview with estimated time saved, recent transcriptions, and dictation activity." width="1200" />
+</picture>
+<p align="center"><sub>Actual interface with illustrative data. Estimated time saved uses a 40 wpm typing baseline.</sub></p>
+
+- **Native menu bar controls:** switch microphone, engine, and language without opening the main window.
+- **Local history:** search, edit, and copy past transcriptions. By default, entries stay until you delete them; optional retention settings are available, and there is no 500-entry cap.
+- **Personal dictionary:** keep names and technical terms close to the transcription workflow.
+- **Overview:** see activity, app usage, and estimated time saved.
+- **Configurable shortcuts and recording feedback:** dictate into the apps you already use.
+
+## Privacy first
+
+- **Local speech recognition keeps audio on your Mac.** Once a model is downloaded, speech recognition works offline.
+- **Cloud features are optional and cross a clear boundary.** Groq transcription sends audio; cloud text refinement sends transcription text, even when speech recognition is local. Leave cloud features off for an entirely local dictation workflow.
+- **History stays local; credentials use macOS Keychain.** Read the [history storage](docs/HISTORY-STORAGE.md) and [credential storage](docs/CREDENTIAL-STORAGE.md) details.
+- **No app usage telemetry.** The download badge uses GitHub's total release-asset download counts across versions. Website downloads point to those same GitHub-hosted files. This includes installers, updater archives, and other release assets.
 
 ## Build from source
 
-### Prerequisites
-
-- [Rust](https://rustup.rs/) (stable)
-- [Node.js](https://nodejs.org/) 20+
-- [Yarn](https://yarnpkg.com/) 1.x
-- Xcode Command Line Tools
-
-### Development
+Use macOS 14+ on Apple Silicon, **Xcode 16+ with its command-line tools selected**, stable Rust, Node.js 24+, and Yarn 1.x. Parakeet requires the full Xcode toolchain.
 
 ```bash
-# Install frontend dependencies
-yarn install
-
-# Run in development mode (frontend HMR + Rust backend)
-yarn tauri dev
+git clone https://github.com/shekhardtu/linty.git
+cd linty
+yarn install --frozen-lockfile
+yarn tauri dev --features local-stt,parakeet
 ```
 
-### Production build
+The first native build downloads dependencies and compiles both engines. `yarn dev` runs only the frontend. You do not need the maintainer's signing credentials to run development mode.
 
 ```bash
-# Frontend TypeScript check + Vite build
+yarn test
 yarn build
-
-# Full macOS release build (requires signing identity + notarization credentials)
-source ~/.tokens
-yarn build:mac
-```
-
-### Rust-only checks
-
-```bash
 cd src-tauri
-cargo check --features local-stt
-cargo build --features local-stt
+cargo fmt --check
+cargo check --features local-stt,parakeet
 ```
 
-## Architecture
+Built with **Tauri 2 + Rust + React**, [whisper.cpp](https://github.com/ggml-org/whisper.cpp) through whisper-rs, and [FluidAudio](https://github.com/FluidInference/FluidAudio). See [Development setup](docs/DEV-SETUP.md) for release signing and architecture. Third-party engines and models retain their own licenses.
 
-```
-Frontend (React 19 + Zustand)  ←— IPC / Events —→  Backend (Rust + Tauri 2)
-     │                                                    │
-     ├── pages/                                           ├── audio.rs       (cpal capture)
-     ├── hooks/                                           ├── transcribe.rs  (Whisper / Groq)
-     ├── store/slices/                                    ├── fnkey.rs       (NSEvent fn key)
-     ├── services/                                        ├── permissions.rs (mic FFI)
-     └── components/                                      ├── clipboard.rs   (NSPasteboard)
-                                                          ├── paste.rs       (CGEvent Cmd+V)
-                                                          └── capsule.rs     (overlay panel)
-```
+## Build with me
 
-### Core flow
+I'm [Hari Shekhar](https://github.com/shekhardtu), and I'm building Linty around one principle: **privacy first**. If you care about useful, local software, come build with me. Let's make dictation better and explore what else we can create together.
 
-1. Fn key press → Rust emits `fnkey-pressed` → frontend starts recording
-2. Audio thread (cpal) captures 16kHz mono into a shared buffer
-3. Fn key release → `stop_recording` moves samples via `std::mem::take`
-4. `transcribe_buffer` reads samples directly from Rust state → returns text
-5. Clipboard snapshot → write text → simulate Cmd+V → restore clipboard
+Contributions that would make a difference:
 
-## Configuration
+- Test real speech across accents, languages, microphones, and different Macs; share reproducible, consented samples and measurements.
+- Improve long-recording recovery, reduce memory use, and measure full-app latency and battery cost.
+- Improve keyboard navigation, VoiceOver support, and the everyday recording experience.
+- Explore new local engines and platform support, or propose something we haven't thought of.
 
-Linty stores settings in `~/Library/Application Support/ai.linty.desktop/`.
+[Read the contributor guide](CONTRIBUTING.md) · [Find an issue](https://github.com/shekhardtu/linty/issues) · [Start a discussion](https://github.com/shekhardtu/linty/discussions) · [Connect with me on GitHub](https://github.com/shekhardtu)
 
-| Setting | Options | Default |
-|---------|---------|---------|
-| STT Mode | `local` / `cloud` | `local` |
-| Whisper Model | Large Turbo Q5, Large Turbo, Large | Large Turbo Q5 |
-| Language | Auto-detect or specific | Auto |
-| Groq API Key | Your key (cloud mode) | — |
+If Linty is useful to you, **star the repository** so more people can find it. A clear bug report, documentation fix, or thoughtful idea is a contribution too.
 
-## CI/CD
+## Support, security, and license
 
-Pushing to `main` triggers the [Build macOS DMG](.github/workflows/build-dmg.yml) workflow:
+[Report a bug or request a feature](https://github.com/shekhardtu/linty/issues/new/choose). Remove private transcription text and credentials from reports. Use [private vulnerability reporting](https://github.com/shekhardtu/linty/security/advisories/new) for security issues; see [SECURITY.md](SECURITY.md).
 
-1. Auto-bumps patch version
-2. Builds with `--features local-stt`
-3. Signs with Developer ID certificate
-4. Notarizes `.app` and `.dmg` with Apple
-5. Creates a GitHub Release with artifacts + updater manifest
-
-## License
-
-[MIT](LICENSE)
+Linty is licensed under [MIT](LICENSE).

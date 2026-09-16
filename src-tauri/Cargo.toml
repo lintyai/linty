@@ -1,8 +1,11 @@
 [package]
 name = "linty"
 version = "0.0.41"
-description = "Voice-to-text with global hotkey"
-authors = ["you"]
+description = "Privacy-first dictation for macOS with offline Whisper and Parakeet"
+authors = ["Hari Shekhar"]
+license = "MIT"
+repository = "https://github.com/shekhardtu/linty"
+homepage = "https://linty.ai"
 edition = "2021"
 
 [lib]

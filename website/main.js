@@ -74,11 +74,11 @@
   reducedMotion.addEventListener('change', event => { if (event.matches && play.disabled) finish(); });
 
   // Preserve the release page as the fallback; no visitor tracking or account needed.
-  fetch('https://api.github.com/repos/lintyai/linty/releases/latest', typeof AbortSignal.timeout === 'function' ? { signal: AbortSignal.timeout(6000) } : {})
+  fetch('https://api.github.com/repos/shekhardtu/linty/releases/latest', typeof AbortSignal.timeout === 'function' ? { signal: AbortSignal.timeout(6000) } : {})
     .then(response => response.ok ? response.json() : Promise.reject())
     .then(release => {
       const asset = release.assets?.find(asset => /\.dmg$/.test(asset.name) && /aarch64|arm64|universal/i.test(asset.name));
-      if (!asset?.browser_download_url?.startsWith('https://github.com/lintyai/linty/releases/download/')) return;
+      if (!asset?.browser_download_url?.startsWith('https://github.com/shekhardtu/linty/releases/download/')) return;
       document.querySelectorAll('[data-download]').forEach(link => { link.href = asset.browser_download_url; });
     }).catch(() => {});
 })();

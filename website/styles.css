@@ -191,3 +191,6 @@ details > p { color: var(--muted); font-size: 13px; margin-top: 14px; padding-ri
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *,*::before,*::after { transition: none !important; animation: none !important; } }
 @media (forced-colors: active) { .brand-mark { background: CanvasText; } .product-stage::before { display: none; } button[aria-pressed='true'] { outline: 1px solid Highlight; } }
+
+.download-badge { display: flex; align-items: center; width: 140px; height: 20px; margin-top: 16px; }
+.download-badge img { width: auto; height: 20px; max-width: 100%; }

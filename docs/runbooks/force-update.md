@@ -20,7 +20,7 @@ node scripts/force-update.mjs --latest          # everyone below the latest rele
 node scripts/force-update.mjs 0.0.40            # everyone below 0.0.40
 ```
 
-Add `--dry-run` to see the new `latest.json` without uploading. The script uses the GitHub CLI, so `gh auth status` must show write access to `lintyai/linty`. It waits until GitHub serves the change.
+Add `--dry-run` to see the new `latest.json` without uploading. The script uses the GitHub CLI, so `gh auth status` must show write access to `shekhardtu/linty`. It waits until GitHub serves the change.
 
 For a release that is about to be built, run the "Build macOS DMG" workflow by hand (Actions → Build macOS DMG → Run workflow) with **Require every older copy to install this release** ticked. The new release is published with `minimum_version` set to its own version.
 
