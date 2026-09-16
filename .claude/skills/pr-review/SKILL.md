@@ -15,7 +15,7 @@ PR -> Triage -> Specialized Passes -> Filter & Dedupe -> Line-Level Output
 
 **Read-only.** Does NOT modify code, push commits, or resolve threads.
 
-**Input**: PR number or URL (e.g., `18` or `https://github.com/lintyai/linty/pull/18`)
+**Input**: PR number or URL (e.g., `18` or `https://github.com/shekhardtu/linty/pull/18`)
 
 ---
 
@@ -26,25 +26,25 @@ PR -> Triage -> Specialized Passes -> Filter & Dedupe -> Line-Level Output
 ### 1.1 Auth & Metadata
 ```bash
 gh auth status
-gh pr view <NUMBER> --repo lintyai/linty --json number,title,headRefName,baseRefName,author,reviewRequests,labels,state,url,body,commits,additions,deletions,changedFiles,files
-gh pr diff <NUMBER> --repo lintyai/linty --name-only
-gh pr diff <NUMBER> --repo lintyai/linty
-gh pr view <NUMBER> --repo lintyai/linty --json comments,commits
+gh pr view <NUMBER> --repo shekhardtu/linty --json number,title,headRefName,baseRefName,author,reviewRequests,labels,state,url,body,commits,additions,deletions,changedFiles,files
+gh pr diff <NUMBER> --repo shekhardtu/linty --name-only
+gh pr diff <NUMBER> --repo shekhardtu/linty
+gh pr view <NUMBER> --repo shekhardtu/linty --json comments,commits
 ```
 
 ### 1.2 Checkout & Context
 ```bash
-gh pr checkout <NUMBER> --repo lintyai/linty
+gh pr checkout <NUMBER> --repo shekhardtu/linty
 ```
 
 **GitHub Issues**: If PR body references `#<issue>` or `closes #<issue>`:
 ```bash
-gh issue view <number> --repo lintyai/linty --json title,body,labels
+gh issue view <number> --repo shekhardtu/linty --json title,body,labels
 ```
 
 ### 1.3 Check for Existing Inspection
 ```bash
-gh api repos/lintyai/linty/pulls/{pr_number}/reviews --jq '
+gh api repos/shekhardtu/linty/pulls/{pr_number}/reviews --jq '
   .[] | select(.body | contains("PR Inspection Report")) | {id: .id, submitted_at: .submitted_at}
 '
 ```
@@ -281,7 +281,7 @@ cat > /tmp/pr-review-payload.json <<'PAYLOAD_EOF'
 }
 PAYLOAD_EOF
 
-gh api repos/lintyai/linty/pulls/{pr_number}/reviews \
+gh api repos/shekhardtu/linty/pulls/{pr_number}/reviews \
   -X POST \
   --input /tmp/pr-review-payload.json
 
@@ -339,7 +339,7 @@ For findings without code suggestion, use `**Action**: What to do.` instead of d
 - <positive 2>
 
 ---
-*Reviewed by [`/pr-review`](https://github.com/lintyai/linty/blob/main/.claude/skills/pr-review/SKILL.md)*
+*Reviewed by [`/pr-review`](https://github.com/shekhardtu/linty/blob/main/.claude/skills/pr-review/SKILL.md)*
 ```
 
 ---
@@ -472,5 +472,5 @@ Self-Healing Log:
 
 Check for new file paths not in risk classification:
 ```bash
-gh pr view <number> --repo lintyai/linty --json files --jq '.files[].path' | xargs -I{} dirname {} | sort -u
+gh pr view <number> --repo shekhardtu/linty --json files --jq '.files[].path' | xargs -I{} dirname {} | sort -u
 ```

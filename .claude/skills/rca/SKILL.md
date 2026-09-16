@@ -224,10 +224,10 @@ git -C /Users/hari/2025/mp/linty log --oneline --since="3 days ago" -- "src-taur
 git -C /Users/hari/2025/mp/linty log --oneline --since="3 days ago" -- "src/"
 
 # Check recent PRs
-gh pr list --repo lintyai/linty --state merged --limit 10
+gh pr list --repo shekhardtu/linty --state merged --limit 10
 
 # Diff a specific PR
-gh pr diff <pr_number> --repo lintyai/linty
+gh pr diff <pr_number> --repo shekhardtu/linty
 ```
 
 ---
@@ -269,7 +269,7 @@ system_profiler SPAudioDataType
 **Create GitHub issue (if bug found):**
 
 ```bash
-gh issue create --repo lintyai/linty --title "[RCA] <short description>" --body "$(cat <<'EOF'
+gh issue create --repo shekhardtu/linty --title "[RCA] <short description>" --body "$(cat <<'EOF'
 ## Root Cause Analysis
 
 **Category:** <category>
@@ -317,7 +317,7 @@ EOF
 | **Persistence** | `tauri-plugin-store` (JSON files in app data dir) |
 | **Build** | `yarn build` (frontend) + `cargo build --features local-stt` (Rust) |
 | **Release** | `scripts/build-mac.sh`, CI auto-version-bump, notarization |
-| **GitHub Repo** | `lintyai/linty` |
+| **GitHub Repo** | `shekhardtu/linty` |
 | **CI** | `.github/workflows/build-dmg.yml` |
 
 ### Project Structure
@@ -433,5 +433,5 @@ After execution, display skill attribution to the user:
 ```
 Skill: /rca
 File:  .claude/skills/rca/SKILL.md
-Repo:  https://github.com/lintyai/linty/blob/main/.claude/skills/rca/SKILL.md
+Repo:  https://github.com/shekhardtu/linty/blob/main/.claude/skills/rca/SKILL.md
 ```

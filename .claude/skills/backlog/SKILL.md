@@ -7,7 +7,7 @@ description: Capture feature ideas, tech debt, and bugs into a GitHub Issue back
 
 # Backlog Register
 
-Lightweight skill to capture ideas into **GitHub Issues** on `lintyai/linty`. Each issue has enough codebase context that someone can copy-paste it into `/build` and start implementing.
+Lightweight skill to capture ideas into **GitHub Issues** on `shekhardtu/linty`. Each issue has enough codebase context that someone can copy-paste it into `/build` and start implementing.
 
 ---
 
@@ -88,7 +88,7 @@ From research, compile:
 ### 4.1 Create GitHub Issue
 
 ```bash
-gh issue create --repo lintyai/linty \
+gh issue create --repo shekhardtu/linty \
   --title "<title>" \
   --label "<type>,<priority>" \
   --body "$(cat <<'EOF'
@@ -129,13 +129,13 @@ EOF
 
 Ensure these labels exist on the repo:
 ```bash
-gh label create "feature" --color "0E8A16" --repo lintyai/linty 2>/dev/null || true
-gh label create "tech-debt" --color "FBCA04" --repo lintyai/linty 2>/dev/null || true
-gh label create "bug" --color "D73A4A" --repo lintyai/linty 2>/dev/null || true
-gh label create "P1" --color "B60205" --repo lintyai/linty 2>/dev/null || true
-gh label create "P2" --color "FF9F1C" --repo lintyai/linty 2>/dev/null || true
-gh label create "P3" --color "0075CA" --repo lintyai/linty 2>/dev/null || true
-gh label create "P4" --color "CFD3D7" --repo lintyai/linty 2>/dev/null || true
+gh label create "feature" --color "0E8A16" --repo shekhardtu/linty 2>/dev/null || true
+gh label create "tech-debt" --color "FBCA04" --repo shekhardtu/linty 2>/dev/null || true
+gh label create "bug" --color "D73A4A" --repo shekhardtu/linty 2>/dev/null || true
+gh label create "P1" --color "B60205" --repo shekhardtu/linty 2>/dev/null || true
+gh label create "P2" --color "FF9F1C" --repo shekhardtu/linty 2>/dev/null || true
+gh label create "P3" --color "0075CA" --repo shekhardtu/linty 2>/dev/null || true
+gh label create "P4" --color "CFD3D7" --repo shekhardtu/linty 2>/dev/null || true
 ```
 
 ---
@@ -144,12 +144,12 @@ gh label create "P4" --color "CFD3D7" --repo lintyai/linty 2>/dev/null || true
 
 When the prompt contains `mark #NNN <status>`:
 
-1. Fetch the issue: `gh issue view NNN --repo lintyai/linty`
+1. Fetch the issue: `gh issue view NNN --repo shekhardtu/linty`
 2. Update based on status:
-   - `done` → `gh issue close NNN --repo lintyai/linty`
-   - `in-progress` → `gh issue edit NNN --add-label "in-progress" --repo lintyai/linty`
-   - `cancelled` → `gh issue close NNN --reason "not planned" --repo lintyai/linty`
-   - `open` → `gh issue reopen NNN --repo lintyai/linty`
+   - `done` → `gh issue close NNN --repo shekhardtu/linty`
+   - `in-progress` → `gh issue edit NNN --add-label "in-progress" --repo shekhardtu/linty`
+   - `cancelled` → `gh issue close NNN --reason "not planned" --repo shekhardtu/linty`
+   - `open` → `gh issue reopen NNN --repo shekhardtu/linty`
 3. Display confirmation
 
 ---
@@ -170,7 +170,7 @@ Priority:   <P1-P4>
 Complexity: <XS-XL>
 Files:      <N> key files identified
 
-URL: https://github.com/lintyai/linty/issues/NNN
+URL: https://github.com/shekhardtu/linty/issues/NNN
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -190,7 +190,7 @@ File:  .claude/skills/backlog/SKILL.md
 Issue:  #NNN — <Title>
 Status: <old status> → <new status>
 
-URL: https://github.com/lintyai/linty/issues/NNN
+URL: https://github.com/shekhardtu/linty/issues/NNN
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

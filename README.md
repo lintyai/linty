@@ -15,7 +15,7 @@
   <img alt="Apple Silicon M1 or newer" src="https://img.shields.io/badge/Apple_Silicon-M1%2B-425c6b?style=flat-square" />
 </p>
 <p align="center">
-  <a href="https://github.com/shekhardtu/linty/releases/latest"><strong>Download for Mac</strong></a> ·
+  <a href="https://github.com/shekhardtu/linty/releases/latest/download/Linty_aarch64.dmg"><strong>Download for Mac</strong></a> ·
   <a href="https://linty.ai">Website</a> ·
   <a href="#measured-performance">Benchmarks</a> ·
   <a href="#build-with-me">Build with me</a>
@@ -74,7 +74,7 @@ These are single repeat runs on one machine, not typical-user latency or accurac
 | Intel Mac | No official installer currently provided |
 | Windows / Linux / iOS / Android | No supported application build currently provided |
 
-1. Download the latest **`.dmg`** from [GitHub Releases](https://github.com/shekhardtu/linty/releases/latest).
+1. [Download Linty for Mac](https://github.com/shekhardtu/linty/releases/latest/download/Linty_aarch64.dmg) — the installer downloads directly.
 2. Open it and drag **Linty** into **Applications**.
 3. Launch Linty and grant **Microphone** and **Accessibility** access.
 4. Download a local model, select your microphone and language, then hold **fn** to dictate into a text field. Release to transcribe and paste.

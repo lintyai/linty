@@ -551,7 +551,7 @@ Present the complete evaluation directly to the user. Structure the findings as 
 - <Link to codebase files>
 
 ---
-*Evaluated by [`/evaluate`](https://github.com/lintyai/linty/blob/main/.claude/skills/evaluate/SKILL.md)*
+*Evaluated by [`/evaluate`](https://github.com/shekhardtu/linty/blob/main/.claude/skills/evaluate/SKILL.md)*
 ```
 
 ---

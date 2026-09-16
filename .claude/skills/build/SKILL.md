@@ -435,5 +435,5 @@ For the **PR description** (if `/ship` was chained), ensure skill attribution is
 
 ```markdown
 ---
-*Built by [`/build`](https://github.com/lintyai/linty/blob/main/.claude/skills/build/SKILL.md)*
+*Built by [`/build`](https://github.com/shekhardtu/linty/blob/main/.claude/skills/build/SKILL.md)*
 ```

@@ -22,7 +22,7 @@ Analyzes code in the Linty project against known patterns and project convention
 ## Project Context
 
 **Single app**: Tauri v2 + React 19 + Rust macOS voice-to-text desktop app
-**GitHub**: `lintyai/linty`
+**GitHub**: `shekhardtu/linty`
 
 | Layer | Path | Stack |
 |-------|------|-------|
@@ -168,7 +168,7 @@ Present findings grouped by severity, then by category.
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  CODE OPTIMIZER REPORT — lintyai/linty
+  CODE OPTIMIZER REPORT — shekhardtu/linty
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Files analyzed: <count>
