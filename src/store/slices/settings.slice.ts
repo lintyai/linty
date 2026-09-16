@@ -1,5 +1,6 @@
 import type { StateCreator } from "zustand";
 import { DEFAULT_TYPING_SPEED } from "@/lib/payoff.util";
+import type { ReformatContext, ReformatStyle } from "@/types/reformat.types";
 
 export type SttMode = "cloud" | "local";
 export type ThemePreference = "light" | "dark" | "system";
@@ -60,6 +61,14 @@ export interface SettingsSlice {
   groqApiKey: string;
   sttMode: SttMode;
   correctionEnabled: boolean;
+  reformatEnabled: boolean;
+  reformatStyle: ReformatStyle;
+  reformatLists: boolean;
+  reformatContext: ReformatContext;
+  setReformatEnabled: (enabled: boolean) => void;
+  setReformatStyle: (style: ReformatStyle) => void;
+  setReformatLists: (enabled: boolean) => void;
+  setReformatContext: (context: ReformatContext) => void;
   localModelPath: string | null;
   isLocalModelDownloaded: boolean;
   theme: ThemePreference;
@@ -110,6 +119,14 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   groqApiKey: "",
   sttMode: "local",
   correctionEnabled: true,
+  reformatEnabled: false,
+  reformatStyle: "semi-formal",
+  reformatLists: true,
+  reformatContext: "auto",
+  setReformatEnabled: (reformatEnabled) => set({ reformatEnabled }),
+  setReformatStyle: (reformatStyle) => set({ reformatStyle }),
+  setReformatLists: (reformatLists) => set({ reformatLists }),
+  setReformatContext: (reformatContext) => set({ reformatContext }),
   localModelPath: null,
   isLocalModelDownloaded: false,
   theme: "system",

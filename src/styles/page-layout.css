@@ -130,6 +130,117 @@
   flex-direction: column;
   gap: 24px;
 }
+
+/* Dictation starts with one decision; dependent controls are disclosed on demand. */
+.dictation-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.dictation-settings .setting-row,
+.dictation-settings .setting-toggle {
+  padding: 0;
+  min-height: 44px;
+  gap: 24px;
+}
+.dictation-settings .setting-row > div:first-child {
+  gap: 8px;
+}
+.dictation-settings .setting-row > div:last-child {
+  margin-left: 0;
+}
+.dictation-settings .setting-row + .setting-row {
+  border-top: 0;
+}
+.cleanup-choice .select-trigger {
+  --select-width: 212px;
+}
+.dictation-settings .setting-row > div:first-child > span:last-child,
+.dictation-settings .setting-toggle > div:first-child > span:last-child {
+  line-height: 1.7;
+}
+.dictation-settings .setting-toggle {
+  padding: 16px 20px;
+  border-radius: 6px;
+}
+.dictation-settings .setting-toggle > div:first-child {
+  gap: 8px;
+}
+.dictation-settings .field-label {
+  white-space: normal;
+}
+.cleanup-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.cleanup-caption {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.75;
+}
+.cleanup-options {
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: 24px;
+}
+.cleanup-options > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 550;
+  list-style: none;
+  cursor: pointer;
+}
+.cleanup-options > summary::-webkit-details-marker { display: none; }
+.cleanup-options[open] > summary > svg { rotate: 180deg; }
+.cleanup-options-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 24px;
+}
+.cleanup-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 24px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-control);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.75;
+}
+.cleanup-setup-actions,
+.cleanup-instructions-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.cleanup-setup-actions { justify-content: flex-start; }
+.cleanup-setup progress { width: 100%; }
+.cleanup-error { color: var(--color-error); font-size: 12px; line-height: 1.75; }
+.cleanup-instructions { display: flex; flex-direction: column; gap: 16px; }
+.cleanup-instructions textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 140px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  line-height: 1.75;
+}
+@media (max-width: 800px) {
+  .dictation-settings .setting-row { align-items: flex-start; gap: 16px; }
+  .cleanup-choice > .setting-row { flex-direction: column; }
+}
 .settings-form {
   display: flex;
   flex-direction: column;

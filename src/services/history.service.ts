@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store/app.store";
+import { settingsSaveFeedback } from "@/lib/settings-save-feedback";
 import type { TranscriptRecord } from "@/types/transcript.types";
 import type { CorrectionRecord } from "@/types/correction.types";
 import type {
@@ -78,7 +79,7 @@ export async function clearHistory() {
 export const previewRetention = (days: HistoryRetention) =>
   invoke<number>("history_retention_preview", { days });
 export const setHistoryRetention = (days: HistoryRetention) =>
-  mutateHistory<void>("history_set_retention", { days });
+  settingsSaveFeedback.run("historyRetention", () => mutateHistory<void>("history_set_retention", { days }));
 export const exportHistory = () =>
   invoke<{ count: number; path: string } | null>("history_export");
 export async function getCorrections(id: string) {

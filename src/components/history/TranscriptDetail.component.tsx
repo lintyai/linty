@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronLeft, Cloud, Cpu, X } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, X } from "lucide-react";
 import { copyTranscript } from "@/lib/transcript-clipboard.util";
 import { AppIcon } from "@/components/shared/AppIcon.component";
 import { useAppIcon } from "@/hooks/useAppIcons.hook";
@@ -13,7 +13,7 @@ import {
 import { getCorrections, updateTranscript } from "@/services/history.service";
 import { recordCorrection } from "@/services/user-corrections.service";
 import { diffCorrection } from "@/lib/correction-diff.util";
-import { formatDayLabel, formatDuration } from "@/lib/usage.util";
+import { formatDayLabel } from "@/lib/usage.util";
 import { CorrectionPanel } from "@/components/shared/CorrectionPanel.component";
 import {
   TranscriptCopyButton,
@@ -21,6 +21,7 @@ import {
 } from "@/components/shared/TranscriptActions.component";
 import type { CorrectionRecord } from "@/types/correction.types";
 import type { TranscriptRecord } from "@/types/transcript.types";
+import { ReformatDetails } from "./ReformatDetails.component";
 
 export function TranscriptDetail({
   transcript: selectedTranscript,
@@ -46,6 +47,9 @@ export function TranscriptDetail({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  const reformatted = selectedTranscript.reformatting?.enabled && selectedTranscript.reformatting.status === "applied";
+  const hasCorrections = reformatted || selectedTranscript.cloudRefinementStatus === "applied"
+    || Boolean(selectedTranscript.dictionaryApplied?.length) || selectedCorrections.length > 0;
 
   const selectedAppIcon = useAppIcon(selectedTranscript.application?.bundleId);
   const visibleTranscriptId = selectedTranscript.transcriptId;
@@ -57,7 +61,7 @@ export function TranscriptDetail({
       void getCorrections(visibleTranscriptId)
         .then((records) => {
           if (!stale) {
-            setSelectedCorrections(records);
+            setSelectedCorrections(records.filter((record) => record.pairs.length > 0));
             setCorrectionsLoaded(true);
           }
         })
@@ -109,7 +113,7 @@ export function TranscriptDetail({
       source: "edit",
       engine: selectedTranscript.engine,
       modelName: selectedTranscript.modelName,
-      language: transcriptionLanguage,
+      language: selectedTranscript.transcriptionLanguage ?? transcriptionLanguage,
       application: selectedTranscript.application ?? null,
       wordCount: diff.wordCount,
       changedRatio: diff.changedRatio,
@@ -301,74 +305,20 @@ export function TranscriptDetail({
         ) : (
           <p className="reading-text">{selectedTranscript.finalText}</p>
         )}
-        <div className="reading-facts" aria-label="Transcription details">
-          <span>
-            {selectedTranscript.engine === "cloud" ? (
-              <Cloud size={14} />
-            ) : (
-              <Cpu size={14} />
-            )}
-            {selectedTranscript.engine === "cloud" ? "Cloud" : "On-device"}
-          </span>
-          <span>{selectedTranscript.modelName}</span>
-          <span>
-            {formatDuration(selectedTranscript.durationSeconds)} audio ·{" "}
-            {(selectedTranscript.processingTimeMs / 1000).toFixed(1)}s
-            turnaround
-          </span>
-        </div>
-        {(selectedTranscript.sttTimeMs != null ||
-          (selectedTranscript.correctionTimeMs ?? 0) > 0) && (
-          <details className="processing-breakdown">
-            <summary>
-              Processing details <ChevronDown size={12} />
-            </summary>
-            <dl>
-              {selectedTranscript.sttTimeMs != null && (
-                <div>
-                  <dt>Speech recognition</dt>
-                  <dd>{(selectedTranscript.sttTimeMs / 1000).toFixed(1)}s</dd>
-                </div>
-              )}
-              {(selectedTranscript.correctionTimeMs ?? 0) > 0 && (
-                <div>
-                  <dt>Refinement</dt>
-                  <dd>
-                    {(selectedTranscript.correctionTimeMs! / 1000).toFixed(1)}s
-                  </dd>
-                </div>
-              )}
-            </dl>
-          </details>
-        )}
-        <section
+        {hasCorrections && <section
           className="reading-corrections"
           aria-labelledby="history-corrections-title"
           aria-busy={!correctionsLoaded}
         >
           <h2 id="history-corrections-title">Corrections</h2>
-          {correctionsError ? (
-            <p className="reading-note" role="alert">
-              Could not load corrections.{" "}
-              <button
-                type="button"
-                className="text-link"
-                onClick={() => setCorrectionsRetry((n) => n + 1)}
-              >
-                Retry
-              </button>
-            </p>
-          ) : selectedCorrections.length ? (
-            <CorrectionPanel
-              corrections={selectedCorrections}
-              entries={entries}
-              onAddToDictionary={addPairToDictionary}
-            />
-          ) : (
+          {reformatted && (
             <p className="reading-note">
-              {correctionsLoaded
-                ? "No corrections for this transcription."
-                : "Loading corrections…"}
+              <strong>S1-mini:</strong> Automatically reformatted this transcription.
+            </p>
+          )}
+          {selectedTranscript.cloudRefinementStatus === "applied" && (
+            <p className="reading-note">
+              <strong>Cloud refinement:</strong> Automatically refined this transcription.
             </p>
           )}
           {selectedTranscript.dictionaryApplied?.length ? (
@@ -379,13 +329,32 @@ export function TranscriptDetail({
                 .join(", ")}
             </p>
           ) : null}
-        </section>
+          {selectedCorrections.length > 0 && (
+            <>
+              <p className="reading-note"><strong>Your edits</strong></p>
+              <CorrectionPanel
+                corrections={selectedCorrections}
+                entries={entries}
+                onAddToDictionary={addPairToDictionary}
+              />
+            </>
+          )}
+        </section>}
+        {correctionsError && (
+          <p className="reading-note" role="alert">
+            Could not load your edits.{" "}
+            <button type="button" className="text-link" onClick={() => setCorrectionsRetry((n) => n + 1)}>
+              Retry
+            </button>
+          </p>
+        )}
         <details className="original-transcript">
           <summary>
             Original transcription <ChevronDown size={14} />
           </summary>
           <p>{selectedTranscript.rawText}</p>
         </details>
+        <ReformatDetails transcript={selectedTranscript} />
       </div>
     </section>
   );

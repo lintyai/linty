@@ -41,6 +41,12 @@ whisper-rs = { version = "0.15", features = ["metal"], optional = true }
 hound = { version = "3.5", optional = true }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 tauri-plugin-dialog = "2"
+anyhow = "1"
+candle-core = "=0.11.0"
+candle-transformers = "=0.11.0"
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
+sha2 = "0.10"
+whatlang = "0.18"
 
 # macOS-only dependencies
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -49,6 +55,8 @@ block2 = "0.5"
 cocoa = "0.26"          # Activation policy (Dock/menu bar)
 objc = "0.2"
 security-framework = "3.7"
+candle-core = { version = "=0.11.0", features = ["metal"] }
+candle-transformers = { version = "=0.11.0", features = ["metal"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

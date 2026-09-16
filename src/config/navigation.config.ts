@@ -105,10 +105,10 @@ export const SETTINGS_SECTIONS = [
   {
     id: "general",
     label: "Dictation",
-    description: "Choose how your words are refined and delivered.",
+    description: "Keep your words as spoken, or tidy them automatically.",
     icon: Sparkles,
     keywords:
-      "refine transcription grammar punctuation correction instructions clipboard paste output",
+      "refine transcription grammar punctuation correction instructions clipboard paste output reformat s1 mini Superwhisper local cleanup lists",
   },
   {
     id: "audio",

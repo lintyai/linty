@@ -122,7 +122,7 @@ try {
 
   for (const theme of ['light', 'dark']) {
     await nav('Settings');
-    await choose('Settings category', 'Appearance');
+    await nav('Appearance');
     await page.getByRole('button', { name: theme === 'light' ? 'Light' : 'Dark', exact: true }).click();
     await page.emulateMedia({ contrast: 'more', reducedMotion: 'reduce' });
     for (const name of ['Overview', 'History', 'Apps', 'Dictionary', 'Shortcuts', 'System Check', 'Settings', 'About']) {

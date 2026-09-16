@@ -10,6 +10,8 @@ import { applyDictionary, engineTerms, promptWithDictionary } from "@/lib/dictio
 import { currentDictation, ownsDictation, finishEmptyDictation, GROQ_SETUP_ERROR, recoverDictation } from "@/services/dictation-recovery.service";
 import { transcriptionTimeoutMs } from "@/lib/dictation-session";
 import { noteDictionaryUse } from "@/services/dictionary.service";
+import { initialReformatMetrics, reformatApplied, reformatOptions } from "@/lib/reformat.util";
+import type { ReformatResult } from "@/types/reformat.types";
 
 
 function emitCapsule(state: string, text?: string, error?: string) {
@@ -26,6 +28,10 @@ export function useTranscription() {
     groqApiKey,
     sttMode,
     correctionEnabled,
+    reformatEnabled,
+    reformatStyle,
+    reformatLists,
+    reformatContext,
     whisperPrompt,
     correctionPrompt,
     transcriptionLanguage,
@@ -125,10 +131,40 @@ export function useTranscription() {
 
         setRawTranscript(transcript);
 
-        // Step 2: LLM correction (cloud mode only)
+        // Step 2: local reformatting takes precedence over cloud correction.
         let finalResult = transcript;
         let correctionTimeMs = 0;
-        if (correctionEnabled && groqApiKey && effectiveMode === "cloud") {
+        let reformatTimeMs = 0;
+        let reformattedText: string | undefined;
+        const options = reformatOptions(reformatStyle, reformatLists, reformatContext, result.application?.bundleId);
+        let reformatting = initialReformatMetrics(transcript, reformatEnabled, transcriptionLanguage, options);
+        let cloudRefinementStatus: NonNullable<TranscriptRecord["cloudRefinementStatus"]> = reformatEnabled ? "superseded-by-s1" : "disabled";
+        if (reformatEnabled) {
+          setStatus("correcting");
+          emitCapsule("correcting");
+          const started = performance.now();
+          try {
+            const output = await run(() => invoke<ReformatResult>("reformat_transcript", {
+              text: transcript, language: transcriptionLanguage, options,
+            }), 150_000, "Local reformatting timed out.");
+            reformatting = { ...output.metrics, enabled: true };
+            if (reformatApplied(reformatting)) {
+              reformattedText = output.text;
+              finalResult = output.text;
+              setCorrectedTranscript(output.text);
+            } else if (reformatting.status === "fallback") {
+              addToast({ type: "warning", message: "S1-mini could not reformat this dictation. Your original text was kept." });
+            }
+          } catch {
+            void invoke("cancel_reformatting").catch(() => {});
+            if (session.cancelled) return;
+            reformatting.reason = "native_request_failed_or_timed_out";
+            addToast({ type: "warning", message: "S1-mini did not respond. Your original text was kept." });
+          } finally {
+            reformatTimeMs = performance.now() - started;
+            reformatting.roundTripMs = reformatTimeMs;
+          }
+        } else if (correctionEnabled && groqApiKey && effectiveMode === "cloud") {
           setStatus("correcting");
           emitCapsule("correcting");
           const correctionStart = Date.now();
@@ -136,11 +172,13 @@ export function useTranscription() {
             const corrected = await run(() => correctText(transcript, groqApiKey, correctionPrompt || undefined), 20_000, "Text refinement timed out.");
             setCorrectedTranscript(corrected);
             finalResult = corrected;
+            cloudRefinementStatus = corrected === transcript ? "unchanged" : "applied";
             correctionTimeMs = Date.now() - correctionStart;
           } catch {
             if (session.cancelled) return;
             correctionTimeMs = Date.now() - correctionStart;
             finalResult = transcript;
+            cloudRefinementStatus = "fallback";
           }
         }
 
@@ -172,17 +210,19 @@ export function useTranscription() {
         emitCapsule("pasting");
         const pasteStart = Date.now();
 
-        // Snapshot ALL clipboard content (images, files, RTF, etc.) via NSPasteboard
-        await run(() => invoke("snapshot_clipboard"));
-        clipboardDirty = true;
-        await run(() => invoke("write_transient_text", { text: finalResult }));
         const transcriptId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+        let deliveryStatus: "pasted" | "failed" = "pasted";
         try {
+          // Save the transcript even if preparing the clipboard fails.
+          await run(() => invoke("snapshot_clipboard"));
+          clipboardDirty = true;
+          await run(() => invoke("write_transient_text", { text: finalResult }));
           // observe: let the Rust side watch the target field for fixes to this paste.
           await run(() => invoke("paste_text", { observe: observeCorrections, transcriptId }));
           clipboardDirty = false;
         } catch (pasteErr) {
+          deliveryStatus = "failed";
           if (session.cancelled) return;
           void invoke("restore_clipboard").catch(() => {});
           clipboardDirty = false;
@@ -205,6 +245,16 @@ export function useTranscription() {
           transcriptId,
           rawText: transcript,
           finalText: finalResult,
+          reformattedText,
+          pastedText: deliveryStatus === "pasted" ? finalResult : undefined,
+          reformatting,
+          reformatTimeMs,
+          transcriptionLanguage,
+          speechModelId: effectiveMode === "cloud" ? "whisper-large-v3-turbo" : loadedModelFilename ?? undefined,
+          audioSampleCount: result.sample_count,
+          deliveryStatus,
+          cloudRefinementStatus,
+          originalWordCount: transcript.split(/\s+/).filter(Boolean).length,
           engine: effectiveMode,
           modelName:
             effectiveMode === "cloud"
@@ -217,7 +267,7 @@ export function useTranscription() {
           pasteTimeMs,
           wordCount: finalResult.split(/\s+/).filter(Boolean).length,
           timestamp: Date.now(),
-          corrected: correctionEnabled && groqApiKey !== "",
+          corrected: finalResult !== transcript,
           application: result.application ?? null,
           dictionaryApplied: dictionaryApplied.length ? dictionaryApplied : undefined,
         };
@@ -254,6 +304,10 @@ export function useTranscription() {
       groqApiKey,
       sttMode,
       correctionEnabled,
+      reformatEnabled,
+      reformatStyle,
+      reformatLists,
+      reformatContext,
       whisperPrompt,
       correctionPrompt,
       transcriptionLanguage,

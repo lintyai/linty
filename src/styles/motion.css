@@ -38,7 +38,7 @@ button:not(:disabled):active { filter: none; }
 }
 
 .select-trigger > svg,
-.processing-breakdown summary > svg,
+.cleanup-options > summary > svg,
 .original-transcript summary > svg,
 .processing-details > summary > svg {
   transition: rotate var(--motion-control) var(--ease-out),
@@ -62,6 +62,13 @@ button:not(:disabled):active { filter: none; }
 .navigation-results {
   animation: surface-appear var(--motion-control) var(--ease-out) backwards;
 }
+.status-save { transition: color var(--motion-control) var(--ease-out); }
+@keyframes status-recording-pulse {
+  50% { opacity: 0.45; }
+}
+.status-recording-icon { animation: status-recording-pulse 1.2s ease-in-out infinite; }
+.status-engine-indicator { transition: color var(--motion-control) var(--ease-out); }
+.status-engine-indicator > svg, .status-save-indicator > svg { transition: opacity var(--motion-control) var(--ease-out); }
 .page-scroll, .history-list, .history-detail, .sidebar-navigation {
   scrollbar-gutter: stable;
   overscroll-behavior: contain;

@@ -15,6 +15,7 @@ mod fnkey;
 mod history;
 mod history_db;
 pub mod logging;
+pub mod reformat;
 mod paste;
 #[cfg(target_os = "macos")]
 mod permissions;
@@ -796,6 +797,8 @@ fn reset_all_data(
     state: tauri::State<'_, AppState>,
     history: tauri::State<'_, history::HistoryState>,
 ) -> Result<(), String> {
+    app.state::<reformat::ReformatState>().cancel();
+    app.state::<reformat::ReformatState>().unload_if_idle(u64::MAX, 1);
     let _history_lock = history.0.lock().map_err(|e| e.to_string())?;
     let data_dir = app
         .path()
@@ -1360,6 +1363,7 @@ pub fn run() {
         .manage(AppState::new())
         .manage(audio_input::AudioInputState::default())
         .manage(history::HistoryState::default())
+        .manage(reformat::ReformatState::default())
         // macOS app menu bar (Linty + Edit)
         .menu(|app| {
             let about = PredefinedMenuItem::about(app, Some("About Linty"), None)?;
@@ -1449,6 +1453,12 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            reformat::s1_model_status,
+            reformat::download_s1_model,
+            reformat::prepare_s1_model,
+            reformat::unload_s1_model,
+            reformat::cancel_reformatting,
+            reformat::reformat_transcript,
             history::history_snapshot,
             history::history_query,
             history::history_get,
