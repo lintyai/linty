@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ACTIONS, buildPolicy, compareVersions, envelopePolicy, parseArgs, policyPublicKey, releaseSignatures, verifyTauriSignature } from '../scripts/policy/policy-lib.mjs';
+import { ACTIONS, allowListedEnv, buildPolicy, compareVersions, envelopePolicy, parseArgs, policyPublicKey, releaseSignatures, verifyTauriSignature } from '../scripts/policy/policy-lib.mjs';
 
 const keys = readFileSync(new URL('../src-tauri/src/keys.rs', import.meta.url), 'utf8');
 const fixture = JSON.parse(readFileSync(new URL('../src-tauri/tests/fixtures/policy_signed_with_release_key.json', import.meta.url), 'utf8'));
@@ -89,4 +89,20 @@ test('helpers', () => {
   assert.throws(() => parseArgs(['--percent']), /needs a value/);
   assert.throws(() => parseArgs(['--cloud-stt', 'maybe']), /on or off/);
   assert.throws(() => parseArgs(['--nope']), /unknown argument/);
+});
+
+test('child processes only see allow-listed variables', () => {
+  const source = {
+    PATH: '/usr/bin', HOME: '/Users/op', CLOUDFLARE_API_TOKEN: 'cf', WRANGLER_LOG: 'debug',
+    TAURI_SIGNING_PRIVATE_KEY: 'updater-key', TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 'updater-pw',
+    LINTY_POLICY_KEY_PASSWORD: 'policy-pw', APPLE_PASSWORD: 'apple', UNSET: undefined,
+  };
+  assert.deepEqual(
+    allowListedEnv(source, { names: ['PATH', 'HOME', 'UNSET'], prefixes: ['CLOUDFLARE_', 'WRANGLER_'], extra: { WRANGLER_SEND_METRICS: 'false' } }),
+    { PATH: '/usr/bin', HOME: '/Users/op', CLOUDFLARE_API_TOKEN: 'cf', WRANGLER_LOG: 'debug', WRANGLER_SEND_METRICS: 'false' },
+  );
+  assert.deepEqual(
+    allowListedEnv(source, { names: ['PATH'], extra: { TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 'policy-pw' } }),
+    { PATH: '/usr/bin', TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 'policy-pw' },
+  );
 });

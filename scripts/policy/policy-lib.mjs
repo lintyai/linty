@@ -175,6 +175,21 @@ export function buildPolicy({ options, previous, manifest, nowSeconds }) {
   return policy;
 }
 
+/**
+ * A child-process environment holding only the named variables and those
+ * starting with one of `prefixes`, plus `extra`. Release secrets exported in
+ * the operator's shell never reach third-party tools this way.
+ */
+export function allowListedEnv(source, { names = [], prefixes = [], extra = {} } = {}) {
+  const env = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined && (names.includes(key) || prefixes.some((prefix) => key.startsWith(prefix)))) {
+      env[key] = value;
+    }
+  }
+  return { ...env, ...extra };
+}
+
 export function parseArgs(argv) {
   const options = {};
   const list = (value) => value.split(",").map((v) => v.trim()).filter(Boolean);

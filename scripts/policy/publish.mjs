@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  allowListedEnv,
   buildPolicy,
   envelopePolicy,
   parseArgs,
@@ -28,6 +29,7 @@ const WRANGLER = "wrangler@4.132.0";
 // Requests from this tool show up in the counts as version 0.0.0.
 const PROBE = "darwin-aarch64/0.0.0";
 const KV_PROPAGATION_MS = 90_000;
+const BASE_ENV = ["PATH", "HOME", "TMPDIR", "USER", "LANG", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy"];
 
 async function fetchText(url) {
   const response = await fetch(url, { redirect: "follow", headers: { "Cache-Control": "no-cache" } });
@@ -36,9 +38,16 @@ async function fetchText(url) {
   return response.text();
 }
 
-function run(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, stdio: "inherit" });
-  if (result.status !== 0) throw new Error(`${command} ${args[0]} ${args[1] ?? ""} failed`);
+function wrangler(args, cwd) {
+  // Only what Wrangler needs: its login lives under HOME, or it reads
+  // CLOUDFLARE_* tokens. No usage telemetry.
+  const env = allowListedEnv(process.env, {
+    names: BASE_ENV,
+    prefixes: ["CLOUDFLARE_", "WRANGLER_"],
+    extra: { WRANGLER_SEND_METRICS: "false" },
+  });
+  const result = spawnSync("npx", ["--yes", WRANGLER, ...args], { cwd, env, stdio: "inherit" });
+  if (result.status !== 0) throw new Error(`wrangler ${args.slice(0, 3).join(" ")} failed`);
 }
 
 function sign(payloadPath) {
@@ -47,11 +56,12 @@ function sign(payloadPath) {
   if (!keyPath || password === undefined) {
     throw new Error("set LINTY_POLICY_KEY_PATH and LINTY_POLICY_KEY_PASSWORD");
   }
-  // Never let the updater's own signing key, if exported, be picked up instead.
-  const env = { ...process.env, TAURI_SIGNING_PRIVATE_KEY_PASSWORD: password, CI: "true" };
-  delete env.TAURI_SIGNING_PRIVATE_KEY;
-  delete env.TAURI_SIGNING_PRIVATE_KEY_PATH;
-  delete env.LINTY_POLICY_KEY_PASSWORD;
+  // Only the policy key's password; the updater's own key, if exported, and
+  // every other secret stay out of the signer's environment.
+  const env = allowListedEnv(process.env, {
+    names: BASE_ENV,
+    extra: { TAURI_SIGNING_PRIVATE_KEY_PASSWORD: password, CI: "true" },
+  });
   const result = spawnSync(
     join(ROOT, "node_modules/.bin/tauri"),
     ["signer", "sign", "-f", keyPath, payloadPath],
@@ -113,9 +123,8 @@ async function main() {
 
     const envelopePath = join(dir, "envelope.json");
     writeFileSync(envelopePath, JSON.stringify({ payload, signature }));
-    run(
-      "npx",
-      ["--yes", WRANGLER, "kv", "key", "put", `policy:${channel}`, "--binding", "POLICY", "--path", envelopePath, "--remote"],
+    wrangler(
+      ["kv", "key", "put", `policy:${channel}`, "--binding", "POLICY", "--path", envelopePath, "--remote"],
       join(ROOT, "infra/updates"),
     );
     console.log(
