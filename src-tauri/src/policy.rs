@@ -466,7 +466,23 @@ struct StoredState {
     /// Target of the last accepted policy, kept as a ceiling after it expires.
     #[serde(default)]
     ceiling_version: Option<String>,
+    /// Outcome of the most recent update install, for diagnostics.
+    #[serde(default)]
+    last_update_attempt: Option<UpdateAttempt>,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateAttempt {
+    from: String,
+    to: String,
+    outcome: String,
+    error: Option<String>,
+    at: String,
+}
+
+const UPDATE_OUTCOMES: [&str; 2] = ["installed", "failed"];
+const MAX_ATTEMPT_ERROR_CHARS: usize = 300;
 
 struct Inner {
     state: StoredState,
@@ -591,6 +607,44 @@ impl PolicyStore {
         inner.policy = Some(policy);
         self.save(&inner);
         Ok(true)
+    }
+
+    /// Remember how the latest install went. Versions are validated and the
+    /// error is shortened; the updater's errors carry no user content.
+    pub fn record_attempt(
+        &self,
+        from: &str,
+        to: &str,
+        outcome: &str,
+        error: Option<&str>,
+        now: OffsetDateTime,
+    ) -> Result<(), String> {
+        let from = Version::parse(from).map_err(|_| format!("bad version {from:?}"))?;
+        let to = Version::parse(to).map_err(|_| format!("bad version {to:?}"))?;
+        if !UPDATE_OUTCOMES.contains(&outcome) {
+            return Err(format!("unknown outcome {outcome:?}"));
+        }
+        let error = error.map(|e| e.chars().take(MAX_ATTEMPT_ERROR_CHARS).collect::<String>());
+        match &error {
+            Some(e) => log::warn!("[policy] Update {} -> {} {}: {}", from, to, outcome, e),
+            None => log::info!("[policy] Update {} -> {} {}", from, to, outcome),
+        }
+        let mut inner = self.lock();
+        inner.state.last_update_attempt = Some(UpdateAttempt {
+            from: from.to_string(),
+            to: to.to_string(),
+            outcome: outcome.to_string(),
+            error,
+            at: now.format(&Rfc3339).unwrap_or_default(),
+        });
+        self.save(&inner);
+        Ok(())
+    }
+
+    /// False while an unexpired policy has turned cloud transcription off.
+    pub fn cloud_stt_enabled(&self, now: OffsetDateTime) -> bool {
+        let inner = self.lock();
+        usable(&inner, now).is_none_or(|policy| policy.config.cloud_stt_enabled)
     }
 
     /// Let the next updater check ignore the rollout bucket.
@@ -737,6 +791,21 @@ async fn fetch_envelope(url: &str) -> Result<Option<Vec<u8>>, String> {
         body.extend_from_slice(&chunk);
     }
     Ok(Some(body))
+}
+
+/// Shown when an unexpired policy has paused cloud transcription.
+pub const CLOUD_STT_PAUSED: &str =
+    "Cloud transcription is paused by Linty right now. Switch to on-device in Settings to keep dictating.";
+
+#[tauri::command]
+pub fn record_update_attempt(
+    store: tauri::State<'_, Arc<PolicyStore>>,
+    from: String,
+    to: String,
+    outcome: String,
+    error: Option<String>,
+) -> Result<(), String> {
+    store.record_attempt(&from, &to, &outcome, error.as_deref(), OffsetDateTime::now_utc())
 }
 
 /// Fetch the latest policy, then report what the app should do. Fetch and
@@ -1066,6 +1135,39 @@ mod tests {
             assert_eq!(inner.sticky, Sticky { blocked: vec![v("0.0.37")], ceiling: Some(v("0.0.40")) });
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn update_attempts_are_validated_and_persisted() {
+        let key = TestKey::new();
+        let dir = std::env::temp_dir().join(format!("linty-policy-attempt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = PolicyStore::with_key(&key.public_key, "stable");
+        store.load(&dir);
+
+        assert!(store.record_attempt("0.0.41", "0.0.40", "rebooted", None, NOW).is_err());
+        assert!(store.record_attempt("latest", "0.0.40", "installed", None, NOW).is_err());
+        let long = "x".repeat(1000);
+        store.record_attempt("0.0.41", "0.0.40", "failed", Some(&long), NOW).unwrap();
+
+        let reloaded = PolicyStore::with_key(&key.public_key, "stable");
+        reloaded.load(&dir);
+        let attempt = reloaded.lock().state.last_update_attempt.clone().unwrap();
+        assert_eq!((attempt.from.as_str(), attempt.to.as_str(), attempt.outcome.as_str()), ("0.0.41", "0.0.40", "failed"));
+        assert_eq!(attempt.error.map(|e| e.len()), Some(MAX_ATTEMPT_ERROR_CHARS));
+        assert_eq!(attempt.at, "2026-09-17T12:00:00Z");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cloud_transcription_follows_only_an_unexpired_policy() {
+        let key = TestKey::new();
+        let store = PolicyStore::with_key(&key.public_key, "stable");
+        assert!(store.cloud_stt_enabled(NOW));
+        let off = payload(1, |d| d["config"] = serde_json::json!({ "cloud_stt_enabled": false }));
+        store.ingest(&key.envelope(&off), NOW).unwrap();
+        assert!(!store.cloud_stt_enabled(NOW));
+        assert!(store.cloud_stt_enabled(datetime!(2026-10-01 00:00 UTC)));
     }
 
     #[test]

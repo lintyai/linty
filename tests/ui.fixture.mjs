@@ -4,6 +4,9 @@ export const fixture = ({
   onboarding = false,
   theme = "light",
   historyCount = 18,
+  sttMode = "local",
+  policy = null,
+  update = null,
 } = {}) => {
   const now = Date.now();
   const words = [
@@ -85,7 +88,7 @@ export const fixture = ({
     1: {
       theme,
       onboardingComplete: !onboarding,
-      sttMode: "local",
+      sttMode,
       selectedModelFilename: "ggml-large-v3-turbo-q5_0.bin",
       groqApiKey: "",
       triggerKey: "fn",
@@ -459,17 +462,22 @@ export const fixture = ({
         window.__QA__.clipboard = args.text;
         return;
       }
-      if (command === "plugin:updater|check") return null;
+      if (command === "plugin:updater|check") return update;
+      if (command === "plugin:updater|download") return 11;
+      if (command === "plugin:updater|install") return null;
+      if (command === "record_update_attempt") return null;
       if (command === "check_policy")
-        return {
-          update: "none",
-          reason: null,
-          targetVersion: null,
-          message: null,
-          cloudSttEnabled: true,
-          banner: null,
-          policySeq: null,
-        };
+        return (
+          policy ?? {
+            update: "none",
+            reason: null,
+            targetVersion: null,
+            message: null,
+            cloudSttEnabled: true,
+            banner: null,
+            policySeq: null,
+          }
+        );
       if (command === "check_microphone") return "authorized";
       if (
         [

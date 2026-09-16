@@ -1,23 +1,33 @@
 import { useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { check } from "@tauri-apps/plugin-updater";
+import { listen } from "@tauri-apps/api/event";
+import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useAppStore } from "@/store/app.store";
+import { isDictationBusy, isRequiredUpdate, waitUntilIdle } from "@/lib/update-policy.util";
+import type { PolicyDecision } from "@/types/policy.types";
 
 const CHECK_DELAY_MS = 5_000;
-const CHECK_INTERVAL_MS = 60 * 60 * 1_000; // 60 min
+/// Short enough that a pause, rollback or required fix reaches running copies
+/// within the hour it is published.
+const CHECK_INTERVAL_MS = 15 * 60 * 1_000;
 /// The updater plugin has no timeout of its own: a stalled connection to the
 /// release feed would leave "Check for updates" spinning forever.
 const CHECK_TIMEOUT_MS = 30_000;
 /// Covers the policy fetch (10 s limit in Rust) plus the updater check.
 const CHECK_GUARD_MS = 45_000;
+/// A required update installs only after dictation has been quiet this long,
+/// so a restart never interrupts someone mid-sentence.
+const QUIET_BEFORE_INSTALL_MS = 30_000;
+const BUSY_UPDATE_STATUSES = new Set(["downloading", "waiting", "installing"]);
 
 // Module-level singletons — shared across all hook instances so
 // downloadAndInstall always has the update object regardless of
 // which component called checkForUpdate, and so a manual check joins a
 // silent check that is already in flight instead of being ignored.
-let pendingUpdate: Awaited<ReturnType<typeof check>> | null = null;
-let inFlightCheck: Promise<Awaited<ReturnType<typeof check>>> | null = null;
+let pendingUpdate: Update | null = null;
+let inFlightCheck: Promise<Update | null> | null = null;
+let requiredInstallRunning = false;
 let autoCheckActive = false;
 
 /// Refresh the signed update policy first: the updater only offers what the
@@ -25,7 +35,8 @@ let autoCheckActive = false;
 /// rollout. Failures are logged in Rust and the last accepted policy applies.
 async function refreshPolicy(manual: boolean) {
   try {
-    await invoke("check_policy", { manual });
+    const policy = await invoke<PolicyDecision>("check_policy", { manual });
+    useAppStore.getState().setPolicy(policy);
   } catch (err) {
     console.error("[updater] Policy check failed:", err);
   }
@@ -50,15 +61,88 @@ class UpdateCheckTimeout extends Error {
   }
 }
 
+function errorMessage(err: unknown) {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/// Kept for diagnostics in linty-policy.json; never blocks the update.
+function recordAttempt(update: Update, outcome: "installed" | "failed", error?: string) {
+  return invoke("record_update_attempt", {
+    from: update.currentVersion,
+    to: update.version,
+    outcome,
+    error: error ?? null,
+  }).catch((err) => console.error("[updater] Could not record the update attempt:", err));
+}
+
+function progressHandler() {
+  const { setUpdateProgress } = useAppStore.getState();
+  let contentLength = 0;
+  let downloaded = 0;
+  return (event: DownloadEvent) => {
+    switch (event.event) {
+      case "Started":
+        contentLength = event.data.contentLength ?? 0;
+        downloaded = 0;
+        break;
+      case "Progress":
+        downloaded += event.data.chunkLength;
+        if (contentLength > 0) {
+          setUpdateProgress(Math.min(Math.round((downloaded / contentLength) * 100), 100));
+        }
+        break;
+      case "Finished":
+        setUpdateProgress(100);
+        break;
+    }
+  };
+}
+
+/// Download now, install once dictation is quiet, then restart. The blocking
+/// screen (UpdateRequired) shows each step; failures leave a retry there.
+async function installRequiredUpdate(update: Update) {
+  if (requiredInstallRunning) return;
+  requiredInstallRunning = true;
+  const store = useAppStore.getState();
+  try {
+    store.setUpdateError(null);
+    store.setUpdateProgress(0);
+    store.setUpdateStatus("downloading");
+    await update.download(progressHandler());
+
+    store.setUpdateStatus("waiting");
+    await waitUntilIdle(
+      () => isDictationBusy(useAppStore.getState()),
+      useAppStore.subscribe,
+      QUIET_BEFORE_INSTALL_MS,
+    );
+
+    store.setUpdateStatus("installing");
+    await update.install();
+    await recordAttempt(update, "installed");
+    await relaunch();
+  } catch (err) {
+    const message = errorMessage(err);
+    console.error("[updater] Required update failed:", message);
+    await recordAttempt(update, "failed", message);
+    store.setUpdateError("The update could not be installed. Check your connection and try again.");
+    store.setUpdateStatus("error");
+  } finally {
+    requiredInstallRunning = false;
+  }
+}
+
 export function useUpdater() {
   const setUpdateStatus = useAppStore((s) => s.setUpdateStatus);
   const setUpdateVersion = useAppStore((s) => s.setUpdateVersion);
+  const setUpdateCurrentVersion = useAppStore((s) => s.setUpdateCurrentVersion);
+  const setUpdateRequired = useAppStore((s) => s.setUpdateRequired);
   const setUpdateError = useAppStore((s) => s.setUpdateError);
   const setUpdateProgress = useAppStore((s) => s.setUpdateProgress);
   const addToast = useAppStore((s) => s.addToast);
 
   const checkForUpdate = useCallback(async (silent = false) => {
-    if (useAppStore.getState().updateStatus === "downloading") return;
+    if (BUSY_UPDATE_STATUSES.has(useAppStore.getState().updateStatus)) return;
     // Reuse a check already in flight (the silent auto-check, typically) so a
     // click during it still reports the outcome instead of doing nothing.
     inFlightCheck ??= checkWithTimeout(!silent);
@@ -70,6 +154,13 @@ export function useUpdater() {
       if (update) {
         pendingUpdate = update;
         setUpdateVersion(update.version);
+        setUpdateCurrentVersion(update.currentVersion);
+        const required = isRequiredUpdate(useAppStore.getState().policy, update.version);
+        setUpdateRequired(required);
+        if (required) {
+          void installRequiredUpdate(update);
+          return;
+        }
         setUpdateStatus("available");
         addToast({
           type: "info",
@@ -78,12 +169,14 @@ export function useUpdater() {
       } else {
         pendingUpdate = null;
         setUpdateVersion(null);
+        setUpdateCurrentVersion(null);
+        setUpdateRequired(false);
         setUpdateStatus("idle");
         if (!silent) addToast({ type: "success", message: "You’re using the latest version of Linty." });
       }
     } catch (err) {
       console.error("[updater] Check failed:", err);
-      if (silent) setUpdateStatus("idle");
+      if (silent && !useAppStore.getState().updateRequired) setUpdateStatus("idle");
       else {
         setUpdateError(
           err instanceof UpdateCheckTimeout
@@ -93,44 +186,28 @@ export function useUpdater() {
         setUpdateStatus("error");
       }
     }
-  }, [setUpdateStatus, setUpdateVersion, setUpdateError, addToast]);
+  }, [setUpdateStatus, setUpdateVersion, setUpdateCurrentVersion, setUpdateRequired, setUpdateError, addToast]);
 
   const downloadAndInstall = useCallback(async () => {
-    if (!pendingUpdate) return;
+    const update = pendingUpdate;
+    if (!update) return;
 
     try {
       setUpdateStatus("downloading");
       setUpdateProgress(0);
       setUpdateError(null);
 
-      let contentLength = 0;
-      let downloaded = 0;
-      await pendingUpdate.downloadAndInstall((event) => {
-        switch (event.event) {
-          case "Started":
-            contentLength = event.data.contentLength ?? 0;
-            downloaded = 0;
-            break;
-          case "Progress": {
-            downloaded += event.data.chunkLength;
-            if (contentLength > 0) {
-              setUpdateProgress(Math.min(Math.round((downloaded / contentLength) * 100), 100));
-            }
-            break;
-          }
-          case "Finished":
-            setUpdateProgress(100);
-            break;
-        }
-      });
+      await update.downloadAndInstall(progressHandler());
+      await recordAttempt(update, "installed");
 
       addToast({ type: "success", message: "Update installed — restarting..." });
       // Brief delay so the user sees the toast
       await new Promise((r) => setTimeout(r, 1500));
       await relaunch();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       console.error("[updater] Download failed:", message);
+      await recordAttempt(update, "failed", message);
       setUpdateError(message);
       setUpdateStatus("error");
       addToast({ type: "error", message: "Update failed — try again later" });
@@ -141,7 +218,7 @@ export function useUpdater() {
 }
 
 /**
- * Auto-check on mount (5s delay) + every 60min.
+ * Auto-check 5 s after launch, every 15 minutes, and when the Mac wakes.
  * Call this ONCE in App.tsx — not in every component that uses useUpdater().
  */
 export function useUpdaterAutoCheck() {
@@ -153,9 +230,13 @@ export function useUpdaterAutoCheck() {
 
     const timeout = setTimeout(() => checkForUpdate(true), CHECK_DELAY_MS);
     const interval = setInterval(() => checkForUpdate(true), CHECK_INTERVAL_MS);
+    const unlistenWake = listen("system-wake", () => {
+      void checkForUpdate(true);
+    });
     return () => {
       clearTimeout(timeout);
       clearInterval(interval);
+      void unlistenWake.then((unlisten) => unlisten());
       autoCheckActive = false;
     };
   }, [checkForUpdate]);

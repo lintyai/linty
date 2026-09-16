@@ -19,6 +19,8 @@ import { Sidebar } from "@/components/layout/Sidebar.component";
 import { WindowToolbar } from "@/components/layout/WindowToolbar.component";
 import { StatusBar } from "@/components/layout/StatusBar.component";
 import { ConfirmResetDialogue } from "@/components/shared/ConfirmReset.dialogue";
+import { UpdateRequiredDialogue } from "@/components/shared/UpdateRequired.dialogue";
+import { PolicyBanner } from "@/components/layout/PolicyBanner.component";
 
 import { ToastContainer } from "@/components/shared/ToastContainer.component";
 import { HistoryPage } from "@/pages/History.page";
@@ -202,6 +204,7 @@ export default function App() {
 
       <div className="flex flex-1 flex-col min-w-0">
         <WindowToolbar />
+        <PolicyBanner />
 
         {/* Page content */}
         <main id="page-content" className="flex-1 min-h-0" aria-label={currentView}>
@@ -224,6 +227,7 @@ export default function App() {
         onConfirm={handleResetConfirm}
         onCancel={() => setShowResetConfirm(false)}
       />
+      <UpdateRequiredDialogue />
     </div>
   );
 }

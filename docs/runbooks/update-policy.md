@@ -88,7 +88,7 @@ For a bad build, also:
 
 - Mark the bad GitHub release as a pre-release (`gh release edit v<bad> --prerelease`). Copies that never received a policy follow GitHub's latest release.
 - Post on the status page.
-- Watch the counts for the bad version fall. Copies check every hour and at launch, so most move within a day. Copies that stay closed move when next opened.
+- Watch the counts for the bad version fall. Copies check at launch, every 15 minutes and when the Mac wakes, so running copies move within the hour. A required update installs after 30 seconds without dictation. Copies that stay closed move when next opened.
 
 A rollback runs an older build against data files a newer build wrote. Before rolling back past a release that changed a file format, route copies through a release that can read both.
 

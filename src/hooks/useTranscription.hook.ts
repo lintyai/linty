@@ -8,6 +8,7 @@ import type { StopResult } from "./useRecording.hook";
 import { modelLabel } from "@/lib/model-labels.util";
 import { applyDictionary, engineTerms, promptWithDictionary } from "@/lib/dictionary.util";
 import { noteDictionaryUse } from "@/services/dictionary.service";
+import { CLOUD_STT_PAUSED, cloudTranscriptionPaused } from "@/lib/update-policy.util";
 
 
 function emitCapsule(state: string, text?: string, error?: string) {
@@ -94,6 +95,17 @@ export function useTranscription() {
           }, 5000);
           return;
         }
+      }
+
+      // The update policy can pause cloud transcription; Rust enforces it too.
+      if (effectiveMode === "cloud" && cloudTranscriptionPaused(useAppStore.getState().policy)) {
+        setError(CLOUD_STT_PAUSED);
+        emitCapsule("error", undefined, CLOUD_STT_PAUSED);
+        invoke("play_capsule_sound", { sound: "error" }).catch(() => {});
+        hideTimerRef.current = setTimeout(() => {
+          invoke("hide_capsule").catch(() => {});
+        }, 5000);
+        return;
       }
 
       if (effectiveMode === "cloud" && !groqApiKey) {

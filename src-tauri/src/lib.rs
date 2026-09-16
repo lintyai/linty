@@ -436,6 +436,7 @@ async fn transcribe_buffer(
 #[tauri::command]
 async fn transcribe_buffer_cloud(
     state: tauri::State<'_, AppState>,
+    policy: tauri::State<'_, Arc<policy::PolicyStore>>,
     api_key: String,
     prompt: Option<String>,
     language: Option<String>,
@@ -445,6 +446,13 @@ async fn transcribe_buffer_cloud(
         let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
         std::mem::take(&mut rec.samples)
     };
+
+    // The update policy can pause cloud transcription; the audio is dropped
+    // here and never sent.
+    if !policy.cloud_stt_enabled(time::OffsetDateTime::now_utc()) {
+        log::info!("[cmd] transcribe_buffer_cloud: paused by the update policy");
+        return Err(policy::CLOUD_STT_PAUSED.to_string());
+    }
 
     log::debug!(
         "[cmd] transcribe_buffer_cloud: {} samples ({:.1}s)",
@@ -1392,6 +1400,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             policy::check_policy,
+            policy::record_update_attempt,
             history::history_snapshot,
             history::history_query,
             history::history_get,

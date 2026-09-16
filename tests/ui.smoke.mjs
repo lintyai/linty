@@ -662,8 +662,54 @@ try {
     await capsule.screenshot({path:`${output}/capsule-${state}.png`,animations:'disabled'});
   }
   await capsuleContext.close();
+  const policyAudit = async (screen, name) => {
+    await screen.evaluate(() => new Promise(requestAnimationFrame));
+    const result = await new AxeBuilder({ page: screen }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+    failures.push(...result.violations.map(v => ({ screen: name, id: v.id, targets: v.nodes.map(n => n.target), details: v.nodes.map(n => n.failureSummary) })));
+  };
+  const rollbackContext = await browser.newContext({ viewport:{width:1080,height:760}, reducedMotion:'reduce' });
+  const rollback = await rollbackContext.newPage();
+  rollback.on('pageerror', error => errors.push(error.message));
+  await rollback.addInitScript(fixture, {
+    policy: { update:'required', reason:'rollback', targetVersion:'0.0.24', message:null, cloudSttEnabled:true, banner:null, policySeq:7 },
+    update: { rid:9, currentVersion:'0.0.25', version:'0.0.24', date:null, body:null, rawJson:{} },
+  });
+  await rollback.goto(url);
+  const required = rollback.getByRole('dialog', {name:'Linty needs to switch versions'});
+  await required.waitFor({ timeout: 15000 });
+  await required.getByText('A recent update caused problems. Linty will go back to the previous version.', {exact:true}).waitFor();
+  await required.getByText('From version 0.0.25 to 0.0.24', {exact:true}).waitFor();
+  await required.getByText(/Linty restarts once you’ve finished dictating/).waitFor();
+  const updateCalls = await rollback.evaluate(() => window.__QA__.calls);
+  assert.ok(updateCalls.indexOf('check_policy') < updateCalls.indexOf('plugin:updater|check'), 'the policy is fetched before the update check');
+  assert.ok(updateCalls.includes('plugin:updater|download'), 'a required update downloads at once');
+  assert.ok(!updateCalls.includes('plugin:updater|install'), 'it installs only after dictation has been quiet');
+  await rollback.keyboard.press('Escape');
+  assert.equal(await required.isVisible(), true, 'Escape does not dismiss a required update');
+  await policyAudit(rollback, 'required-update');
+  await rollback.screenshot({path:`${output}/update-required.png`,animations:'disabled'});
+  await rollbackContext.close();
+
+  const noticeContext = await browser.newContext({ viewport:{width:1080,height:760}, reducedMotion:'reduce' });
+  const notice = await noticeContext.newPage();
+  notice.on('pageerror', error => errors.push(error.message));
+  await notice.addInitScript(fixture, {
+    sttMode: 'cloud',
+    policy: { update:'none', reason:null, targetVersion:null, message:null, cloudSttEnabled:false, banner:'Cloud transcription is paused while a provider issue is fixed.', policySeq:8 },
+  });
+  await notice.goto(url);
+  const banner = notice.getByRole('status').filter({ hasText: 'Cloud transcription is paused while a provider issue is fixed.' });
+  await banner.waitFor({ timeout: 15000 });
+  await notice.getByRole('contentinfo').getByText('Cloud transcription is paused', {exact:true}).waitFor();
+  await policyAudit(notice, 'policy-banner');
+  await notice.screenshot({path:`${output}/policy-banner.png`,animations:'disabled'});
+  await notice.getByRole('button', {name:'Dismiss notice', exact:true}).click();
+  await banner.waitFor({ state: 'detached' });
+  assert.equal(await notice.getByRole('dialog').count(), 0, 'no blocking screen without a required update');
+  await noticeContext.close();
+
   assert.deepEqual(errors, [], 'Unexpected runtime errors');
   assert.deepEqual(failures, [], 'Accessibility failures');
-  console.log('UI checks passed: both themes, all screens, 605-record archive, pagination/search, full totals/export, retention/clear confirmations, recovery, keyboard navigation, copy, delete/undo, corrections/dictionary, modal focus, minimum window and onboarding.');
+  console.log('UI checks passed: both themes, all screens, 605-record archive, pagination/search, full totals/export, retention/clear confirmations, recovery, keyboard navigation, copy, delete/undo, corrections/dictionary, modal focus, minimum window, onboarding, required update and policy notice.');
   console.log(`Screenshots: ${output}`);
 } finally { await browser?.close(); server.kill(); }

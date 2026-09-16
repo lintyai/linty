@@ -1,14 +1,16 @@
 import { AlertCircle, Cloud, Cpu, Loader2 } from "lucide-react";
 import { useAppStore } from "@/store/app.store";
+import { cloudTranscriptionPaused } from "@/lib/update-policy.util";
 
 export function StatusBar() {
-  const { sttMode, status, error, groqApiKey, loadedModelFilename, setSettingsSection } = useAppStore();
+  const { sttMode, status, error, groqApiKey, loadedModelFilename, setSettingsSection, policy } = useAppStore();
   const busy = ["transcribing", "correcting", "pasting"].includes(status);
   const needsSetup = sttMode === "cloud" && !groqApiKey;
+  const cloudPaused = sttMode === "cloud" && cloudTranscriptionPaused(policy);
   const labels: Record<string, string> = {
     recording: "Recording", transcribing: "Transcribing", correcting: "Refining text", pasting: "Pasting", done: "Transcription complete",
   };
-  const label = status === "error" ? (error || "Transcription failed") : labels[status] || (needsSetup ? "API key required" : sttMode === "local" && !loadedModelFilename ? "Model will load on dictation" : "Ready to dictate");
+  const label = status === "error" ? (error || "Transcription failed") : labels[status] || (cloudPaused ? "Cloud transcription is paused" : needsSetup ? "API key required" : sttMode === "local" && !loadedModelFilename ? "Model will load on dictation" : "Ready to dictate");
   return (
     <footer className="status-bar">
       <div className={`status-message ${status === "error" ? "text-error" : ""}`} role="status" aria-atomic="true" title={label}>
