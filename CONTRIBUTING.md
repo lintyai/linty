@@ -1,78 +1,55 @@
 # Contributing to Linty
 
-Thanks for your interest in contributing to Linty! Here's how to get started.
+Privacy first. Bug reports, documentation, accessibility improvements, and code contributions are welcome. For a larger change, [start a discussion](https://github.com/shekhardtu/linty/discussions) about the intended behavior first.
 
 ## Development setup
 
-1. **Clone the repo**
+Use macOS 14+ on Apple Silicon, Xcode 16+ (Swift 6) with its command-line tools selected, stable Rust, Node.js 24+, and Yarn 1.x. Parakeet needs full Xcode; Command Line Tools alone are not sufficient.
 
-   ```bash
-   git clone https://github.com/lintyai/linty.git
-   cd linty
-   ```
+```bash
+git clone https://github.com/shekhardtu/linty.git
+cd linty
+yarn install --frozen-lockfile
+yarn tauri dev --features local-stt,parakeet
+```
 
-2. **Install prerequisites**
+The first build compiles both local engines and fetches Swift dependencies. `yarn dev` runs only the frontend on port 1420; native commands require the Tauri app. Vite reloads frontend changes automatically.
 
-   - [Rust](https://rustup.rs/) (stable)
-   - [Node.js](https://nodejs.org/) 20+
-   - [Yarn](https://yarnpkg.com/) 1.x
-   - Xcode Command Line Tools (`xcode-select --install`)
-
-3. **Install dependencies and run**
-
-   ```bash
-   yarn install
-   yarn tauri dev
-   ```
-
-   The frontend dev server (port 1420) uses HMR — don't restart it, changes reload automatically.
+See [Development setup](docs/DEV-SETUP.md) for feature flags and release signing. You do not need the maintainer's signing credentials to contribute or run development mode.
 
 ## Project structure
 
-- `src/` — React 19 frontend (pages, components, hooks, store, services)
-- `src-tauri/src/` — Rust backend (audio, transcription, macOS FFI, clipboard)
-- `src-tauri/Cargo.toml` — Rust dependencies (use `--features local-stt` for Whisper)
-- `.github/workflows/` — CI/CD pipeline
+- `src/` — React frontend, pages, components, services, and Zustand state.
+- `src-tauri/src/` — Rust audio, transcription, storage, and macOS integration.
+- `src-tauri/swift/` — Parakeet bridge using FluidAudio.
+- `website/` — static landing page and product screenshots.
+- `tests/` — frontend unit and browser checks.
+- `.github/workflows/` — checks and signed macOS release builds.
 
-## Before submitting a PR
+## Before submitting a pull request
 
-1. **Frontend builds cleanly**
+Run checks relevant to your change:
 
-   ```bash
-   yarn build
-   ```
-
-2. **Rust compiles**
-
-   ```bash
-   cd src-tauri && cargo check --features local-stt
-   ```
-
-3. **Test from Finder** — if your change touches permissions, audio, or paste, test from a Finder launch (not terminal), since terminal bypasses entitlement checks.
-
-## Commit conventions
-
-We use [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-type(scope): short description
+```bash
+yarn test
+yarn build
+cd src-tauri
+cargo fmt --check
+cargo check --features local-stt,parakeet
 ```
 
-**Types**: `feat`, `fix`, `refactor`, `docs`, `chore`, `test`
+For UI changes, include screenshots in both themes and verify keyboard navigation, narrow layouts, and reduced motion. Browser checks are available through `yarn test:ui`, `yarn test:motion`, and `yarn test:usability` with the dev server running.
 
-**Scopes**: `frontend`, `rust`, `audio`, `transcribe`, `macos`, `clipboard`, `capsule`, `tauri`, `build`, `config`
+For permissions, recording, or paste changes, also test a packaged app launched from Finder. Development launches can behave differently under macOS permission checks.
 
-## Code style
+Keep pull requests focused. Explain the problem, resulting behavior, and validation. Use conventional commit titles such as `fix(audio): recover after input disconnects`. Match existing code style and avoid unrelated formatting changes.
 
-- **TypeScript**: Match existing formatting (Prettier config in repo). No `any` types.
-- **Rust**: `cargo fmt` and `cargo clippy --features local-stt` should pass cleanly.
-- **File naming**: `ComponentName.component.tsx`, `hookName.hook.ts`, `module.util.ts`
-- Remove dead code, unused imports, and console.logs before submitting.
+## Privacy and security
 
-## Good first issues
+Use synthetic text and audio in fixtures and screenshots. Do not commit personal transcriptions, API keys, signing keys, or model downloads. Logs must not contain transcription text, dictionary entries, or credentials.
 
-Look for issues labeled [`good first issue`](https://github.com/lintyai/linty/labels/good%20first%20issue).
+Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/shekhardtu/linty/security/advisories/new), as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+Contributions are licensed under the repository's [MIT License](LICENSE). Third-party code and assets must retain their applicable notices.

@@ -135,7 +135,7 @@ export function AboutPage() {
               <ExternalLink size={13} className="text-text-muted" />
             </button>
             <button
-              onClick={() => open("https://github.com/lintyai/linty")}
+              onClick={() => open("https://github.com/shekhardtu/linty")}
               className="flex items-center justify-between px-4 py-[10px] hover:bg-bg-hover transition-colors border-b border-border-subtle"
             >
               <span className="text-[13px] text-text-primary">GitHub</span>
@@ -143,7 +143,7 @@ export function AboutPage() {
             </button>
             <button
               onClick={() =>
-                open("https://github.com/lintyai/linty/blob/main/LICENSE")
+                open("https://github.com/shekhardtu/linty/blob/main/LICENSE")
               }
               className="flex items-center justify-between px-4 py-[10px] hover:bg-bg-hover transition-colors"
             >

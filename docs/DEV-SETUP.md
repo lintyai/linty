@@ -1,140 +1,88 @@
-# Linty — Development Setup Guide
+# Linty development setup
 
-How to set up Linty development on a fresh macOS machine.
+Privacy first: use synthetic dictation data while developing and keep credentials out of the repository.
 
 ## Prerequisites
 
-### Required Tools
+| Requirement | Supported development setup |
+|---|---|
+| OS / hardware | macOS 14+, Apple Silicon |
+| Xcode | Full Xcode 16+ with Swift 6; select its command-line tools |
+| Rust | Stable |
+| Node.js | 24+ (also runs the TypeScript-stripping test runner) |
+| Yarn | 1.x |
 
-| Tool | Version | Install |
-|------|---------|---------|
-| Xcode CLT | Latest | `xcode-select --install` |
-| Rust | Stable | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| Node.js | 20+ | `brew install node@20` |
-| Yarn | 1.x | `npm install -g yarn` |
-
-### System Requirements
-
-| Requirement | Value |
-|------------|-------|
-| macOS | 13.0+ (Ventura) |
-| Recommended build machine | macOS 14+ (Sonoma) |
-| Architecture | Apple Silicon or Intel |
-
-## Getting Started
+Verify your toolchain with `xcode-select -p`, `swift --version`, `rustc --version`, and `node --version`. Command Line Tools alone are not enough for the Parakeet bridge.
 
 ```bash
-git clone git@github.com:lintyai/linty.git
+git clone https://github.com/shekhardtu/linty.git
 cd linty
-yarn install
+yarn install --frozen-lockfile
+yarn tauri dev --features local-stt,parakeet
 ```
 
-### Dev Mode
+The first build fetches Swift dependencies and compiles both engines. Vite runs on port 1420 and reloads frontend edits automatically. `yarn dev` starts only the frontend; native IPC needs the Tauri app.
 
-```bash
-yarn tauri dev     # Full app — frontend (HMR on :1420) + Rust backend
-yarn dev           # Frontend only — useful for UI work
-```
-
-### Rust Only
-
-```bash
-cd src-tauri
-cargo check --features local-stt    # Type check
-cargo build --features local-stt    # Build
-cargo fmt                           # Format
-cargo clippy --features local-stt   # Lint
-```
-
-## Production Build (Signing + Notarization)
-
-### 1. Apple Developer Certificate
-
-Export your **Developer ID Application** certificate as a `.p12` from Keychain Access and import it on the new machine.
-
-### 2. Environment Variables
-
-Create `~/.tokens` with:
-
-```bash
-export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAM_ID)"
-export APPLE_ID="your@email.com"
-export APPLE_PASSWORD="xxxx-xxxx-xxxx-xxxx"   # App-specific password from appleid.apple.com
-export APPLE_TEAM_ID="YOUR_TEAM_ID"
-```
-
-### 3. Build
-
-```bash
-source ~/.tokens && yarn build:mac
-```
-
-This runs `scripts/build-mac.sh` which:
-- Builds with `tauri build --bundles dmg,app -- --features local-stt`
-- Signs the `.app` bundle
-- Notarizes both `.app` and `.dmg` via `xcrun notarytool`
-- Staples the notarization ticket
-
-## Testing Permissions
-
-Launch from **Finder** (not terminal) to test TCC permission prompts. Terminal launch bypasses entitlement checks.
-
-| Permission | Entitlement Key | Purpose |
-|------------|----------------|---------|
-| Microphone | `com.apple.security.device.audio-input` | Voice capture |
-| Accessibility | System Preferences toggle | fn key monitoring + auto-paste |
-
-If permissions get stuck, reset with:
-
-```bash
-tccutil reset Microphone ai.linty.desktop
-```
-
-## Cargo Feature Flags
+## Feature flags and checks
 
 | Feature | Purpose |
-|---------|---------|
-| `local-stt` | Enables whisper-rs with Metal GPU for on-device transcription |
-| `custom-protocol` | Tauri custom protocol (enabled by default) |
+|---|---|
+| `local-stt` | Whisper through whisper-rs, with Metal acceleration |
+| `parakeet` | Parakeet through the Swift / FluidAudio bridge; also enables `local-stt` |
+| `custom-protocol` | Tauri production asset protocol |
 
-Production builds use `--features local-stt`. Dev builds work without it (cloud-only transcription via Groq).
+Official macOS releases enable `local-stt,parakeet`. A development build without those features does not include the local engines.
 
-## CI/CD
+```bash
+yarn test
+yarn build
+cd src-tauri
+cargo fmt --check
+cargo check --features local-stt,parakeet
+cargo test --lib --features local-stt,parakeet
+```
 
-GitHub Actions workflow at `.github/workflows/build-dmg.yml`:
-- Triggers on push to `main` (skip with `[skip ci]` in commit message)
-- Auto-bumps patch version across `package.json`, `tauri.conf.json`, `Cargo.toml`
-- Builds, signs, notarizes, creates GitHub Release
+`yarn test:ui`, `yarn test:motion`, `yarn test:usability`, and `yarn test:recovery` provide browser checks; see each script for its server and browser requirements.
 
-### CI Secrets Required
+## Local packaging without release credentials
+
+Development mode does not need the maintainer's signing identity. To package an ad-hoc signed app for your own Mac, override the production signing identity and updater-artifact generation:
+
+```bash
+yarn tauri build --features local-stt,parakeet --bundles app \
+  --config '{"bundle":{"createUpdaterArtifacts":false,"macOS":{"signingIdentity":"-"}}}'
+```
+
+This is a local test build, not a notarized public release. For permission, recording, and paste changes, test the packaged app from Finder as well as development mode; macOS TCC behavior can differ.
+
+## Signed releases
+
+The maintainer's `scripts/build-mac.sh` builds both engines, signs the app, and notarizes the app and DMG when notarization credentials are configured. Supply secrets through your local secure environment; no particular dotfile is required by the project.
+
+Required release environment variables are `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (an app-specific password), `APPLE_TEAM_ID`, `TAURI_SIGNING_PRIVATE_KEY`, and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The Developer ID Application certificate and private key must be available to codesign through Keychain. Never commit these values or certificate exports.
+
+The [Build macOS DMG workflow](../.github/workflows/build-dmg.yml) runs on pushes to `main` or manual dispatch. It bumps the patch version, builds both local engines, signs and notarizes, and publishes the installer, signed updater archive, and `latest.json`. `[skip ci]` skips the push-triggered build.
+
+Configure these as **repository-level Actions secrets**, so release configuration stays attached to the repository if ownership changes:
 
 | Secret | Purpose |
-|--------|---------|
-| `LINTY_APPLE_SIGNING_CERTIFICATE` | Base64-encoded .p12 certificate |
-| `LINTY_APPLE_SIGNING_CERTIFICATE_PASSWORD` | Certificate password |
-| `LINTY_APPLE_NOTARIZATION_APPLE_ID` | Apple ID email |
-| `LINTY_APPLE_NOTARIZATION_PASSWORD` | App-specific password |
-| `LINTY_APPLE_TEAM_ID` | Developer Team ID |
-| `LINTY_TAURI_SIGNING_PRIVATE_KEY` | Update signature key |
-| `LINTY_TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Key password |
+|---|---|
+| `LINTY_APPLE_SIGNING_CERTIFICATE` | Base64-encoded Developer ID `.p12` |
+| `LINTY_APPLE_SIGNING_CERTIFICATE_PASSWORD` | `.p12` export password |
+| `LINTY_APPLE_NOTARIZATION_APPLE_ID` | Apple ID |
+| `LINTY_APPLE_NOTARIZATION_PASSWORD` | Apple app-specific password |
+| `LINTY_APPLE_TEAM_ID` | Apple Developer Team ID |
+| `LINTY_TAURI_SIGNING_PRIVATE_KEY` | Existing updater signing key |
+| `LINTY_TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Updater key password |
 
-## Architecture Quick Reference
+Keep the app identifier and updater signing identity stable across repository moves. The release workflow derives download URLs from `GITHUB_REPOSITORY`. Existing `lintyai/linty` release links redirect to `shekhardtu/linty`; do not recreate the old repository namespace, which would remove those redirects.
 
-```
-Frontend (React 19 + Zustand)  <-- IPC -->  Backend (Rust + Tauri 2)
-  src/pages/          (6 pages)              src-tauri/src/audio.rs       (cpal, 16kHz mono)
-  src/hooks/                                 src-tauri/src/transcribe.rs  (Whisper/Groq)
-  src/store/slices/   (Zustand)              src-tauri/src/fnkey.rs       (NSEvent monitor)
-  src/components/                            src-tauri/src/permissions.rs (AVFoundation FFI)
-                                             src-tauri/src/paste.rs       (CGEvent Cmd+V)
-                                             src-tauri/src/watchdog.rs    (audio health and idle unload)
-```
+## Architecture and operational notes
 
-## Key Gotchas
-
-- **Don't restart dev server** — Vite HMR picks up changes automatically
-- **Don't set `LSUIElement=true`** in Info.plist — prevents TCC prompts on Sequoia
-- **Entitlements**: Use `device.audio-input` not `device.microphone` (Hardened Runtime, not App Sandbox)
-- **Tauri bundles**: `--bundles dmg,app` (comma-separated, not space-separated)
-- **DMG notarization**: `.app` is auto-notarized by Tauri; `.dmg` needs separate `xcrun notarytool submit`
-- **Watchdog**: No fixed recording-duration cutoff. Abnormal audio callbacks still trigger recovery; the local model stays loaded during recording. Audio accumulates in memory until stopped, so duration alone is not a guarantee of capacity on every Mac.
+- React and Zustand manage the UI; Rust handles audio, transcription, storage, and macOS integration through Tauri.
+- `src-tauri/swift/` provides the Parakeet bridge; Whisper uses whisper-rs.
+- Microphone access captures speech. Accessibility access supports key monitoring and paste. Use System Check to diagnose missing permissions.
+- Do not set `LSUIElement=true` in Info.plist: it can interfere with permission prompts. Hardened Runtime uses `com.apple.security.device.audio-input`.
+- Recording has no fixed duration cutoff. Audio accumulates in memory until stopped, so capacity depends on hardware and workload. See [measured capacity](TRANSCRIPTION-CAPACITY.md).
+- API credentials live in [Keychain](CREDENTIAL-STORAGE.md); saved text uses [local history storage](HISTORY-STORAGE.md).
+- See the [force-update runbook](runbooks/force-update.md) before changing a minimum supported version.
