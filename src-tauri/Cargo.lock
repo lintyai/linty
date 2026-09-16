@@ -2533,7 +2533,7 @@ dependencies = [
 
 [[package]]
 name = "linty"
-version = "0.0.42"
+version = "0.0.43"
 dependencies = [
  "base64 0.22.1",
  "block2 0.5.1",
