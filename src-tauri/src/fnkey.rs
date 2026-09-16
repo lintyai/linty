@@ -4,33 +4,9 @@
 //! Based on the approach used by the open-source VoiceInk (Beingpax/VoiceInk) — now Linty.
 
 use std::ffi::c_void;
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-
-/// Truncate the diagnostic log once it exceeds this size — it must never grow unbounded.
-const LOG_MAX_BYTES: u64 = 1024 * 1024;
-
-fn log(msg: &str) {
-    eprintln!("{}", msg);
-    if let Ok(home) = std::env::var("HOME") {
-        let path = format!("{}/linty-fnkey.log", home);
-        let rotate = std::fs::metadata(&path)
-            .map(|m| m.len() > LOG_MAX_BYTES)
-            .unwrap_or(false);
-        let mut opts = std::fs::OpenOptions::new();
-        opts.create(true);
-        if rotate {
-            opts.write(true).truncate(true);
-        } else {
-            opts.append(true);
-        }
-        if let Ok(mut f) = opts.open(&path) {
-            let _ = writeln!(f, "{}", msg);
-        }
-    }
-}
 
 // ── Objective-C / macOS FFI ──
 
@@ -160,10 +136,10 @@ pub fn set_trigger_modifier(name: &str) -> Result<(), String> {
     let previous = TRIGGER_MASK.swap(mask, Ordering::SeqCst);
     TRIGGER_KEYCODE.store(keycode as u32, Ordering::SeqCst);
     if previous != mask {
-        log(&format!(
+        log::info!(
             "[fnkey] trigger modifier -> {} (mask 0x{:X}, keycode {})",
             name, mask, keycode
-        ));
+        );
     }
     Ok(())
 }
@@ -231,15 +207,15 @@ unsafe extern "C" fn block_invoke(block: *mut FnKeyBlock, event: *const c_void) 
     let fn_pressed = (modifier_flags & TRIGGER_MASK.load(Ordering::Relaxed)) != 0;
 
     if count <= 5 {
-        log(&format!(
+        log::debug!(
             "[fnkey] event #{} flags=0x{:X} fn={}",
             count, modifier_flags, fn_pressed
-        ));
+        );
     }
 
     if fn_pressed {
         if !state.fn_held.swap(true, Ordering::SeqCst) {
-            log("[fnkey] fn PRESSED — starting recording");
+            log::info!("[fnkey] fn PRESSED — starting recording");
             let _ = state.app.emit("fnkey-pressed", ());
         }
     } else if state.fn_held.swap(false, Ordering::SeqCst) {
@@ -249,9 +225,9 @@ unsafe extern "C" fn block_invoke(block: *mut FnKeyBlock, event: *const c_void) 
             // (focus transition). Stay armed; the real release will produce
             // its own event.
             state.fn_held.store(true, Ordering::SeqCst);
-            log("[fnkey] release ignored — trigger key physically still down");
+            log::info!("[fnkey] release ignored — trigger key physically still down");
         } else {
-            log("[fnkey] fn RELEASED — stopping recording");
+            log::info!("[fnkey] fn RELEASED — stopping recording");
             let _ = state.app.emit("fnkey-released", ());
         }
     }
@@ -278,15 +254,15 @@ unsafe extern "C" fn local_block_invoke(block: *mut LocalFnKeyBlock, event: *con
 
     if fn_pressed {
         if !state.fn_held.swap(true, Ordering::SeqCst) {
-            log("[fnkey] fn PRESSED (local — app focused)");
+            log::info!("[fnkey] fn PRESSED (local — app focused)");
             let _ = state.app.emit("fnkey-pressed", ());
         }
     } else if state.fn_held.swap(false, Ordering::SeqCst) {
         if trigger_key_physically_down() {
             state.fn_held.store(true, Ordering::SeqCst);
-            log("[fnkey] release ignored — trigger key physically still down (local)");
+            log::info!("[fnkey] release ignored — trigger key physically still down (local)");
         } else {
-            log("[fnkey] fn RELEASED (local — app focused)");
+            log::info!("[fnkey] fn RELEASED (local — app focused)");
             let _ = state.app.emit("fnkey-released", ());
         }
     }
@@ -365,10 +341,10 @@ pub fn fn_usage_type() -> Option<i64> {
 /// Skips monitor setup if accessibility is not granted.
 pub fn setup_fn_key_monitor(app: AppHandle) {
     let ax_trusted = unsafe { AXIsProcessTrusted() };
-    log(&format!("[fnkey] AXIsProcessTrusted = {}", ax_trusted));
+    log::info!("[fnkey] AXIsProcessTrusted = {}", ax_trusted);
 
     if !ax_trusted {
-        log("[fnkey] Accessibility not granted — skipping monitor setup (will reinit after onboarding)");
+        log::warn!("[fnkey] Accessibility not granted — skipping monitor setup (will reinit after onboarding)");
         // Store the app handle for later reinitialization
         let mut guard = APP_HANDLE.lock().unwrap();
         *guard = Some(app);
@@ -395,13 +371,13 @@ pub fn reinit_monitor_if_needed(app: AppHandle) {
 
     if !ax_trusted {
         if !NOT_TRUSTED_LOGGED.swap(true, Ordering::SeqCst) {
-            log("[fnkey] reinit: accessibility not granted — monitor deferred (retrying silently)");
+            log::debug!("[fnkey] reinit: accessibility not granted — monitor deferred (retrying silently)");
         }
         return;
     }
 
     NOT_TRUSTED_LOGGED.store(false, Ordering::SeqCst);
-    log("[fnkey] reinit: AXIsProcessTrusted = true");
+    log::info!("[fnkey] reinit: AXIsProcessTrusted = true");
     init_monitor(app);
 }
 
@@ -438,7 +414,7 @@ fn teardown_monitors() {
             if let Some(SendPtr(ptr)) = guard.take() {
                 if !ptr.is_null() {
                     send_remove(ns_event_class, remove_sel, ptr);
-                    log("[fnkey] Removed global monitor");
+                    log::debug!("[fnkey] Removed global monitor");
                 }
             }
         }
@@ -448,7 +424,7 @@ fn teardown_monitors() {
             if let Some(SendPtr(ptr)) = guard.take() {
                 if !ptr.is_null() {
                     send_remove(ns_event_class, remove_sel, ptr);
-                    log("[fnkey] Removed local monitor");
+                    log::debug!("[fnkey] Removed local monitor");
                 }
             }
         }
@@ -486,11 +462,11 @@ pub fn force_reinit_monitor(app: AppHandle) {
         .as_millis() as u64;
     let last = LAST_FORCE_REINIT_MS.load(Ordering::SeqCst);
     if now.saturating_sub(last) < FORCE_REINIT_DEBOUNCE_MS {
-        log("[fnkey] force_reinit skipped (debounced)");
+        log::debug!("[fnkey] force_reinit skipped (debounced)");
         return;
     }
     LAST_FORCE_REINIT_MS.store(now, Ordering::SeqCst);
-    log("[fnkey] force_reinit — tearing down and re-creating monitors");
+    log::info!("[fnkey] force_reinit — tearing down and re-creating monitors");
     teardown_monitors();
     init_monitor(app);
 }
@@ -541,9 +517,9 @@ fn init_monitor(app: AppHandle) {
         let monitor = send(ns_event_class, sel, NS_EVENT_MASK_FLAGS_CHANGED, block_ptr);
 
         if monitor.is_null() {
-            log("[fnkey] NSEvent global monitor FAILED");
+            log::error!("[fnkey] NSEvent global monitor FAILED");
         } else {
-            log("[fnkey] NSEvent global monitor active");
+            log::info!("[fnkey] NSEvent global monitor active");
             if let Ok(mut g) = GLOBAL_MONITOR.lock() { *g = Some(SendPtr(monitor)); }
         }
 
@@ -587,9 +563,9 @@ fn init_monitor(app: AppHandle) {
         );
 
         if local_monitor.is_null() {
-            log("[fnkey] NSEvent local monitor FAILED");
+            log::error!("[fnkey] NSEvent local monitor FAILED");
         } else {
-            log("[fnkey] NSEvent local monitor active");
+            log::info!("[fnkey] NSEvent local monitor active");
             if let Ok(mut g) = LOCAL_MONITOR.lock() { *g = Some(SendPtr(local_monitor)); }
         }
 
@@ -598,7 +574,7 @@ fn init_monitor(app: AppHandle) {
 
         if !monitor.is_null() || !local_monitor.is_null() {
             MONITOR_ACTIVE.store(true, Ordering::SeqCst);
-            log("[fnkey] fn key monitoring ready — press fn to record");
+            log::info!("[fnkey] fn key monitoring ready — press fn to record");
         }
     }
 }

@@ -12,6 +12,7 @@ mod corrections;
 mod fnkey;
 mod history;
 mod history_db;
+pub mod logging;
 mod paste;
 #[cfg(target_os = "macos")]
 mod permissions;
@@ -71,11 +72,11 @@ async fn load_whisper_ctx(
     let model_path = data_dir.join("models").join(filename);
 
     if !model_path.exists() {
-        eprintln!("[stt] Model file not found: {}", model_path.display());
+        log::error!("[stt] Model file not found: {}", model_path.display());
         return Err(format!("Model not found: {}", model_path.display()));
     }
 
-    eprintln!("[stt] Loading model from: {}", model_path.display());
+    log::info!("[stt] Loading model from: {}", model_path.display());
     let path_str = model_path.to_str().ok_or("Invalid path")?.to_string();
 
     tokio::task::spawn_blocking(move || {
@@ -131,12 +132,12 @@ async fn load_local_engine(
         {
             let dir = models_dir(app)?.join(filename);
             let ctc_dir = models_dir(app)?.join(transcribe::PARAKEET_CTC_ID);
-            eprintln!("[stt] Loading Parakeet bundle from: {}", dir.display());
+            log::info!("[stt] Loading Parakeet bundle from: {}", dir.display());
             let started = std::time::Instant::now();
             let engine = tokio::task::spawn_blocking(move || parakeet::ParakeetEngine::load(&dir))
                 .await
                 .map_err(|e| format!("Task join error: {}", e))??;
-            eprintln!(
+            log::info!(
                 "[stt] Parakeet loaded in {:.0}ms",
                 started.elapsed().as_millis()
             );
@@ -154,11 +155,11 @@ async fn load_local_engine(
                 std::thread::spawn(move || {
                     let started = std::time::Instant::now();
                     match vocab_engine.load_ctc(&ctc_dir) {
-                        Ok(()) => eprintln!(
+                        Ok(()) => log::info!(
                             "[stt] Parakeet vocabulary models ready in {:.0}ms",
                             started.elapsed().as_millis()
                         ),
-                        Err(e) => eprintln!("[stt] Parakeet vocabulary models not loaded: {}", e),
+                        Err(e) => log::warn!("[stt] Parakeet vocabulary models not loaded: {}", e),
                     }
                 });
             }
@@ -204,7 +205,7 @@ async fn resolve_local_engine(
     let Some(filename) = filename else {
         return Err("Local model not loaded".to_string());
     };
-    eprintln!(
+    log::info!(
         "[cmd] transcribe_buffer: reloading idle-unloaded model {}",
         filename
     );
@@ -219,7 +220,7 @@ fn warm_up_local_engine(engine: LocalEngine) {
         let warmup_start = std::time::Instant::now();
         match engine {
             LocalEngine::Whisper(ctx) => {
-                eprintln!("[cmd] Warming up Whisper GPU pipeline...");
+                log::debug!("[cmd] Warming up Whisper GPU pipeline...");
                 if let Ok(mut state) = ctx.create_state() {
                     let silence = vec![0.0f32; 1600]; // 0.1s at 16kHz
                     let mut params = whisper_rs::FullParams::new(
@@ -236,12 +237,12 @@ fn warm_up_local_engine(engine: LocalEngine) {
             }
             #[cfg(feature = "parakeet")]
             LocalEngine::Parakeet(engine) => {
-                eprintln!("[cmd] Warming up Parakeet Neural Engine pipeline...");
+                log::debug!("[cmd] Warming up Parakeet Neural Engine pipeline...");
                 let silence = vec![0.0f32; 16000]; // 1s at 16kHz
                 let _ = engine.transcribe(&silence, None);
             }
         }
-        eprintln!(
+        log::info!(
             "[cmd] Warm-up done in {:.0}ms",
             warmup_start.elapsed().as_millis()
         );
@@ -320,7 +321,7 @@ async fn stop_recording(
 
     let sample_count = samples.len();
     let duration_secs = sample_count as f64 / 16000.0;
-    eprintln!(
+    log::info!(
         "[cmd] stop_recording: {} samples ({:.1}s audio)",
         sample_count,
         duration_secs
@@ -368,7 +369,7 @@ async fn transcribe_buffer(
             std::mem::take(&mut rec.samples)
         };
 
-        eprintln!(
+        log::debug!(
             "[cmd] transcribe_buffer: {} samples ({:.1}s)",
             samples.len(),
             samples.len() as f64 / 16000.0
@@ -443,7 +444,7 @@ async fn transcribe_buffer_cloud(
         std::mem::take(&mut rec.samples)
     };
 
-    eprintln!(
+    log::debug!(
         "[cmd] transcribe_buffer_cloud: {} samples ({:.1}s)",
         samples.len(),
         samples.len() as f64 / 16000.0
@@ -740,22 +741,23 @@ fn reset_all_data(
     if settings_path.exists() {
         std::fs::remove_file(&settings_path)
             .map_err(|e| format!("Failed to delete settings: {}", e))?;
-        eprintln!("[reset] Deleted settings store");
+        log::info!("[reset] Deleted settings store");
     }
 
-    // Delete history, corrections and dictionary stores
+    // Delete history, corrections and dictionary stores, and the crash marker
     for (name, label) in [
-        ("linty-history.json", "history"),
+        ("linty-history.json", "history store"),
         (history_db::DATABASE, "history database"),
         ("linty-history.sqlite3-journal", "history journal"),
-        ("linty-corrections.json", "corrections"),
-        ("linty-dictionary.json", "dictionary"),
+        ("linty-corrections.json", "corrections store"),
+        ("linty-dictionary.json", "dictionary store"),
+        (logging::CRASH_MARKER, "crash marker"),
     ] {
         let path = data_dir.join(name);
         if path.exists() {
             std::fs::remove_file(&path)
                 .map_err(|e| format!("Failed to delete {}: {}", label, e))?;
-            eprintln!("[reset] Deleted {} store", label);
+            log::info!("[reset] Deleted {}", label);
         }
     }
 
@@ -764,7 +766,7 @@ fn reset_all_data(
     if models_dir.exists() {
         std::fs::remove_dir_all(&models_dir)
             .map_err(|e| format!("Failed to delete models: {}", e))?;
-        eprintln!("[reset] Deleted models directory");
+        log::info!("[reset] Deleted models directory");
     }
 
     // Unload any local model from memory
@@ -775,14 +777,14 @@ fn reset_all_data(
             *name = None;
         }
         state.local_model_last_used_at.store(0, Ordering::Relaxed);
-        eprintln!("[reset] Unloaded local model");
+        log::info!("[reset] Unloaded local model");
     }
     #[cfg(not(feature = "local-stt"))]
     {
         let _ = &state;
     }
 
-    eprintln!("[reset] All data cleared — app will reload");
+    log::info!("[reset] All data cleared — app will reload");
     Ok(())
 }
 
@@ -909,11 +911,11 @@ fn delete_model_file(app: tauri::AppHandle, filename: String) -> Result<(), Stri
         // Parakeet bundles are directories of .mlmodelc packages.
         std::fs::remove_dir_all(&model_path)
             .map_err(|e| format!("Failed to delete {}: {}", filename, e))?;
-        eprintln!("[cmd] Deleted model bundle: {}", filename);
+        log::info!("[cmd] Deleted model bundle: {}", filename);
     } else if model_path.exists() {
         std::fs::remove_file(&model_path)
             .map_err(|e| format!("Failed to delete {}: {}", filename, e))?;
-        eprintln!("[cmd] Deleted model: {}", filename);
+        log::info!("[cmd] Deleted model: {}", filename);
     }
     Ok(())
 }
@@ -936,8 +938,8 @@ fn cleanup_deprecated_models(app: &tauri::AppHandle) {
         let path = models_dir.join(filename);
         if path.exists() {
             match std::fs::remove_file(&path) {
-                Ok(()) => eprintln!("[cleanup] Removed deprecated model: {}", filename),
-                Err(e) => eprintln!("[cleanup] Failed to remove {}: {}", filename, e),
+                Ok(()) => log::info!("[cleanup] Removed deprecated model: {}", filename),
+                Err(e) => log::warn!("[cleanup] Failed to remove {}: {}", filename, e),
             }
         }
     }
@@ -951,7 +953,7 @@ async fn load_local_model(
     #[allow(unused_variables)] state: tauri::State<'_, AppState>,
     #[allow(unused_variables)] filename: String,
 ) -> Result<(), String> {
-    eprintln!("[cmd] load_local_model: {}", filename);
+    log::info!("[cmd] load_local_model: {}", filename);
     #[cfg(feature = "local-stt")]
     {
         // Serialize with transcribe_buffer's lazy reload — never two loads at once
@@ -970,7 +972,7 @@ async fn load_local_model(
 
         warm_up_local_engine(engine);
 
-        eprintln!("[cmd] Local model loaded successfully: {}", filename);
+        log::info!("[cmd] Local model loaded successfully: {}", filename);
         Ok(())
     }
     #[cfg(not(feature = "local-stt"))]
@@ -999,12 +1001,12 @@ async fn prepare_parakeet_vocabulary(
         }
         let dir = models_dir(&app)?.join(transcribe::PARAKEET_CTC_ID);
         let downloaded = !dir.is_dir();
-        eprintln!("[stt] Preparing Parakeet vocabulary models in {}", dir.display());
+        log::info!("[stt] Preparing Parakeet vocabulary models in {}", dir.display());
         let started = std::time::Instant::now();
         tokio::task::spawn_blocking(move || engine.load_ctc(&dir))
             .await
             .map_err(|e| format!("Task join error: {}", e))??;
-        eprintln!(
+        log::info!(
             "[stt] Parakeet vocabulary models ready in {:.0}ms",
             started.elapsed().as_millis()
         );
@@ -1024,7 +1026,7 @@ fn register_local_model(
 ) -> Result<(), String> {
     #[cfg(feature = "local-stt")]
     {
-        eprintln!("[cmd] register_local_model: {} (lazy, not loaded)", filename);
+        log::debug!("[cmd] register_local_model: {} (lazy, not loaded)", filename);
         let mut guard = state
             .local_model_filename
             .lock()
@@ -1043,7 +1045,7 @@ fn set_model_idle_unload_minutes(
 ) {
     #[cfg(feature = "local-stt")]
     {
-        eprintln!("[cmd] set_model_idle_unload_minutes: {}", minutes);
+        log::debug!("[cmd] set_model_idle_unload_minutes: {}", minutes);
         state
             .model_idle_unload_secs
             .store(minutes * 60, Ordering::Relaxed);
@@ -1155,22 +1157,7 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
         }
 
         unsafe extern "C" fn wake_invoke(block: *mut WakeBlock, _notification: *const c_void) {
-            eprintln!("[wake] System/screen wake detected — reinitializing");
-
-            // Log to file
-            if let Ok(home) = std::env::var("HOME") {
-                let path = format!("{}/linty-fnkey.log", home);
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&path)
-                {
-                    let _ = std::io::Write::write_all(
-                        &mut f,
-                        b"[wake] System/screen wake detected - reinitializing\n",
-                    );
-                }
-            }
+            log::info!("[wake] System/screen wake detected — reinitializing");
 
             let app = &(*(*block).app_handle).0;
             let state = &*(*(*block).state_ptr).0;
@@ -1233,7 +1220,7 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
             block_ptr,
         );
 
-        eprintln!("[wake] Registered NSWorkspaceDidWakeNotification observer");
+        log::debug!("[wake] Registered NSWorkspaceDidWakeNotification observer");
 
         // Also listen for display-only sleep/wake (lid close while on power).
         // NSWorkspaceDidWakeNotification does NOT fire for screen-only wake.
@@ -1265,7 +1252,7 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
             screen_block_ptr,
         );
 
-        eprintln!("[wake] Registered NSWorkspaceScreensDidWakeNotification observer");
+        log::debug!("[wake] Registered NSWorkspaceScreensDidWakeNotification observer");
     }
 }
 
@@ -1277,13 +1264,15 @@ pub fn run() {
         // fn-key monitors and paste pipeline — an independent double-paste
         // vector. Instead, surface the already-running instance.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            eprintln!("[single-instance] Second launch blocked — focusing existing window");
+            log::info!("[single-instance] Second launch blocked — focusing existing window");
             set_activation_policy_regular();
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
         }))
+        // Local-only log file; registered before every plugin that logs.
+        .plugin(logging::plugin())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
@@ -1337,6 +1326,9 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Version banner, crash marker path and panic hook, before
+            // anything else in setup can fail or panic.
+            logging::init(app.handle());
 
             // Tray icon (menu, engine selector, status)
             tray::init_tray(app)?;

@@ -101,12 +101,12 @@ mod imp {
     const MAIN_THREAD_TIMEOUT: Duration = Duration::from_secs(2);
 
     pub fn simulate_paste(app: &AppHandle) -> Result<(), String> {
-        eprintln!("[paste] Simulating Cmd+V via CGEvent...");
+        log::debug!("[paste] Simulating Cmd+V via CGEvent...");
 
         // CGEventPost silently drops keyboard events from untrusted processes,
         // so surface that as an error the frontend can turn into a toast.
         if !crate::fnkey::is_accessibility_granted() {
-            eprintln!("[paste] Accessibility not granted — cannot post key events");
+            log::warn!("[paste] Accessibility not granted — cannot post key events");
             return Err("Accessibility permission not granted".into());
         }
 
@@ -123,7 +123,7 @@ mod imp {
             .recv_timeout(MAIN_THREAD_TIMEOUT)
             .map_err(|e| format!("Keycode lookup on main thread failed: {}", e))?;
         if v_keycode != VK_ANSI_V {
-            eprintln!(
+            log::debug!(
                 "[paste] active layout types 'v' at keycode 0x{:02X}",
                 v_keycode
             );
@@ -138,9 +138,12 @@ mod imp {
         ];
         // SAFETY: post_chord owns every CF object it creates and releases each on all
         // paths; CGEvent creation/posting is thread-safe, so no main-thread hop needed.
-        unsafe { post_chord(&chord)? };
+        unsafe { post_chord(&chord) }.map_err(|e| {
+            log::error!("[paste] Posting Cmd+V failed: {}", e);
+            e
+        })?;
 
-        eprintln!("[paste] Cmd+V posted successfully");
+        log::debug!("[paste] Cmd+V posted successfully");
         Ok(())
     }
 
@@ -159,13 +162,13 @@ mod imp {
         unsafe {
             let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource();
             if source.is_null() {
-                eprintln!("[paste] no ASCII-capable layout found, using kVK_ANSI_V");
+                log::warn!("[paste] no ASCII-capable layout found, using kVK_ANSI_V");
                 return VK_ANSI_V;
             }
 
             let layout_data = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData);
             let keycode = if layout_data.is_null() {
-                eprintln!("[paste] layout has no key layout data, using kVK_ANSI_V");
+                log::warn!("[paste] layout has no key layout data, using kVK_ANSI_V");
                 VK_ANSI_V
             } else {
                 let layout = CFDataGetBytePtr(layout_data) as *const c_void;
@@ -193,7 +196,7 @@ mod imp {
                     }
                 }
                 found.unwrap_or_else(|| {
-                    eprintln!("[paste] no key types 'v' on this layout, using kVK_ANSI_V");
+                    log::warn!("[paste] no key types 'v' on this layout, using kVK_ANSI_V");
                     VK_ANSI_V
                 })
             };
@@ -213,7 +216,7 @@ mod imp {
         // A null source is permitted by CGEventCreateKeyboardEvent; log and continue.
         let source = CGEventSourceCreate(EVENT_SOURCE_STATE_HID_SYSTEM);
         if source.is_null() {
-            eprintln!("[paste] CGEventSourceCreate returned NULL, using default source");
+            log::warn!("[paste] CGEventSourceCreate returned NULL, using default source");
         }
 
         let mut events: [*mut c_void; 4] = [std::ptr::null_mut(); 4];

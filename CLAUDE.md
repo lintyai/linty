@@ -22,6 +22,8 @@ cargo run --release --example stt_bench --features local-stt,parakeet -- clip.wa
 
 Release builds (`build:mac`, CI) use `--features local-stt,parakeet`.
 
+`scripts/check-rust-logging.sh` fails on `println!`/`eprintln!`/`dbg!` in `src-tauri/src` (runs on every PR via `.github/workflows/checks.yml`).
+
 Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separated).
 
 ## Architecture
@@ -45,6 +47,13 @@ Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separat
 - Dictionary entries are applied in `useTranscription.hook.ts` before paste (whole-word, case-matching; counted as `timesApplied`, shown as "Corrected"; engine-side fixes returned in `Transcription.vocabulary_applied` count as `timesRecognized`, shown as "Recognised") and the most-used entries seed the Whisper/Groq vocabulary prompt. Parakeet has no prompt: the same entries go to `transcribe_buffer` as `vocabulary` terms and FluidAudio's CTC keyword spotter rescores the transcript (`linty_parakeet_transcribe_vocab`); `src-tauri/src/vocabulary.rs` applies only candidates that resemble the term or one of its known wrong spellings (similarity ≥ 0.6), because the rescorer over-applies. The CTC bundle (`parakeet-ctc-110m-coreml`, ~100 MB) is fetched by `prepare_parakeet_vocabulary` (called by `useParakeetVocabulary.hook.ts` once the dictionary has words) and loaded with the engine on later loads. "Apply my dictionary" (Settings → Privacy & storage) turns all of this off. `reset_all_data` deletes both JSON stores.
 - Rewrites (more than 40 % of words changed) are recorded for the corrections-per-100-words metric but never learned from.
 - "Learn from corrections in other apps" (off by default) makes `paste_text` start a 60 s Accessibility watch (`src-tauri/src/corrections.rs`, raw AX FFI) on the focused field: it locates the pasted words, diffs only that span, and emits `correction-observed`; `useCorrectionObserver.hook.ts` records it with `source: "observed"`. A newer paste ends the previous watch; fields that empty on submit keep what was seen before; unreadable fields (some editors) simply learn nothing.
+
+### Logging (local only)
+- The backend logs through the `log` crate. `src-tauri/src/logging.rs` registers `tauri-plugin-log` and writes `~/Library/Logs/ai.linty.desktop/linty.log` (rotated at 5 MB, five files kept) plus stderr. Debug level in dev builds, info in release. Nothing is uploaded.
+- **Redaction rule:** never log transcript text, clipboard contents, API keys or dictionary words. Log counts, lengths (`chars().count()`), durations, engine and model names. Check error strings too: serde_json errors, for example, quote the value they failed on. The log formatter replaces the home folder with `~` in every line.
+- Messages keep a `[subsystem]` prefix (`[stt]`, `[paste]`, `[fnkey]`, ...). Per-dictation summaries are `info`; per-event detail is `debug`.
+- A panic hook logs the message and backtrace, then writes `crash.marker` (time, version, thread, location) to the app data dir. The next launch logs a warning while the marker exists; `reset_all_data` deletes it. Native crashes still go to `~/Library/Logs/DiagnosticReports`.
+- Startup removes the legacy `~/linty-fnkey.log` that older builds wrote.
 
 ### State Management
 - **Frontend**: Zustand store split into slices (recording, transcription, settings, navigation, history, toast)

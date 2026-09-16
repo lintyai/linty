@@ -348,6 +348,7 @@ yarn build
 ### 5.2 Rust Build Check
 ```bash
 cd src-tauri && cargo check --features local-stt
+cargo check --features local-stt,parakeet   # when parakeet.rs, build.rs, swift/ or parakeet-gated code changed
 ```
 
 ### 5.3 If Build Fails

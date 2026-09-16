@@ -86,15 +86,17 @@ Before proceeding, verify the code is sound:
 
 ```bash
 # Frontend build (includes TypeScript check)
-cd /Users/hari/2026/linty && yarn build
+cd <checkout-root> && yarn build
 
 # Rust type check — both feature sets ship (release builds use local-stt,parakeet;
 # the parakeet check also compiles the Swift bridge in src-tauri/swift/)
-cd /Users/hari/2026/linty/src-tauri && cargo check --features local-stt && cargo check --features local-stt,parakeet
+cd <checkout-root>/src-tauri && cargo check --features local-stt && cargo check --features local-stt,parakeet
 ```
 
 If `cargo` is not on PATH (non-login shell), use the rustup toolchain directly:
 `export PATH="$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$PATH"`.
+
+`<checkout-root>` is the main checkout or the worktree holding the change. A fresh worktree has no `node_modules`; when no frontend files changed, skip `yarn build` and say so in the PR test plan.
 
 **Checklist**:
 - [ ] Frontend build passes (`yarn build`)
@@ -134,7 +136,7 @@ git config user.name | tr '[:upper:]' '[:lower:]' | tr ' ' '-'
 
 Stage and commit with conventional commit format.
 
-**CRITICAL -- Working Directory**: Always use absolute paths or run git commands from the repo root (`/Users/hari/2026/linty`). After running build/typecheck commands, the shell CWD may have changed, causing `git add` with relative paths to fail.
+**CRITICAL -- Working Directory**: Always use absolute paths or run git commands from the root of the checkout being shipped. That is `/Users/hari/2026/linty`, or the worktree root (e.g. `/Users/hari/2026/linty/.claude/worktrees/<name>`) when the work lives in a worktree; running git in the main checkout would commit to whatever branch it has checked out. After running build/typecheck commands, the shell CWD may have changed, causing `git add` with relative paths to fail.
 
 ```bash
 git add <files>

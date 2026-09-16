@@ -156,7 +156,7 @@ pub async fn transcribe_cloud(
     language: Option<&str>,
 ) -> Result<String, String> {
     if !audio_has_speech(samples) {
-        eprintln!("[transcribe] Cloud: audio too quiet, skipping");
+        log::info!("[transcribe] Cloud: audio too quiet, skipping");
         return Ok(String::new());
     }
 
@@ -187,6 +187,7 @@ pub async fn transcribe_cloud(
         }
     }
 
+    let started = std::time::Instant::now();
     let response = api_client()
         .post("https://api.groq.com/openai/v1/audio/transcriptions")
         .header("Authorization", format!("Bearer {}", api_key))
@@ -207,8 +208,13 @@ pub async fn transcribe_cloud(
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
     let text = result.text.trim().to_string();
+    log::info!(
+        "[transcribe] Cloud done in {:.0}ms: {} chars",
+        started.elapsed().as_millis(),
+        text.chars().count()
+    );
     if is_hallucination(&text) {
-        eprintln!("[transcribe] Cloud: filtered hallucination: {:?}", text);
+        log::info!("[transcribe] Cloud: dropped a likely hallucination ({} chars)", text.chars().count());
         return Ok(String::new());
     }
 
@@ -236,7 +242,7 @@ where
     use whisper_rs::{FullParams, SamplingStrategy};
 
     let duration_secs = samples.len() as f64 / 16000.0;
-    eprintln!(
+    log::debug!(
         "[transcribe] Starting local STT: {} samples ({:.1}s)",
         samples.len(),
         duration_secs
@@ -250,7 +256,7 @@ where
     }
 
     if !audio_has_speech(samples) {
-        eprintln!("[transcribe] Local: audio too quiet, skipping");
+        log::info!("[transcribe] Local: audio too quiet, skipping");
         return Ok(String::new());
     }
 
@@ -310,18 +316,18 @@ where
     // ── Progress callback — 0-100% ──
     params.set_progress_callback_safe(on_progress);
 
-    eprintln!(
+    log::debug!(
         "[transcribe] Params: threads={}, single_seg={}",
         n_threads,
         duration_secs <= 20.0
     );
 
+    let started = std::time::Instant::now();
     state
         .full(params, samples)
         .map_err(|e| format!("Transcription failed: {}", e))?;
 
     let num_segments = state.full_n_segments();
-    eprintln!("[transcribe] Whisper produced {} segments", num_segments);
 
     let mut text = String::new();
 
@@ -329,23 +335,28 @@ where
         if let Some(segment) = state.get_segment(i) {
             match segment.to_str_lossy() {
                 Ok(s) => {
-                    eprintln!("[transcribe] segment {}: {:?}", i, s.as_ref());
+                    log::debug!("[transcribe] segment {}: {} chars", i, s.chars().count());
                     text.push_str(&s);
                 }
                 Err(e) => {
-                    eprintln!("[transcribe] segment {} text error: {}", i, e);
+                    log::warn!("[transcribe] segment {} text error: {}", i, e);
                 }
             }
         } else {
-            eprintln!("[transcribe] segment {} returned None", i);
+            log::warn!("[transcribe] segment {} returned None", i);
         }
     }
 
     let result = text.trim().to_string();
-    eprintln!("[transcribe] Final text: {:?}", result);
+    log::info!(
+        "[transcribe] Whisper done in {:.0}ms: {} segments, {} chars",
+        started.elapsed().as_millis(),
+        num_segments,
+        result.chars().count()
+    );
 
     if is_hallucination(&result) {
-        eprintln!("[transcribe] Local: filtered hallucination: {:?}", result);
+        log::info!("[transcribe] Local: dropped a likely hallucination ({} chars)", result.chars().count());
         return Ok(String::new());
     }
 
@@ -364,7 +375,7 @@ pub fn transcribe_parakeet(
     language: Option<&str>,
 ) -> Result<String, String> {
     let duration_secs = samples.len() as f64 / 16000.0;
-    eprintln!(
+    log::debug!(
         "[transcribe] Starting Parakeet: {} samples ({:.1}s)",
         samples.len(),
         duration_secs
@@ -378,23 +389,22 @@ pub fn transcribe_parakeet(
     }
 
     if !audio_has_speech(samples) {
-        eprintln!("[transcribe] Parakeet: audio too quiet, skipping");
+        log::info!("[transcribe] Parakeet: audio too quiet, skipping");
         return Ok(String::new());
     }
 
     let hint = language.filter(|l| *l != "auto" && !l.is_empty());
     let started = std::time::Instant::now();
     let result = engine.transcribe(samples, hint)?;
-    eprintln!(
-        "[transcribe] Parakeet done in {:.0}ms (inference {:.0}ms)",
-        started.elapsed().as_millis(),
-        result.processing_secs * 1000.0
-    );
-
     let text = result.text.trim().to_string();
-    eprintln!("[transcribe] Final text: {:?}", text);
+    log::info!(
+        "[transcribe] Parakeet done in {:.0}ms (inference {:.0}ms): {} chars",
+        started.elapsed().as_millis(),
+        result.processing_secs * 1000.0,
+        text.chars().count()
+    );
     if is_hallucination(&text) {
-        eprintln!("[transcribe] Parakeet: filtered degenerate output: {:?}", text);
+        log::info!("[transcribe] Parakeet: dropped degenerate output ({} chars)", text.chars().count());
         return Ok(String::new());
     }
     Ok(text)
@@ -426,7 +436,7 @@ pub fn transcribe_parakeet_with_vocabulary(
     terms: &[crate::vocabulary::VocabTerm],
 ) -> Result<Transcription, String> {
     let duration_secs = samples.len() as f64 / 16000.0;
-    eprintln!(
+    log::debug!(
         "[transcribe] Starting Parakeet with {} dictionary terms: {} samples ({:.1}s)",
         terms.len(),
         samples.len(),
@@ -441,7 +451,7 @@ pub fn transcribe_parakeet_with_vocabulary(
     }
 
     if !audio_has_speech(samples) {
-        eprintln!("[transcribe] Parakeet: audio too quiet, skipping");
+        log::info!("[transcribe] Parakeet: audio too quiet, skipping");
         return Ok(Transcription::default());
     }
 
@@ -450,21 +460,17 @@ pub fn transcribe_parakeet_with_vocabulary(
     let result = engine.transcribe_with_vocabulary(samples, hint, terms)?;
     let (text, applied) =
         crate::vocabulary::apply_replacements(result.text.trim(), &result.replacements, terms);
-    eprintln!(
-        "[transcribe] Parakeet done in {:.0}ms (inference {:.0}ms); vocabulary candidates {}, applied {}",
+    let text = text.trim().to_string();
+    log::info!(
+        "[transcribe] Parakeet done in {:.0}ms (inference {:.0}ms): {} chars; vocabulary candidates {}, applied {}",
         started.elapsed().as_millis(),
         result.processing_secs * 1000.0,
+        text.chars().count(),
         result.replacements.len(),
         applied.len()
     );
-    for change in &applied {
-        eprintln!("[transcribe]   {} -> {}", change.from, change.to);
-    }
-
-    let text = text.trim().to_string();
-    eprintln!("[transcribe] Final text: {:?}", text);
     if is_hallucination(&text) {
-        eprintln!("[transcribe] Parakeet: filtered degenerate output: {:?}", text);
+        log::info!("[transcribe] Parakeet: dropped degenerate output ({} chars)", text.chars().count());
         return Ok(Transcription::default());
     }
     Ok(Transcription { text, vocabulary_applied: applied })

@@ -36,7 +36,7 @@ pub fn spawn_audio_thread(
                     let device = match host.default_input_device() {
                         Some(d) => d,
                         None => {
-                            eprintln!("No input device available");
+                            log::error!("[audio] No input device available");
                             continue;
                         }
                     };
@@ -45,7 +45,7 @@ pub fn spawn_audio_thread(
                     let default_config = match device.default_input_config() {
                         Ok(c) => c,
                         Err(e) => {
-                            eprintln!("No default input config: {}", e);
+                            log::error!("[audio] No default input config: {}", e);
                             continue;
                         }
                     };
@@ -59,7 +59,7 @@ pub fn spawn_audio_thread(
                         buffer_size: cpal::BufferSize::Default,
                     };
 
-                    eprintln!(
+                    log::info!(
                         "[audio] Using device config: {}Hz, {} ch (will resample to 16kHz mono)",
                         device_sample_rate, device_channels
                     );
@@ -127,18 +127,18 @@ pub fn spawn_audio_thread(
                                 let _ = app_clone.emit_to("capsule", "capsule-amplitude", rms);
                             }
                         },
-                        |err| eprintln!("Audio stream error: {}", err),
+                        |err| log::error!("[audio] Stream error: {}", err),
                         None,
                     ) {
                         Ok(s) => s,
                         Err(e) => {
-                            eprintln!("Failed to build stream: {}", e);
+                            log::error!("[audio] Failed to build stream: {}", e);
                             continue;
                         }
                     };
 
                     if let Err(e) = stream.play() {
-                        eprintln!("Failed to play stream: {}", e);
+                        log::error!("[audio] Failed to play stream: {}", e);
                         continue;
                     }
 

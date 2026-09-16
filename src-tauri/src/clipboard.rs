@@ -285,7 +285,7 @@ extern "C" fn pasteboard_finished_imp(
         unsafe {
             let _ = Box::from_raw(ptr as *mut ProviderState);
         }
-        eprintln!("[clipboard] provider state cleaned up");
+        log::debug!("[clipboard] provider state cleaned up");
     }
 }
 
@@ -447,7 +447,7 @@ pub fn snapshot_clipboard() -> Option<ClipboardSnapshot> {
                         let bytes = nsdata_to_vec(data);
                         total_bytes += bytes.len();
                         if total_bytes > MAX_BYTES {
-                            eprintln!(
+                            log::warn!(
                                 "[clipboard] snapshot exceeds 100MB cap, truncating"
                             );
                             break;
@@ -488,7 +488,7 @@ pub fn restore_clipboard(state: &ClipboardState) -> Result<(), String> {
 
         // If changeCount differs from post-write, user copied something new — don't overwrite
         if current_count != state.post_write_change_count {
-            eprintln!(
+            log::debug!(
                 "[clipboard] changeCount mismatch ({} != {}), skipping restore",
                 current_count, state.post_write_change_count
             );
@@ -557,7 +557,7 @@ pub fn restore_clipboard(state: &ClipboardState) -> Result<(), String> {
             return Err("writeObjects: failed during restore".into());
         }
 
-        eprintln!("[clipboard] restored {} items", state.snapshot.items.len());
+        log::debug!("[clipboard] restored {} items", state.snapshot.items.len());
         Ok(())
     }
 }
@@ -619,11 +619,11 @@ pub fn schedule_restore(delay_ms: u64) {
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(delay_ms));
         if RESTORE_GENERATION.load(Ordering::Acquire) != generation {
-            eprintln!("[clipboard] restore skipped (newer paste session)");
+            log::debug!("[clipboard] restore skipped (newer paste session)");
             return;
         }
         if let Err(e) = cmd_restore() {
-            eprintln!("[clipboard] scheduled restore failed: {}", e);
+            log::warn!("[clipboard] scheduled restore failed: {}", e);
         }
     });
 }
@@ -637,7 +637,7 @@ pub fn cmd_restore() -> Result<(), String> {
     match state {
         Some(s) => restore_clipboard(&s),
         None => {
-            eprintln!("[clipboard] no snapshot to restore");
+            log::debug!("[clipboard] no snapshot to restore");
             Ok(())
         }
     }
