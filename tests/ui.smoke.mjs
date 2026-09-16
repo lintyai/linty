@@ -759,8 +759,64 @@ try {
     await capsule.screenshot({path:`${output}/capsule-${state}.png`,animations:'disabled'});
   }
   await capsuleContext.close();
+  const requiredAudit = async (screen, name) => {
+    await screen.evaluate(() => new Promise(requestAnimationFrame));
+    const result = await new AxeBuilder({ page: screen }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+    failures.push(...result.violations.map(v => ({ screen: name, id: v.id, targets: v.nodes.map(n => n.target), details: v.nodes.map(n => n.failureSummary) })));
+  };
+  const requiredUpdate = { rid:9, currentVersion:'0.0.25', version:'0.0.27', date:null, body:null, rawJson:{ version:'v0.0.27', minimum_version:'0.0.26' } };
+  const forcedContext = await browser.newContext({ viewport:{width:1080,height:760}, reducedMotion:'reduce' });
+  const forced = await forcedContext.newPage();
+  forced.on('pageerror', error => errors.push(error.message));
+  await forced.clock.install();
+  await forced.addInitScript(fixture, { update: requiredUpdate });
+  await forced.goto(url);
+  await forced.clock.runFor(6_000);
+  const required = forced.getByRole('dialog', {name:'Linty needs to update'});
+  await required.getByText('From version 0.0.25 to 0.0.27', {exact:true}).waitFor();
+  await required.getByText(/Linty restarts once you’ve finished dictating/).waitFor();
+  const beforeInstall = await forced.evaluate(() => window.__QA__.calls);
+  assert.ok(beforeInstall.includes('plugin:updater|download'), 'a required update downloads at once');
+  assert.ok(!beforeInstall.includes('plugin:updater|install'), 'it installs only after dictation has been quiet');
+  await forced.keyboard.press('Escape');
+  assert.equal(await required.isVisible(), true, 'Escape does not dismiss a required update');
+  await requiredAudit(forced, 'required-update');
+  await forced.screenshot({path:`${output}/update-required.png`,animations:'disabled'});
+  await forced.evaluate(() => { window.__QA__.calls.length = 0; });
+  await forced.clock.runFor(31_000);
+  await forced.waitForFunction(() => window.__QA__.calls.includes('plugin:process|restart'));
+  const installCalls = await forced.evaluate(() => window.__QA__.calls);
+  assert.ok(installCalls.indexOf('plugin:updater|check') < installCalls.indexOf('plugin:updater|install'), 'the release is checked again before installing');
+  await forcedContext.close();
+
+  const clearedContext = await browser.newContext({ viewport:{width:1080,height:760}, reducedMotion:'reduce' });
+  const cleared = await clearedContext.newPage();
+  cleared.on('pageerror', error => errors.push(error.message));
+  await cleared.clock.install();
+  await cleared.addInitScript(fixture, { update: requiredUpdate });
+  await cleared.goto(url);
+  await cleared.clock.runFor(6_000);
+  const waiting = cleared.getByRole('dialog', {name:'Linty needs to update'});
+  await waiting.getByText(/Linty restarts once you’ve finished dictating/).waitFor();
+  await cleared.evaluate((offer) => window.__QA__.setUpdate({ ...offer, rawJson: { version: 'v0.0.27' } }), requiredUpdate);
+  await cleared.clock.runFor(31_000);
+  await waiting.waitFor({ state: 'hidden' });
+  const clearedCalls = await cleared.evaluate(() => window.__QA__.calls);
+  assert.ok(!clearedCalls.includes('plugin:updater|install'), 'a cleared minimum is not installed');
+  assert.ok(!clearedCalls.includes('plugin:process|restart'));
+  await clearedContext.close();
+
+  const optionalContext = await browser.newContext({ viewport:{width:1080,height:760}, reducedMotion:'reduce' });
+  const optional = await optionalContext.newPage();
+  optional.on('pageerror', error => errors.push(error.message));
+  await optional.addInitScript(fixture, { update: { ...requiredUpdate, rawJson: { version: 'v0.0.27' } } });
+  await optional.goto(url);
+  await optional.getByRole('button', {name:/Update$/}).waitFor({ timeout: 15000 });
+  assert.equal(await optional.getByRole('dialog').count(), 0, 'an update without a minimum stays optional');
+  await optionalContext.close();
+
   assert.deepEqual(errors, [], 'Unexpected runtime errors');
   assert.deepEqual(failures, [], 'Accessibility failures');
-  console.log('UI checks passed: both themes, all screens, 605-record archive, pagination/search, full totals/export, retention/clear confirmations, recovery, keyboard navigation, copy, delete/undo, corrections/dictionary, modal focus, minimum window and onboarding.');
+  console.log('UI checks passed: both themes, all screens, 605-record archive, pagination/search, full totals/export, retention/clear confirmations, recovery, keyboard navigation, copy, delete/undo, corrections/dictionary, modal focus, minimum window, onboarding and required updates.');
   console.log(`Screenshots: ${output}`);
 } finally { await browser?.close(); server.kill(); }

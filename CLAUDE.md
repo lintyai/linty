@@ -24,6 +24,8 @@ Release builds (`build:mac`, CI) use `--features local-stt,parakeet`.
 
 `scripts/check-rust-logging.sh` fails on `println!`/`eprintln!`/`dbg!` in `src-tauri/src` (runs on every PR via `.github/workflows/checks.yml`).
 
+`node scripts/force-update.mjs --show` prints which versions must update (see `docs/runbooks/force-update.md`).
+
 Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separated).
 
 ## Architecture
@@ -54,6 +56,12 @@ Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separat
 - Messages keep a `[subsystem]` prefix (`[stt]`, `[paste]`, `[fnkey]`, ...). Per-dictation summaries are `info`; per-event detail is `debug`.
 - A panic hook logs the message and backtrace, then writes `crash.marker` (time, version, thread, location) to the app data dir. The next launch logs a warning while the marker exists; `reset_all_data` deletes it. Native crashes still go to `~/Library/Logs/DiagnosticReports`.
 - Startup removes the legacy `~/linty-fnkey.log` that older builds wrote.
+
+### Updates and force update
+- `useUpdater.hook.ts` checks GitHub's latest release 5 s after launch, every 15 minutes and on `system-wake`. There is no update server.
+- A release's `latest.json` may carry `minimum_version`. When the running version is below it and the offered release meets it (`src/lib/force-update.util.ts`), `UpdateRequired.dialogue.tsx` blocks the window, the update downloads at once, and it installs after 30 s without dictation (`waitUntilIdle`). The release is checked again just before installing, then the app relaunches.
+- `node scripts/force-update.mjs` sets or clears the minimum on the latest release with `gh`. The build workflow carries the previous minimum into each new release and has a manual `force_update` input. Operations: `docs/runbooks/force-update.md`.
+- The field is unsigned on purpose: it can only require the newest release, which the updater verifies with the release key. There is no downgrade; bad releases are fixed forward.
 
 ### State Management
 - **Frontend**: Zustand store split into slices (recording, transcription, settings, navigation, history, toast)
