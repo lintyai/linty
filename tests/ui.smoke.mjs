@@ -40,6 +40,11 @@ try {
     return page.screenshot({ path: `${output}/${name}.png`, animations: 'disabled' });
   };
   const settingLabels = { general:'Dictation', audio:'Audio', models:'Speech engine', language:'Language', appearance:'Appearance', privacy:'Privacy & storage' };
+  const openSettingsSection = async (screen, name) => {
+    const showSidebar = screen.getByRole('button', {name:'Show sidebar',exact:true});
+    if (await showSidebar.count()) await showSidebar.click();
+    await screen.getByRole('navigation', {name:'Main navigation'}).getByRole('button', {name,exact:true}).click();
+  };
   const chooseOption = async (screen,label,option) => {
     await screen.getByRole('combobox',{name:label,exact:true}).click();
     await screen.getByRole('listbox',{name:label,exact:true}).getByRole('option',{name:option,exact:true}).click();
@@ -251,7 +256,7 @@ try {
   await page.locator('[data-transcript-id="qa-1"]').waitFor();
   assert.equal(await page.locator('[data-transcript-id]').count(), 18);
   await page.locator('[data-transcript-id]').first().click();
-  await page.getByText('No corrections for this transcription.',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('region', {name:'Corrections',exact:true}).count(), 0, 'Unchanged transcriptions have no empty corrections section');
   const originalText = await page.evaluate(() => window.__QA__.stores[2].transcripts.find(t=>t.transcriptId==='qa-0').rawText);
   await page.locator('.original-transcript summary').click();
   assert.equal(await page.locator('.original-transcript p').textContent(),originalText,'Original text is available even before an edit');
@@ -286,8 +291,8 @@ try {
   await page.keyboard.press('Meta+k');
   await page.getByRole('combobox', {name:'Search Linty'}).fill('language');
   await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
-  await page.getByRole('combobox',{name:'Settings category',exact:true}).waitFor();
-  assert.equal(await page.getByRole('combobox',{name:'Settings category',exact:true}).innerText(), 'Language');
+  await page.locator('.settings-language').waitFor();
+  assert.equal(await page.locator('.window-toolbar [role=combobox]').count(), 0, 'Settings navigation lives in the sidebar');
   await chooseOption(page,'Transcription language','Spanish');
   assert.equal(await page.evaluate(() => window.__QA__.stores[1].transcriptionLanguage), 'es');
   const languageSelect = page.getByRole('combobox',{name:'Transcription language',exact:true});
@@ -306,7 +311,7 @@ try {
   await chooseOption(page,'Transcription language','Spanish');
 
   for (const theme of ['light', 'dark']) {
-    await chooseOption(page,'Settings category',settingLabels['appearance']);
+    await openSettingsSection(page,settingLabels['appearance']);
     await page.getByRole('button', {name: theme === 'light' ? 'Light' : 'Dark', exact:true}).click();
     assert.equal(await page.locator('html').getAttribute('data-theme'), theme);
     if (theme === 'light') {
@@ -317,7 +322,7 @@ try {
       assert.equal(await page.locator('html').getAttribute('data-theme'), 'light');
     }
     for (const section of ['general', 'audio', 'models', 'language', 'appearance', 'privacy']) {
-      await chooseOption(page,'Settings category',settingLabels[section]);
+      await openSettingsSection(page,settingLabels[section]);
       await audit(`${section}-${theme}`);
       if (section === 'audio') {
         const input = page.getByRole('combobox', { name: 'Input device', exact: true });
@@ -435,7 +440,7 @@ try {
         await chooseOption(page,'Sort applications','Words');
         assert.equal(await page.locator('.apps-page').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,'Application usage fits its page');
         await page.getByRole('button',{name:'Privacy settings',exact:true}).click();
-        assert.equal(await page.getByRole('combobox',{name:'Settings category',exact:true}).innerText(),'Privacy & storage');
+        assert.equal(await page.locator('.settings-privacy').isVisible(),true);
       }
       if (name === 'Dictionary') {
         const tableOverflow = await page.locator('.dictionary-entries .app-table-scroll').evaluate(el => el.scrollWidth > el.clientWidth + 1);
@@ -501,7 +506,7 @@ try {
   await page.getByText('“Zustand” removed').waitFor();
   await audit('dictionary-edited'); await screenshot('dictionary-edited');
   await page.keyboard.press('Meta+,');
-  await chooseOption(page,'Settings category',settingLabels['privacy']);
+  await openSettingsSection(page,settingLabels['privacy']);
   await page.getByRole('switch', {name:'Learn new words automatically', exact:true}).click();
   assert.equal(await page.evaluate(() => window.__QA__.stores[1].autoLearnWords), true);
   await page.getByRole('switch', {name:'Apply my dictionary', exact:true}).click();
@@ -522,7 +527,7 @@ try {
   await audit('history-observed'); await screenshot('history-observed');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Meta+,');
-  await chooseOption(page,'Settings category',settingLabels['models']);
+  await openSettingsSection(page,settingLabels['models']);
   await page.getByRole('button',{name:'Cloud',exact:true}).click();
   await page.getByLabel('Groq API key',{exact:true}).fill('synthetic-test-key');
   await page.getByRole('button',{name:'Save and use Cloud',exact:true}).click();
@@ -537,7 +542,7 @@ try {
   await page.getByText('Model download failed. Check your connection, then try again.').waitFor();
   await page.evaluate(() => { delete window.__QA__.failures.download_model_file; });
   // Native reset-menu event opens an inert dialog; cancellation restores focus.
-  await page.getByRole('combobox',{name:'Settings category',exact:true}).focus();
+  await page.getByRole('button',{name:'Hide sidebar',exact:true}).focus();
   await page.evaluate(() => window.__QA__.emit('menu-reset-all-data', {}));
   await page.getByRole('dialog').waitFor();
   assert.equal(await page.getByRole('button', {name:'Cancel',exact:true}).evaluate(el => el === document.activeElement), true);
@@ -546,7 +551,7 @@ try {
   await audit('reset-dialog'); await screenshot('reset-dialog');
   await page.keyboard.press('Escape');
   assert.equal(await page.getByRole('dialog').count(), 0);
-  assert.equal(await page.getByRole('combobox',{name:'Settings category',exact:true}).evaluate(el=>el === document.activeElement), true);
+  assert.equal(await page.getByRole('button',{name:'Hide sidebar',exact:true}).evaluate(el=>el === document.activeElement), true);
   assert.equal(await page.evaluate(() => window.__QA__.calls.includes('reset_all_data')), false);
   await page.getByRole('button', {name:'Hide sidebar',exact:true}).click();
   assert.equal(await page.locator('#app-sidebar').count(), 0);
@@ -559,7 +564,7 @@ try {
   await page.keyboard.press('Meta+,');
   await page.setViewportSize({ width:640, height:480 });
   for (const section of ['general','audio','models','language','appearance','privacy']) {
-    await chooseOption(page,'Settings category',settingLabels[section]);
+    await openSettingsSection(page,settingLabels[section]);
     const overflow = await page.locator('.preferences-scroll').evaluate(el => el.scrollWidth > el.clientWidth + 1);
     assert.equal(overflow, false, `${section}: horizontal overflow at 640 × 480`);
     if (section === 'language') {
@@ -671,7 +676,7 @@ try {
   await archive.getByRole('button',{name:'Retry',exact:true}).click();
   await archive.getByRole('heading',{name:'No results',exact:true}).waitFor();
   await archive.keyboard.press('Meta+,');
-  await chooseOption(archive,'Settings category',settingLabels['privacy']);
+  await openSettingsSection(archive,settingLabels['privacy']);
   const retention=archive.getByRole('combobox',{name:'History retention',exact:true});
   assert.equal(await retention.innerText(),'Until I delete it');
   await archive.evaluate(()=>{window.__QA__.cancelExport=true;});

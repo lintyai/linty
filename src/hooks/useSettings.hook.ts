@@ -4,8 +4,10 @@ import { load } from "@tauri-apps/plugin-store";
 import { useAppStore } from "@/store/app.store";
 import { AUTO_LANGUAGE, isSupportedLanguage } from "@/lib/languages.util";
 import { DEFAULT_MODEL_IDLE_UNLOAD_MINUTES, DEFAULT_TRIGGER_KEY } from "@/store/slices/settings.slice";
-import type { SttMode, ThemePreference } from "@/store/slices/settings.slice";
+import type { SettingsSlice, SttMode, ThemePreference } from "@/store/slices/settings.slice";
+import type { CleanupMode, ReformatContext, ReformatStyle } from "@/types/reformat.types";
 
+import { saveSettingsChange } from "@/lib/settings-save-feedback";
 import { DEFAULT_TYPING_SPEED, typingSpeed, validTypingSpeed } from "@/lib/payoff.util";
 
 const STORE_PATH = "linty-settings.json";
@@ -18,6 +20,10 @@ async function getStore() {
       defaults: {
         sttMode: "local",
         correctionEnabled: true,
+        reformatEnabled: false,
+        reformatStyle: "semi-formal",
+        reformatLists: true,
+        reformatContext: "auto",
         theme: "system",
         whisperPrompt: "",
         correctionPrompt: "",
@@ -36,15 +42,25 @@ async function getStore() {
   return storeInstance;
 }
 
-/** Persist first, so a failed save never changes the displayed assumption. */
+/** Persist first, and only report success once the write reaches disk. */
+export function saveSetting<K extends keyof SettingsSlice>(key: K, value: SettingsSlice[K]) {
+  return saveSettingsChange(key, async () => {
+    const store = await getStore();
+    const previous = useAppStore.getState()[key];
+    try {
+      await store.set(key, value);
+      await store.save();
+    } catch (error) {
+      await store.set(key, previous).catch(() => {});
+      throw error;
+    }
+    useAppStore.setState({ [key]: value });
+  });
+}
+
 export async function saveTypingSpeed(speed: number) {
   if (!validTypingSpeed(speed)) throw new Error("Enter a valid typing speed in words per minute.");
-  const store = await getStore();
-  const previous = useAppStore.getState().typingWordsPerMinute;
-  await store.set("typingWordsPerMinute", speed);
-  try { await store.save(); }
-  catch (error) { await store.set("typingWordsPerMinute", previous).catch(() => {}); throw error; }
-  useAppStore.getState().setTypingWordsPerMinute(speed);
+  await saveSetting("typingWordsPerMinute", speed);
 }
 
 export function useSettings() {
@@ -52,6 +68,10 @@ export function useSettings() {
     groqApiKey,
     sttMode,
     correctionEnabled,
+    reformatEnabled,
+    reformatStyle,
+    reformatLists,
+    reformatContext,
     theme,
     whisperPrompt,
     correctionPrompt,
@@ -94,6 +114,17 @@ export function useSettings() {
         });
         const mode = await store.get<SttMode>("sttMode");
         const correction = await store.get<boolean>("correctionEnabled");
+        const reformat = await store.get<boolean>("reformatEnabled");
+        const style = await store.get<ReformatStyle>("reformatStyle");
+        const lists = await store.get<boolean>("reformatLists");
+        const context = await store.get<ReformatContext>("reformatContext");
+        useAppStore.setState({
+          reformatEnabled: reformat === true,
+          reformatStyle: style && ["casual", "semi-casual", "semi-formal", "formal"].includes(style) ? style : "semi-formal",
+          reformatLists: lists !== false,
+          reformatContext: context && ["auto", "general", "email"].includes(context) ? context : "auto",
+        });
+        if (reformat) void invoke("prepare_s1_model").catch(() => {});
         const savedTheme = await store.get<ThemePreference>("theme");
         const savedWhisperPrompt = await store.get<string>("whisperPrompt");
         const savedCorrectionPrompt = await store.get<string>("correctionPrompt");
@@ -144,155 +175,85 @@ export function useSettings() {
     })();
   }, [setGroqApiKey, setSttMode, setCorrectionEnabled, setTheme, setWhisperPrompt, setCorrectionPrompt, setOnboardingComplete, setTranscriptionLanguage, setSelectedModelFilename, setModelIdleUnloadMinutes, setTriggerKey, setSettingsLoaded, setTrackApplicationUsage, setDictionaryEnabled, setAutoLearnWords, setObserveCorrections]);
 
-  const saveGroqApiKey = useCallback(
-    async (key: string) => {
-      const trimmed = key.trim();
-      await invoke("set_groq_api_key", { key: trimmed });
-      setGroqApiKey(trimmed);
-    },
-    [setGroqApiKey],
-  );
+  const saveGroqApiKey = useCallback((key: string) => saveSettingsChange("groqApiKey", async () => {
+    const trimmed = key.trim();
+    await invoke("set_groq_api_key", { key: trimmed });
+    setGroqApiKey(trimmed);
+  }), [setGroqApiKey]);
 
-  const removeGroqApiKey = useCallback(async () => {
+  const removeGroqApiKey = useCallback(() => saveSettingsChange("groqApiKey", async () => {
     const state = useAppStore.getState();
     if (state.isRecording || ["recording", "transcribing", "correcting", "pasting"].includes(state.status)) {
       throw new Error("Finish dictating before removing your API key.");
     }
     await invoke("remove_groq_api_key");
     useAppStore.setState({ groqApiKey: "", sttMode: "local" });
+  }), []);
+
+  const saveTrackApplicationUsage = useCallback((enabled: boolean) => saveSetting("trackApplicationUsage", enabled), []);
+  const saveDictionaryEnabled = useCallback((enabled: boolean) => saveSetting("dictionaryEnabled", enabled), []);
+  const saveAutoLearnWords = useCallback((enabled: boolean) => saveSetting("autoLearnWords", enabled), []);
+  const saveObserveCorrections = useCallback((enabled: boolean) => saveSetting("observeCorrections", enabled), []);
+
+  const saveSttMode = useCallback(async (mode: SttMode) => {
+    if (mode === "cloud" && !useAppStore.getState().groqApiKey.trim()) {
+      throw new Error("Add a Groq API key in Settings → Speech engine first.");
+    }
+    await saveSetting("sttMode", mode);
   }, []);
 
-  const saveTrackApplicationUsage = useCallback(async (enabled: boolean) => {
+  const saveCorrectionEnabled = useCallback((enabled: boolean) => saveSetting("correctionEnabled", enabled), []);
+
+  const saveCleanupMode = useCallback((mode: CleanupMode) => saveSettingsChange("cleanupMode", async () => {
+    const state = useAppStore.getState();
+    if (state.isRecording || ["transcribing", "correcting", "pasting"].includes(state.status)) {
+      throw new Error("Finish dictating before changing text cleanup.");
+    }
+    if (mode === "cloud" && (state.sttMode !== "cloud" || !state.groqApiKey.trim())) {
+      throw new Error("Set up the cloud speech engine before using cloud cleanup.");
+    }
+    if (mode === "local") {
+      const model = await invoke<{ downloaded: boolean }>("s1_model_status");
+      if (!model.downloaded) throw new Error("Download S1-mini before using on-device cleanup.");
+    }
     const store = await getStore();
-    await store.set("trackApplicationUsage", enabled);
-    await store.save();
-    setTrackApplicationUsage(enabled);
-  }, [setTrackApplicationUsage]);
+    const previous = { reformatEnabled: state.reformatEnabled, correctionEnabled: state.correctionEnabled };
+    const next = { reformatEnabled: mode === "local", correctionEnabled: mode === "cloud" };
+    try {
+      await store.set("reformatEnabled", next.reformatEnabled);
+      await store.set("correctionEnabled", next.correctionEnabled);
+      await store.save();
+    } catch (error) {
+      await store.set("reformatEnabled", previous.reformatEnabled).catch(() => {});
+      await store.set("correctionEnabled", previous.correctionEnabled).catch(() => {});
+      throw error;
+    }
+    useAppStore.setState(next);
+    if (previous.reformatEnabled !== next.reformatEnabled) {
+      void invoke(next.reformatEnabled ? "prepare_s1_model" : "unload_s1_model").catch(() => {});
+    }
+  }), []);
 
-  const saveDictionaryEnabled = useCallback(async (enabled: boolean) => {
-    setDictionaryEnabled(enabled);
-    const store = await getStore();
-    await store.set("dictionaryEnabled", enabled);
-  }, [setDictionaryEnabled]);
-
-  const saveAutoLearnWords = useCallback(async (enabled: boolean) => {
-    setAutoLearnWords(enabled);
-    const store = await getStore();
-    await store.set("autoLearnWords", enabled);
-  }, [setAutoLearnWords]);
-
-  const saveObserveCorrections = useCallback(async (enabled: boolean) => {
-    setObserveCorrections(enabled);
-    const store = await getStore();
-    await store.set("observeCorrections", enabled);
-  }, [setObserveCorrections]);
-
-  const saveSttMode = useCallback(
-    async (mode: SttMode) => {
-      if (mode === "cloud" && !useAppStore.getState().groqApiKey.trim()) {
-        throw new Error("Add a Groq API key in Settings → Speech engine first.");
-      }
-      const store = await getStore();
-      const previous = useAppStore.getState().sttMode;
-      await store.set("sttMode", mode);
-      try { await store.save(); }
-      catch (error) { await store.set("sttMode", previous).catch(() => {}); throw error; }
-      setSttMode(mode);
-    },
-    [setSttMode],
-  );
-
-  const saveCorrectionEnabled = useCallback(
-    async (enabled: boolean) => {
-      setCorrectionEnabled(enabled);
-      const store = await getStore();
-      await store.set("correctionEnabled", enabled);
-    },
-    [setCorrectionEnabled],
-  );
-
-  const saveTheme = useCallback(
-    async (newTheme: ThemePreference) => {
-      setTheme(newTheme);
-      const store = await getStore();
-      await store.set("theme", newTheme);
-    },
-    [setTheme],
-  );
-
-  const saveWhisperPrompt = useCallback(
-    async (prompt: string) => {
-      setWhisperPrompt(prompt);
-      const store = await getStore();
-      await store.set("whisperPrompt", prompt);
-    },
-    [setWhisperPrompt],
-  );
-
-  const saveCorrectionPrompt = useCallback(
-    async (prompt: string) => {
-      setCorrectionPrompt(prompt);
-      const store = await getStore();
-      await store.set("correctionPrompt", prompt);
-    },
-    [setCorrectionPrompt],
-  );
-
-  const saveOnboardingComplete = useCallback(
-    async (complete: boolean) => {
-      setOnboardingComplete(complete);
-      const store = await getStore();
-      await store.set("onboardingComplete", complete);
-    },
-    [setOnboardingComplete],
-  );
-
-  const saveTranscriptionLanguage = useCallback(
-    async (language: string) => {
-      if (!isSupportedLanguage(language)) throw new Error("Choose a supported transcription language.");
-      const state = useAppStore.getState();
-      if (state.isRecording || ["transcribing", "correcting", "pasting"].includes(state.status)) {
-        throw new Error("Finish dictating before changing the language.");
-      }
-      const store = await getStore();
-      const previous = state.transcriptionLanguage;
-      await store.set("transcriptionLanguage", language);
-      try { await store.save(); }
-      catch (error) { await store.set("transcriptionLanguage", previous).catch(() => {}); throw error; }
-      setTranscriptionLanguage(language);
-    },
-    [setTranscriptionLanguage],
-  );
-
-  const saveSelectedModelFilename = useCallback(
-    async (filename: string | null) => {
-      setSelectedModelFilename(filename);
-      const store = await getStore();
-      await store.set("selectedModelFilename", filename);
-    },
-    [setSelectedModelFilename],
-  );
-
-  const saveTriggerKey = useCallback(
-    async (key: string) => {
-      setTriggerKey(key);
-      const store = await getStore();
-      await store.set("triggerKey", key);
-    },
-    [setTriggerKey],
-  );
-
-  const saveModelIdleUnloadMinutes = useCallback(
-    async (minutes: number) => {
-      setModelIdleUnloadMinutes(minutes);
-      invoke("set_model_idle_unload_minutes", { minutes }).catch(() => {});
-      const store = await getStore();
-      await store.set("modelIdleUnloadMinutes", minutes);
-    },
-    [setModelIdleUnloadMinutes],
-  );
+  const saveReformatSetting = useCallback(<K extends "reformatStyle" | "reformatLists" | "reformatContext",>(key: K, value: SettingsSlice[K]) => saveSetting(key, value), []);
+  const saveTheme = useCallback((value: ThemePreference) => saveSetting("theme", value), []);
+  const saveWhisperPrompt = useCallback((value: string) => saveSetting("whisperPrompt", value), []);
+  const saveCorrectionPrompt = useCallback((value: string) => saveSetting("correctionPrompt", value), []);
+  const saveOnboardingComplete = useCallback((value: boolean) => saveSetting("onboardingComplete", value), []);
+  const saveTranscriptionLanguage = useCallback((value: string) => saveSetting("transcriptionLanguage", value), []);
+  const saveSelectedModelFilename = useCallback((value: string | null) => saveSetting("selectedModelFilename", value), []);
+  const saveTriggerKey = useCallback((value: string) => saveSetting("triggerKey", value), []);
+  const saveModelIdleUnloadMinutes = useCallback(async (minutes: number) => {
+    await saveSetting("modelIdleUnloadMinutes", minutes);
+    void invoke("set_model_idle_unload_minutes", { minutes }).catch(() => {});
+  }, []);
 
   return {
+    saveCleanupMode,
+    reformatEnabled,
+    reformatStyle,
+    reformatLists,
+    reformatContext,
+    saveReformatSetting,
     trackApplicationUsage,
     saveTrackApplicationUsage,
     dictionaryEnabled,

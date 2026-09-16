@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Copy, Check, MoreHorizontal, Trash2 } from "lucide-react";
+import { Copy, Check, Info, MoreHorizontal, Trash2 } from "lucide-react";
 import { copyTranscript } from "@/lib/transcript-clipboard.util";
 import { useToast } from "@/hooks/useToast.hook";
 import type { TranscriptRecord } from "@/types/transcript.types";
+import { TranscriptInfoDialogue } from "@/components/history/TranscriptInfo.dialogue";
 
 interface TranscriptActionsProps {
   transcript: TranscriptRecord;
@@ -93,6 +94,7 @@ export function TranscriptMoreActions(props: TranscriptActionsProps) {
   const popover = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState({ left: 0, top: 0 });
+  const [detailsOpen, setDetailsOpen] = useState(false);
   useEffect(() => {
     const dismiss = (event: Event) => {
       const menu = popover.current;
@@ -123,10 +125,10 @@ export function TranscriptMoreActions(props: TranscriptActionsProps) {
               8,
               Math.min(rect.right - 190, window.innerWidth - 198),
             ),
-            top:
-              rect.bottom + 58 <= window.innerHeight
+            top: Math.max(8,
+              rect.bottom + 94 <= window.innerHeight
                 ? rect.bottom + 4
-                : rect.top - 54,
+                : rect.top - 90),
           });
         }}
       >
@@ -153,8 +155,26 @@ export function TranscriptMoreActions(props: TranscriptActionsProps) {
           }
         }}
       >
+        <button
+          type="button"
+          className="transcript-menu-item"
+          onClick={(event) => {
+            event.stopPropagation();
+            popover.current?.hidePopover();
+            trigger.current?.focus({ preventScroll: true });
+            setDetailsOpen(true);
+          }}
+        >
+          <Info size={14} /> Details
+        </button>
         <TranscriptDeleteButton {...props} labeled />
       </div>
+      {detailsOpen && (
+        <TranscriptInfoDialogue transcript={props.transcript} onClose={() => {
+          setDetailsOpen(false);
+          requestAnimationFrame(() => trigger.current?.focus({ preventScroll: true }));
+        }} />
+      )}
     </>
   );
 }

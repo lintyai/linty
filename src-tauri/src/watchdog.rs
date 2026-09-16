@@ -80,6 +80,15 @@ pub fn start(app: tauri::AppHandle) {
             // user stops. Recovery is reserved for abnormal audio callbacks.
 
             // ── Check 2: idle model unload (local STT) ──
+            if !recording {
+                if let Some(reformatter) = app.try_state::<crate::reformat::ReformatState>() {
+                    #[cfg(feature = "local-stt")]
+                    let idle_ms = state.model_idle_unload_secs.load(Ordering::Relaxed) * 1000;
+                    #[cfg(not(feature = "local-stt"))]
+                    let idle_ms = 15 * 60 * 1000;
+                    reformatter.unload_if_idle(crate::now_epoch_ms(), idle_ms);
+                }
+            }
             // A local model keeps ~0.5 GB resident. Drop it after the
             // user-configured idle time (Settings; 0 = never); transcribe_buffer
             // reloads it transparently on the next dictation. An in-flight

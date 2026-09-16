@@ -96,7 +96,7 @@ gh pr checks <PR_NUMBER> --repo shekhardtu/linty
 
 If any checks are still running, wait and re-check (up to 2 retries with 30s between). If checks fail, **block merge** and report which checks failed.
 
-**Note**: This repo runs CI (`Build macOS DMG`) only on pushes to `main` — PR branches report "no checks reported" (gh exits 1). Treat that as pass, rely on the local `yarn build` + `cargo check` validation from `/ship`/`/pr-resolve`, and note it in the pre-merge checklist. After merging, verify the workflow started on `main` (`gh run list --branch main`).
+**Note**: Pull requests run `.github/workflows/checks.yml` (Node tests and Rust logging hygiene); wait for those checks to pass. `Build macOS DMG` runs after a push to `main`. A missing PR check is not a passing check: inspect the current workflow triggers and run status. After merging, verify the release workflow started on `main` (`gh run list --branch main`).
 
 ---
 

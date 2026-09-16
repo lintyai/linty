@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store/app.store";
+import { settingsSaveFeedback } from "@/lib/settings-save-feedback";
 
 export interface AudioInputs {
   selected: string | null;
@@ -43,7 +44,7 @@ export function useAudioInput() {
   const select = async (value: string) => {
     setSaving(true);
     try {
-      const snapshot = await invoke<AudioInputs>("set_audio_input", { name: value || null });
+      const snapshot = await settingsSaveFeedback.run("audioInput", () => invoke<AudioInputs>("set_audio_input", { name: value || null }));
       setInputs(snapshot);
       setError(null);
     } catch (error) {

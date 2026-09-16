@@ -18,10 +18,6 @@ const settle = async locator => locator.evaluate(async el => {
   await Promise.allSettled(el.getAnimations({subtree:true}).filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished));
 });
 const rect = locator => locator.evaluate(el => ({x:el.offsetLeft,y:el.offsetTop,width:el.offsetWidth,height:el.offsetHeight}));
-const choose = async (page, label, option) => {
-  await page.getByRole('combobox',{name:label,exact:true}).click();
-  await page.getByRole('listbox',{name:label,exact:true}).getByRole('option',{name:option,exact:true}).click();
-};
 const navigate = (page, name) => page.getByRole('navigation',{name:'Main navigation'}).getByRole('button',{name,exact:true}).click();
 try {
   await new Promise((resolve,reject) => {
@@ -87,7 +83,7 @@ try {
       }
       await page.mouse.move(0,0);
       await navigate(page,'Settings');
-      await choose(page,'Settings category','Privacy & storage');
+      await navigate(page,'Privacy & storage');
       const pane=page.locator('.preferences-scroll');
       const toggle=page.getByRole('switch',{name:'Attribute dictations to apps',exact:true});
       const toggleRect=await rect(toggle);
@@ -102,11 +98,11 @@ try {
       await page.evaluate(()=>new Promise(requestAnimationFrame));
       const savedScroll=await pane.evaluate(el=>el.scrollTop);
       assert.ok(savedScroll>0);
-      await choose(page,'Settings category','Language');
+      await navigate(page,'Language');
       assert.equal(await pane.evaluate(el=>el.scrollTop),0,'A new category starts at its own position');
-      await choose(page,'Settings category','Privacy & storage');
+      await navigate(page,'Privacy & storage');
       assert.equal(await pane.evaluate(el=>el.scrollTop),savedScroll,'Returning restores category scroll');
-      await choose(page,'Settings category','Language');
+      await navigate(page,'Language');
       const trigger=page.getByRole('combobox',{name:'Transcription language',exact:true});
       const triggerRect=await rect(trigger);
       const selected=await trigger.innerText();
@@ -134,7 +130,7 @@ try {
       assert.equal(await pane.evaluate(el=>el.scrollTop),paneScroll);
       assert.equal(await trigger.evaluate(el=>el===document.activeElement),true);
       // Theme changes commit without transitions between unrelated palette colors.
-      await choose(page,'Settings category','Appearance');
+      await navigate(page,'Appearance');
       await page.getByRole('group',{name:'Appearance',exact:true}).getByRole('button',{name:theme==='light'?'Dark':'Light',exact:true}).click();
       await page.waitForFunction(()=>!document.documentElement.classList.contains('theme-changing'));
       assert.equal(await page.locator('main').evaluate(el=>el.getAnimations().length),0);
@@ -174,7 +170,7 @@ try {
       await page.screenshot({path:`${output}/${theme}-${reducedMotion}.png`});
       await page.setViewportSize({width:640,height:480});
       await navigate(page,'Settings');
-      await choose(page,'Settings category','Language');
+      await navigate(page,'Language');
       await page.getByRole('combobox',{name:'Transcription language',exact:true}).click();
       const smallList=page.getByRole('listbox',{name:'Transcription language',exact:true});
       await settle(smallList);

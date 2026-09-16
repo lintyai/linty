@@ -50,6 +50,7 @@ export function recoverDictation(message: string, session = active): Promise<voi
   if (!ownsDictation(session)) return Promise.resolve();
   if (recovery) return recovery;
   session.cancel();
+  void invoke("cancel_reformatting").catch(() => {});
   showDictationError(message, session);
   // A dead native command must not hold the frontend lock forever. Native
   // recovery invalidates the old audio generation before releasing its buffer.

@@ -95,6 +95,7 @@ export const fixture = ({
     3: { corrections },
     4: dictionary,
   };
+  let s1Downloaded = false;
   const history = { retentionDays: 0, generation: 0, revision: 1 };
   const sorted = (records) =>
     [...records].sort(
@@ -440,6 +441,9 @@ export const fixture = ({
         return;
       }
       if (command === "get_groq_api_key") return window.__QA__.secureGroqKey;
+      if (command === "s1_model_status") return { downloaded: s1Downloaded, loaded: false, downloading: false, progress: 0, downloadBytes: 495642462 };
+      if (command === "download_s1_model") { s1Downloaded = true; return; }
+      if (["prepare_s1_model", "unload_s1_model", "cancel_reformatting"].includes(command)) return;
       if (command === "set_groq_api_key") {
         window.__QA__.secureGroqKey = args.key.trim();
         return;

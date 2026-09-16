@@ -14,7 +14,7 @@ interface CorrectionPanelProps {
 export function CorrectionPanel({ corrections, entries, onAddToDictionary }: CorrectionPanelProps) {
   if (!corrections.length) return null;
   return (
-    <section className="correction-panel" aria-label="Corrections">
+    <section className="correction-panel" aria-label="Your edits">
       {corrections.map((record) => {
         const learnable = learnablePairs(record.pairs);
         return (

@@ -1,3 +1,5 @@
+import type { ReformatMetrics } from "./reformat.types";
+
 export interface ApplicationIdentity {
   name: string;
   bundleId: string | null;
@@ -7,6 +9,18 @@ export interface TranscriptRecord {
   transcriptId: string;
   rawText: string;
   finalText: string;
+  /** Immutable output from S1-mini, before dictionary replacements or user edits. */
+  reformattedText?: string;
+  /** Immutable delivered text; finalText may subsequently be edited in History. */
+  pastedText?: string;
+  reformatting?: ReformatMetrics;
+  reformatTimeMs?: number;
+  transcriptionLanguage?: string;
+  speechModelId?: string;
+  audioSampleCount?: number;
+  deliveryStatus?: "pasted" | "failed";
+  cloudRefinementStatus?: "disabled" | "applied" | "unchanged" | "fallback" | "superseded-by-s1";
+  originalWordCount?: number;
   engine: "cloud" | "local";
   modelName: string;
   durationSeconds: number;

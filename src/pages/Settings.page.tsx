@@ -1,5 +1,5 @@
 import { Select } from "@/components/shared/Select.component";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Cpu,
   Eye,
@@ -15,7 +15,6 @@ import {
   Languages,
   Mic,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { useSettings } from "@/hooks/useSettings.hook";
@@ -36,7 +35,6 @@ import {
   TRANSCRIPTION_LANGUAGES,
   languageLabel,
 } from "@/lib/languages.util";
-import { DEFAULT_CORRECTION_PROMPT } from "@/services/correction.service";
 import { SETTINGS_SECTIONS } from "@/config/navigation.config";
 import {
   PageLayout,
@@ -48,6 +46,7 @@ import { ThemePreview } from "@/components/settings/ThemePreview.component";
 import { BrandMark } from "@/components/shared/BrandMark.component";
 import { HistoryStorage } from "@/components/settings/HistoryStorage.component";
 import { modelLabel } from "@/lib/model-labels.util";
+import { Reformatting } from "@/components/settings/Reformatting.component";
 import type { SttMode, ThemePreference } from "@/store/slices/settings.slice";
 
 const THEME_SEGMENTS = [
@@ -123,106 +122,13 @@ export function SettingsPage() {
           </div>
         )}
       </div>
-      <p className="preferences-footnote">
-        {section === "models" ? "Use Save to store your API key. Other changes save automatically." : "Changes are saved automatically."}
-      </p>
     </PageLayout>
   );
 }
 
 /* ═══ General ═══ */
 function GeneralSection() {
-  const {
-    correctionEnabled,
-    correctionPrompt,
-    saveCorrectionEnabled,
-    saveCorrectionPrompt,
-  } = useSettings();
-  const [correctionInput, setCorrectionInput] = useState(correctionPrompt);
-  const correctionInitRef = useRef(false);
-
-  useEffect(() => {
-    if (correctionPrompt && !correctionInitRef.current) {
-      setCorrectionInput(correctionPrompt);
-      correctionInitRef.current = true;
-    } else if (correctionPrompt !== undefined) {
-      setCorrectionInput(correctionPrompt);
-    }
-  }, [correctionPrompt]);
-
-  const handleCorrectionBlur = () => {
-    if (correctionInput !== correctionPrompt)
-      saveCorrectionPrompt(correctionInput);
-  };
-
-  return (
-    <div className="settings-section">
-      <SectionHeader title="General" />
-
-      <SectionCard tone="inset">
-        <div className="setting-feature-icon">
-          <Sparkles size={23} />
-        </div>
-        <Toggle
-          enabled={correctionEnabled}
-          onChange={saveCorrectionEnabled}
-          label="Refine transcription"
-          description="Fix grammar and punctuation with Groq. Transcribed text is sent to the cloud."
-        />
-      </SectionCard>
-
-      {correctionEnabled && (
-        <SectionCard className="animate-fade-in">
-          <div className="settings-form">
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <label className="field-label" htmlFor="correction-instructions">
-                  Correction Instructions
-                </label>
-                {correctionInput !== DEFAULT_CORRECTION_PROMPT && (
-                  <button
-                    onClick={() => {
-                      setCorrectionInput(DEFAULT_CORRECTION_PROMPT);
-                      saveCorrectionPrompt(DEFAULT_CORRECTION_PROMPT);
-                    }}
-                    className="text-[11px] text-accent hover:text-accent-soft transition-colors"
-                  >
-                    Reset to default
-                  </button>
-                )}
-              </div>
-              <textarea
-                id="correction-instructions"
-                aria-label="Correction instructions"
-                value={correctionInput || DEFAULT_CORRECTION_PROMPT}
-                onChange={(e) => setCorrectionInput(e.target.value)}
-                onBlur={handleCorrectionBlur}
-                rows={5}
-                spellCheck={false}
-                className={cn(
-                  "w-full rounded-lg border border-border bg-bg-input px-3 py-2",
-                  "text-[13px] text-text-primary placeholder:text-text-muted",
-                  "outline-none transition-interaction duration-150 resize-none",
-                  "focus:border-border-focus focus:bg-bg-elevated",
-                )}
-              />
-              <span className="text-[11px] text-text-muted leading-snug">
-                Instructions used to refine your transcribed text.
-              </span>
-            </div>
-          </div>
-        </SectionCard>
-      )}
-
-      <SectionCard>
-        <SettingRow
-          label="After transcription"
-          description="What happens with the transcribed text"
-          right={<ValueBadge>Paste to active app</ValueBadge>}
-        />
-      </SectionCard>
-    </div>
-  );
+  return <Reformatting />;
 }
 
 /* ═══ Audio ═══ */
@@ -267,6 +173,7 @@ function AudioSection() {
 /* ═══ Models ═══ */
 function ModelsSection() {
   const {
+    reformatEnabled,
     groqApiKey,
     sttMode,
     whisperPrompt,
@@ -625,28 +532,6 @@ function ModelsSection() {
                 </div>
               </SectionCard>
 
-              <SectionCard>
-                <div className="settings-field-row">
-                  <div className="flex flex-col gap-0.5 min-w-0">
-                    <span className="field-label">
-                      Unload model when idle
-                    </span>
-                    <span className="text-[12px] text-text-muted leading-snug">
-                      Frees memory after inactivity — reloads automatically on
-                      next dictation
-                    </span>
-                  </div>
-                  <div className="shrink-0 ml-4 relative">
-                    <Select
-                      label="Unload model when idle"
-                      value={modelIdleUnloadMinutes}
-                      onChange={saveModelIdleUnloadMinutes}
-                      options={IDLE_UNLOAD_OPTIONS}
-                    />
-                  </div>
-                </div>
-              </SectionCard>
-
               <div className="flex items-start gap-2.5 rounded-[10px] bg-success-glow border border-success/10 px-4 py-3">
                 <Cpu size={13} className="text-success shrink-0 mt-px" />
                 <p className="text-[12px] text-text-secondary leading-relaxed">
@@ -658,6 +543,12 @@ function ModelsSection() {
           )}
         </div>
       )}
+      {(engineView === "local" || reformatEnabled) && <SectionCard>
+        <SettingRow label="Unload model when idle"
+          description="Frees memory used by speech and cleanup models. They reload automatically when needed."
+          right={<Select label="Unload model when idle" value={modelIdleUnloadMinutes}
+            onChange={saveModelIdleUnloadMinutes} options={IDLE_UNLOAD_OPTIONS} />} />
+      </SectionCard>}
       <ProcessingDetails />
     </div>
   );

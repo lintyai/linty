@@ -1,24 +1,43 @@
-import { AlertCircle, Cloud, Cpu, Loader2 } from "lucide-react";
+import { useSyncExternalStore } from "react";
+import { AlertCircle, AudioLines, Check, Cloud, Cpu, HardDrive, Loader2 } from "lucide-react";
 import { useAppStore } from "@/store/app.store";
+import { settingsSaveFeedback } from "@/lib/settings-save-feedback";
 
 export function StatusBar() {
-  const { sttMode, status, error, groqApiKey, loadedModelFilename, setSettingsSection } = useAppStore();
+  const { sttMode, status, isRecording, error, groqApiKey, loadedModelFilename, setSettingsSection } = useAppStore();
+  const saveStatus = useSyncExternalStore(settingsSaveFeedback.subscribe, settingsSaveFeedback.getSnapshot);
+  const saveLabel = saveStatus === "saving" ? "Saving changes…" : saveStatus === "saved" ? "Changes saved locally" : saveStatus === "error" ? "Couldn't save changes. Try again." : "Changes are saved locally";
+  const recording = isRecording || status === "recording";
   const busy = ["transcribing", "correcting", "pasting"].includes(status);
-  const needsSetup = sttMode === "cloud" && !groqApiKey;
-  const labels: Record<string, string> = {
-    recording: "Recording", transcribing: "Transcribing", correcting: "Refining text", pasting: "Pasting", done: "Transcription complete",
-  };
-  const label = status === "error" ? (error || "Transcription failed") : labels[status] || (needsSetup ? "API key required" : sttMode === "local" && !loadedModelFilename ? "Model will load on dictation" : "Ready to dictate");
+  const ready = sttMode === "cloud" ? Boolean(groqApiKey.trim()) : Boolean(loadedModelFilename);
+  const engineState = recording ? "recording" : busy ? "processing" : status === "error" || !ready ? "unavailable" : "ready";
+  const engine = sttMode === "cloud" ? "Cloud" : "On-device";
+  const labels: Record<string, string> = { transcribing: "Transcribing", correcting: "Refining text", pasting: "Pasting" };
+  const activity = recording ? "Recording" : busy ? labels[status] : status === "error" ? "Error" : !ready ? "Not ready" : "Ready";
+  const detail = status === "error" ? error || "Transcription failed" : !ready && !recording && !busy ? sttMode === "cloud" ? "Add an API key in Speech engine settings" : "Choose or load a model in Speech engine settings" : activity;
   return (
     <footer className="status-bar">
-      <div className={`status-message ${status === "error" ? "text-error" : ""}`} role="status" aria-atomic="true" title={label}>
-        {status === "error" ? <AlertCircle size={12} /> : busy ? <Loader2 size={12} className="animate-spin" /> : <span className={`status-dot ${status === "recording" ? "is-recording" : ""}`} />}
-        <span>{label}</span>
+      <div className={`status-save is-${saveStatus}`} role="status" aria-atomic="true" title={saveLabel}>
+        <span className="status-save-indicator" aria-hidden="true">
+          <HardDrive size={13} className={saveStatus === "idle" ? "is-active" : ""} />
+          <Loader2 size={13} className={saveStatus === "saving" ? "is-active animate-spin" : ""} />
+          <Check size={13} className={saveStatus === "saved" ? "is-active" : ""} />
+          <AlertCircle size={13} className={saveStatus === "error" ? "is-active" : ""} />
+        </span>
+        <span>{saveLabel}</span>
       </div>
-      <button className="status-engine" onClick={() => setSettingsSection("models")} title="Configure speech engine">
-        {sttMode === "cloud" ? <Cloud size={12} /> : <Cpu size={12} />}
-        {sttMode === "cloud" ? "Cloud" : "On-device"}
-      </button>
+      <div className="status-engine-region" role="status" aria-atomic="true">
+        <button className={`status-engine is-${engineState}`} onClick={() => setSettingsSection("models")}
+          aria-label={`${engine}: ${activity}. Configure speech engine`} title={`${engine}: ${detail}`}>
+          <span className="status-engine-indicator" aria-hidden="true">
+            {sttMode === "cloud" ? <Cloud size={13} className={engineState === "ready" ? "is-active" : ""} /> : <Cpu size={13} className={engineState === "ready" ? "is-active" : ""} />}
+            <AlertCircle size={13} className={engineState === "unavailable" ? "is-active" : ""} />
+            <AudioLines size={13} className={recording ? "is-active status-recording-icon" : ""} />
+            <Loader2 size={13} className={engineState === "processing" ? "is-active animate-spin" : ""} />
+          </span>
+          <span>{engine}</span>
+        </button>
+      </div>
     </footer>
   );
 }

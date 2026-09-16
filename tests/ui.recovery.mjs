@@ -50,8 +50,7 @@ try {
   // Opening Cloud is setup only until an API key has been explicitly saved.
   // Local settings never display the key input.
   await page.keyboard.press('Meta+,');
-  await page.getByRole('combobox', {name:'Settings category',exact:true}).click();
-  await page.getByRole('option', {name:'Speech engine',exact:true}).click();
+  await page.getByRole('navigation', {name:'Main navigation'}).getByRole('button', {name:'Speech engine',exact:true}).click();
   const cloud = page.getByRole('group', {name:'Speech engine',exact:true}).getByRole('button', {name:'Cloud',exact:true});
   const local = page.getByRole('group', {name:'Speech engine',exact:true}).getByRole('button', {name:'Local',exact:true});
   const key = page.getByLabel('Groq API key',{exact:true});

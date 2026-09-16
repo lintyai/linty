@@ -347,13 +347,21 @@ kbd { border: 1px solid var(--color-border); border-bottom-width: 2px; border-ra
 .toolbar-title { font-size:12px;font-weight:500;white-space:nowrap; }
 .toolbar-space { flex: 1; align-self: stretch; }
 .status-bar { display: flex; align-items: center; gap: 16px; min-height: 30px; padding: 0 20px; border-top: 1px solid var(--color-border-subtle); font-size: 11px; color: var(--color-text-secondary); background: var(--color-bg); }
-.status-message { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
-.status-message svg { flex-shrink: 0; }
-.status-message > span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.status-dot { width: 5px; height: 5px; background: var(--color-text-muted); border-radius: 50%; flex-shrink: 0; }
-.status-dot.is-recording { background: var(--color-accent); }
+.status-save { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; color: var(--color-text-muted); }
+.status-save > span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.status-save.is-saved { color: var(--color-accent); }
+.status-save.is-error { color: var(--color-error); }
 .status-engine { display: flex; gap: 5px; align-items: center; border-radius: 4px; padding: 2px 4px; }
 .status-engine:hover { background: var(--color-bg-hover); }
+.status-engine-region { flex-shrink: 0; }
+.status-engine svg { flex-shrink: 0; }
+.status-engine-indicator, .status-save-indicator { display: grid; width: 13px; height: 13px; flex-shrink: 0; }
+.status-engine-indicator > svg, .status-save-indicator > svg { grid-area: 1 / 1; opacity: 0; }
+.status-engine-indicator > svg.is-active, .status-save-indicator > svg.is-active { opacity: 1; }
+.status-engine.is-ready .status-engine-indicator { color: var(--color-success); }
+.status-engine.is-unavailable .status-engine-indicator { color: var(--color-error); }
+.status-engine.is-recording .status-engine-indicator,
+.status-engine.is-processing .status-engine-indicator { color: var(--color-accent); }
 
 /* Overview: summary first, detail on demand. */
 .segmented-control { display: inline-flex; align-items: stretch; gap: 2px; background: var(--color-bg-secondary); border: 1px solid var(--color-border-subtle); padding: 2px; border-radius: 7px; flex-shrink: 0; }

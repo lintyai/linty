@@ -783,4 +783,31 @@ mod tests {
         assert_eq!(exported["transcripts"][0]["futureField"]["keep"], true);
         assert_eq!(db.snapshot().unwrap()["total"], 605);
     }
+
+    #[test]
+    fn reformatting_snapshots_and_metrics_survive_edit_reopen_restore_and_export() {
+        let dir = Temp::new();
+        let mut db = HistoryDb::open(&dir.0).unwrap();
+        let mut original = record(1, 100);
+        original["rawText"] = json!("um send this friday no monday");
+        original["reformattedText"] = json!("Send this Monday.");
+        original["pastedText"] = json!("Send this Monday.");
+        original["finalText"] = json!("Send this Monday.");
+        original["reformatting"] = json!({"schemaVersion":1,"enabled":true,"status":"applied","totalMs":321.5,"modelRevision":"pinned","generatedTokens":5,"options":{"styling":"semi-formal","structure":"lists","context":"general"}});
+        db.save(&original, 100).unwrap();
+        db.patch("t-00001", &json!({"finalText":"Send this Monday, please.","rawText":"must not overwrite","reformatting":null})).unwrap();
+        let deleted = db.delete("t-00001").unwrap().unwrap();
+        db.restore(&deleted, 100).unwrap();
+        drop(db);
+        let db = HistoryDb::open(&dir.0).unwrap();
+        let saved = db.get("t-00001").unwrap().unwrap();
+        for key in ["rawText", "reformattedText", "pastedText", "reformatting"] {
+            assert_eq!(saved[key], original[key]);
+        }
+        assert_eq!(saved["finalText"], "Send this Monday, please.");
+        let path = dir.0.join("reformat-export.json");
+        db.export(&path, 100).unwrap();
+        let exported: Value = serde_json::from_reader(fs::File::open(path).unwrap()).unwrap();
+        assert_eq!(exported["transcripts"][0], saved);
+    }
 }
