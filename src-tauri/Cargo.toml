@@ -25,7 +25,9 @@ tauri-plugin-log = "2"   # local-only rotating log file (src/logging.rs)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
-time = { version = "0.3", features = ["formatting", "macros"] }   # log line timestamps (src/logging.rs)
+time = { version = "0.3", features = ["formatting", "macros", "parsing"] }   # log timestamps, policy expiry
+semver = "1"            # update policy versions (src/policy.rs)
+minisign-verify = "0.2" # update policy signatures (src/policy.rs)
 cpal = "0.15"
 reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
 tokio = { version = "1", features = ["full"] }
@@ -64,6 +66,8 @@ required-features = ["local-stt", "parakeet"]
 
 [dev-dependencies]
 libc = "0.2"
+# Signs test policies in src/policy.rs tests.
+minisign = "0.9.1"
 # Mock runtime for tests/logging_smoke.rs; test builds only.
 tauri = { version = "2", features = ["test"] }
 

@@ -460,6 +460,16 @@ export const fixture = ({
         return;
       }
       if (command === "plugin:updater|check") return null;
+      if (command === "check_policy")
+        return {
+          update: "none",
+          reason: null,
+          targetVersion: null,
+          message: null,
+          cloudSttEnabled: true,
+          banner: null,
+          policySeq: null,
+        };
       if (command === "check_microphone") return "authorized";
       if (
         [

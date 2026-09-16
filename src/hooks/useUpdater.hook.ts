@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useAppStore } from "@/store/app.store";
@@ -8,7 +9,8 @@ const CHECK_INTERVAL_MS = 60 * 60 * 1_000; // 60 min
 /// The updater plugin has no timeout of its own: a stalled connection to the
 /// release feed would leave "Check for updates" spinning forever.
 const CHECK_TIMEOUT_MS = 30_000;
-const CHECK_GUARD_MS = 40_000;
+/// Covers the policy fetch (10 s limit in Rust) plus the updater check.
+const CHECK_GUARD_MS = 45_000;
 
 // Module-level singletons — shared across all hook instances so
 // downloadAndInstall always has the update object regardless of
@@ -18,12 +20,24 @@ let pendingUpdate: Awaited<ReturnType<typeof check>> | null = null;
 let inFlightCheck: Promise<Awaited<ReturnType<typeof check>>> | null = null;
 let autoCheckActive = false;
 
-function checkWithTimeout() {
+/// Refresh the signed update policy first: the updater only offers what the
+/// policy allows (src-tauri/src/policy.rs). A manual check skips the staged
+/// rollout. Failures are logged in Rust and the last accepted policy applies.
+async function refreshPolicy(manual: boolean) {
+  try {
+    await invoke("check_policy", { manual });
+  } catch (err) {
+    console.error("[updater] Policy check failed:", err);
+  }
+}
+
+function checkWithTimeout(manual: boolean) {
   let guardTimer: ReturnType<typeof setTimeout> | undefined;
   const guard = new Promise<never>((_, reject) => {
     guardTimer = setTimeout(() => reject(new UpdateCheckTimeout()), CHECK_GUARD_MS);
   });
-  return Promise.race([check({ timeout: CHECK_TIMEOUT_MS }), guard]).finally(() => {
+  const run = refreshPolicy(manual).then(() => check({ timeout: CHECK_TIMEOUT_MS }));
+  return Promise.race([run, guard]).finally(() => {
     clearTimeout(guardTimer);
     inFlightCheck = null;
   });
@@ -47,7 +61,7 @@ export function useUpdater() {
     if (useAppStore.getState().updateStatus === "downloading") return;
     // Reuse a check already in flight (the silent auto-check, typically) so a
     // click during it still reports the outcome instead of doing nothing.
-    inFlightCheck ??= checkWithTimeout();
+    inFlightCheck ??= checkWithTimeout(!silent);
     try {
       setUpdateStatus("checking");
       setUpdateError(null);

@@ -55,6 +55,14 @@ Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separat
 - A panic hook logs the message and backtrace, then writes `crash.marker` (time, version, thread, location) to the app data dir. The next launch logs a warning while the marker exists; `reset_all_data` deletes it. Native crashes still go to `~/Library/Logs/DiagnosticReports`.
 - Startup removes the legacy `~/linty-fnkey.log` that older builds wrote.
 
+### Update policy (remote update control)
+- `src-tauri/src/policy.rs` gates every updater check. The updater plugin is built with `default_version_comparator`, which asks `PolicyStore::allows_release`. `useUpdater.hook.ts` calls the `check_policy` command (fetch, verify, decide) before each `check()`; a manual check skips the staged-rollout bucket for two minutes.
+- The policy host serves `{"payload": "<policy JSON text>", "signature": "<tauri signer sign output>"}` at `https://updates.linty.ai/v1/policy/<channel>/<platform>/<version>`; 204 means no policy. The request carries nothing else. Debug builds honour `LINTY_POLICY_URL`.
+- Policy fields: `seq`, `issued`/`expires` (RFC 3339), `channel`, `target.version` + `target.signatures` (per platform, copied from that release's `latest.json`), `action` (`prompt` | `force` | `rollback` | `pause`), optional `min_supported_version`, `blocked_versions`, `rollout.percent`/`rollout.force_bypasses`, `message`, `config.cloud_stt_enabled`/`config.banner`.
+- A policy is adopted only if its signature verifies with `keys::POLICY_PUBLIC_KEY`, it is for this channel, it has not expired, and `seq` is higher than any accepted before (equal only if byte-identical). Installs it directs must match the pinned tarball signature, which is what makes downgrades safe. Once a policy has expired, its target stays a ceiling: only newer releases up to that target are offered. A copy that never accepted a policy offers any newer release. Blocked versions are never offered. An `action` this build does not know is treated as `pause`.
+- State lives in `linty-policy.json` (app data dir): highest `seq`, the last policy and signature (re-verified on load), the sticky blocked versions and ceiling, and a local 0–99 rollout bucket that is never sent. `reset_all_data` keeps it.
+- Keys: `src-tauri/src/keys.rs` holds the policy and root public keys. The maintainer holds the private halves outside the repository and CI; they must never be regenerated, because installed copies trust only the keys they shipped with.
+
 ### State Management
 - **Frontend**: Zustand store split into slices (recording, transcription, settings, navigation, history, toast)
 - **Backend**: `AppState` struct managed by Tauri — `Arc<Mutex<>>` for audio buffer, whisper context, recording state

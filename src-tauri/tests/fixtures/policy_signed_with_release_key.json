@@ -1,0 +1,4 @@
+{
+  "payload": "{\"seq\":0,\"issued\":\"2026-09-17T00:00:00Z\",\"expires\":\"2026-09-18T00:00:00Z\",\"channel\":\"signing-fixture\",\"target\":{\"version\":\"0.0.0\",\"signatures\":{\"darwin-aarch64\":\"fixture\"}},\"action\":\"pause\",\"message\":\"Test fixture for policy.rs. Never served.\"}",
+  "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZEsxRXdlRjlKa0hZblE1OHZBT1piU1Z3bFp4MjNoa3hMZGUwUGhPL3c2RE5iTkY2NW9QZW05ZytiRjRDd0dRSHpBTmFyOEVzU3lGRnFGZEdmNWxkaXg4MEtuOHhMY2cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NTg2OTU2CWZpbGU6cGF5bG9hZC5qc29uCnMrdGNHUWs1S25aVmJvMkUwaW9oT05IR0ZnaGQ3LytwdXk2L2hLZFI4R01WZWJKRjJpaUxWQ0tlMzNxbkE5TXpQb3N6Y3d6bHJxNCtSRHZpZTNGR0R3PT0K"
+}

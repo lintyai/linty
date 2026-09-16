@@ -12,12 +12,14 @@ mod corrections;
 mod fnkey;
 mod history;
 mod history_db;
+mod keys;
 pub mod logging;
 mod paste;
 #[cfg(target_os = "macos")]
 mod permissions;
 #[cfg(feature = "parakeet")]
 pub mod parakeet;
+mod policy;
 mod state;
 pub mod transcribe;
 mod tray;
@@ -1258,6 +1260,10 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Shared by the updater's version comparator and the check_policy command.
+    let policy_store = policy::PolicyStore::new();
+    let comparator_store = Arc::clone(&policy_store);
+
     tauri::Builder::default()
         // Must be the first plugin registered. A second launch (double-open,
         // updater relaunch overlapping the old process) would run its own
@@ -1277,11 +1283,19 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Every update check goes through the signed update policy (policy.rs).
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                .default_version_comparator(move |current, release| {
+                    comparator_store.allows_release(&current, &release)
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_nspanel::init())
         .manage(AppState::new())
+        .manage(policy_store)
         .manage(history::HistoryState::default())
         // macOS app menu bar (Linty + Edit)
         .menu(|app| {
@@ -1330,6 +1344,12 @@ pub fn run() {
             // anything else in setup can fail or panic.
             logging::init(app.handle());
 
+            // Signed update policy: sequence number, rollout bucket, last policy.
+            match app.path().app_data_dir() {
+                Ok(dir) => app.state::<Arc<policy::PolicyStore>>().load(&dir),
+                Err(e) => log::warn!("[policy] No app data dir, policy state not loaded: {}", e),
+            }
+
             // Tray icon (menu, engine selector, status)
             tray::init_tray(app)?;
 
@@ -1371,6 +1391,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            policy::check_policy,
             history::history_snapshot,
             history::history_query,
             history::history_get,
