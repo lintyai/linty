@@ -4,6 +4,8 @@ interface Segment<T extends string> {
   value: T;
   label: string;
   icon?: React.ReactNode;
+  disabled?: boolean;
+  pending?: boolean;
 }
 
 interface SegmentedControlProps<T extends string> {
@@ -21,6 +23,8 @@ export function SegmentedControl<T extends string>({
   className,
   label = "Options",
 }: SegmentedControlProps<T>) {
+  const enabled = segments.filter((segment) => !segment.disabled);
+  const tabStop = enabled.find((segment) => segment.value === value)?.value ?? enabled[0]?.value;
   return (
     <div role="group" aria-label={label}
       className={cn(
@@ -35,22 +39,25 @@ export function SegmentedControl<T extends string>({
             key={segment.value}
             type="button"
             aria-pressed={isActive}
-            tabIndex={isActive ? 0 : -1}
+            data-pending={isActive && segment.pending ? "true" : undefined}
+            disabled={segment.disabled}
+            tabIndex={segment.value === tabStop ? 0 : -1}
             onKeyDown={(e) => {
-              const index = segments.findIndex((item) => item.value === value);
+              if (!enabled.length) return;
+              const index = enabled.findIndex((item) => item.value === segment.value);
               let next = index;
-              if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (index + 1) % segments.length;
-              else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (index - 1 + segments.length) % segments.length;
+              if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (index + 1) % enabled.length;
+              else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (index - 1 + enabled.length) % enabled.length;
               else if (e.key === "Home") next = 0;
-              else if (e.key === "End") next = segments.length - 1;
+              else if (e.key === "End") next = enabled.length - 1;
               else return;
               e.preventDefault();
-              onChange(segments[next].value);
-              (e.currentTarget.parentElement?.children[next] as HTMLButtonElement)?.focus();
+              onChange(enabled[next].value);
+              (e.currentTarget.parentElement?.children[segments.indexOf(enabled[next])] as HTMLButtonElement)?.focus();
             }}
             onClick={(e) => { e.currentTarget.focus(); onChange(segment.value); }}
             className={cn(
-              "flex items-center justify-center gap-1.5 rounded-[6px] px-3 py-[5px] text-[12px] font-medium transition-interaction duration-200",
+              "flex items-center justify-center gap-1.5 rounded-[6px] px-3 py-[5px] text-[12px] font-medium transition-interaction duration-200 disabled:opacity-50 disabled:cursor-not-allowed",
               isActive
                 ? "bg-bg-elevated border border-border text-text-primary shadow-sm"
                 : "border border-transparent text-text-secondary hover:text-text-primary",

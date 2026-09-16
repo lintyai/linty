@@ -6,6 +6,7 @@ import {
   unregister,
   isRegistered,
 } from "@tauri-apps/plugin-global-shortcut";
+import { currentDictation, ownsDictation, isRecoveringDictation, recoverDictation } from "@/services/dictation-recovery.service";
 import { useRecording } from "./useRecording.hook";
 import { useTranscription } from "./useTranscription.hook";
 import { useAppStore } from "@/store/app.store";
@@ -41,11 +42,9 @@ export function useGlobalHotkey() {
 
   // Synchronous lock — prevents concurrent release handling / duplicate pastes
   const processingRef = useRef(false);
-  // Track whether the press originated while app was focused
-  const inFocusPressRef = useRef(false);
 
   const handlePress = useCallback(async () => {
-    if (isRecordingRef.current || processingRef.current) return;
+    if (isRecordingRef.current || processingRef.current || isRecoveringDictation()) return;
     // Synchronously mark as recording BEFORE any async work — prevents a fast
     // fn-release from seeing isRecordingRef as false and being silently dropped.
     isRecordingRef.current = true;
@@ -53,23 +52,21 @@ export function useGlobalHotkey() {
     clearPendingTimersRef.current();
 
     const inFocus = document.hasFocus();
-    inFocusPressRef.current = inFocus;
 
     try {
-      if (inFocus) {
-        // In-app: navigate to SystemCheck and start recording in the mic test widget
-        setCurrentViewRef.current("system-check");
-        await startRecordingRef.current();
-      } else {
-        // Out-of-app: show capsule overlay
-        await invoke("show_capsule");
-        await invoke("emit_capsule_state", { state: "recording" });
-        await invoke("play_capsule_sound", { sound: "start" });
-        await startRecordingRef.current();
+      if (inFocus) setCurrentViewRef.current("system-check");
+      const started = await startRecordingRef.current();
+      if (!started) { isRecordingRef.current = false; return; }
+      // A quick release may already be stopping the stream. Never overwrite its state.
+      if (!inFocus && isRecordingRef.current && !processingRef.current) {
+        void invoke("show_capsule").then(() => {
+          if (isRecordingRef.current && !processingRef.current) return invoke("emit_capsule_state", { state: "recording" });
+        }).catch(() => {});
+        void invoke("play_capsule_sound", { sound: "start" }).catch(() => {});
       }
-    } catch {
-      // Start failed — reset synchronous lock so next press works
+    } catch (error) {
       isRecordingRef.current = false;
+      await recoverDictation(error instanceof Error ? error.message : String(error));
     }
   }, []);
 
@@ -79,17 +76,16 @@ export function useGlobalHotkey() {
     processingRef.current = true;
     isRecordingRef.current = false;
 
+    const session = currentDictation();
     try {
-      if (!inFocusPressRef.current) {
-        await invoke("emit_capsule_state", { state: "transcribing" });
-        await invoke("play_capsule_sound", { sound: "processing" });
-      }
       const result = await stopRecordingRef.current();
-      if (result.sample_count > 0) {
+      if (result.sample_count > 0 && !session.cancelled) {
         await processAudioRef.current(result);
       }
+    } catch (error) {
+      if (!session.cancelled) await recoverDictation(error instanceof Error ? error.message : String(error), session);
     } finally {
-      processingRef.current = false;
+      if (ownsDictation(session)) processingRef.current = false;
     }
   }, []);
 
@@ -98,46 +94,28 @@ export function useGlobalHotkey() {
     invoke("reinit_fn_key_monitor").catch(() => {});
   }, []);
 
-  // ── System wake: reset stale state and reinit monitors ──
+  // Recover both the native capture and every frontend lock. A late result
+  // from a cancelled dictation cannot paste or change the next attempt's UI.
   useEffect(() => {
-    const unlisten = listen("system-wake", () => {
-      console.log("[wake] System wake detected — resetting state");
+    const recover = async (message: string) => {
+      await recoverDictation(message);
       processingRef.current = false;
       isRecordingRef.current = false;
-      inFocusPressRef.current = false;
       resetRecording();
-      invoke("force_reinit_fn_key_monitor").catch(() => {});
-    });
-
-    return () => {
-      unlisten.then((fn_) => fn_());
     };
-  }, []);
-
-  // ── Watchdog recovery: auto-stop from abnormal audio callbacks ──
-  const addToast = useAppStore((s) => s.addToast);
-  const addToastRef = useRef(addToast);
-  useEffect(() => {
-    addToastRef.current = addToast;
-  }, [addToast]);
-
-  useEffect(() => {
-    const unlisten = listen<string>("watchdog-recovery", (event) => {
-      console.warn("[watchdog] Recovery triggered:", event.payload);
-      processingRef.current = false;
-      isRecordingRef.current = false;
-      inFocusPressRef.current = false;
-      resetRecording();
-      addToastRef.current({
-        type: "warning",
-        message: `Recording auto-stopped: ${event.payload}`,
-      });
-    });
-
-    return () => {
-      unlisten.then((fn_) => fn_());
-    };
-  }, []);
+    const listeners = [
+      listen<string>("audio-stream-error", ({ payload }) => { void recover(payload); }),
+      listen<string>("watchdog-recovery", ({ payload }) => { void recover(payload); }),
+      listen("system-wake", () => {
+        const state = useAppStore.getState();
+        if (isRecordingRef.current || processingRef.current || state.isRecording || ["transcribing", "correcting", "pasting"].includes(state.status)) {
+          void recover("Dictation interrupted by sleep. Please try again.");
+        }
+        void invoke("force_reinit_fn_key_monitor").catch(() => {});
+      }),
+    ];
+    return () => { for (const listener of listeners) void listener.then((off) => off()); };
+  }, [resetRecording]);
 
   // ── Primary: modifier-hold push-to-talk (fn or a bare modifier key) ──
   // The Rust flagsChanged monitor emits fnkey-pressed/released for whichever
@@ -188,7 +166,7 @@ export function useGlobalHotkey() {
         // Only toast for a user-chosen trigger — the silent fallback combo
         // failing shouldn't interrupt anyone.
         if (!isModifierHoldTrigger(triggerKey)) {
-          addToastRef.current({
+          useAppStore.getState().addToast({
             type: "error",
             message: `Could not register ${formatTriggerLabel(accelerator)} — another app may be using it. Pick a different trigger in Shortcuts.`,
           });

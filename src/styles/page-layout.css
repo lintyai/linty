@@ -407,9 +407,9 @@
   padding: 28px 0 10px;
   gap: 16px;
 }
-.about-identity > .brand-mark {
-  transform: scale(1.4);
-  margin-bottom: 10px;
+.about-app-icon {
+  width: 72px;
+  height: 72px;
 }
 .about-identity h1 {
   font-size: 38px;

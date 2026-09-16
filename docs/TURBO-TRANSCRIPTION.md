@@ -183,6 +183,6 @@ This transforms the experience from "staring at a spinner wondering if it's stuc
 ## What Was Not Changed
 
 - **Cloud mode latency** -- unaffected (Groq API is already fast). Cloud path now avoids IPC overhead for audio samples but the HTTP round-trip dominates.
-- **VAD (Voice Activity Detection)** -- deferred. Push-to-talk has bounded silence by design. `audio_ctx` already limits processing to actual audio length. VAD requires bundling a separate model and has a fragile API.
+- **VAD (Voice Activity Detection)** -- originally deferred because push-to-talk bounded silence and another model added complexity. The later [transcription guard evaluation](TRANSCRIPTION-GUARDS.md) compares VAD against short, quiet, and paused speech separately for Whisper and Parakeet; it also replaces unconditional phrase filtering.
 - **Model download UI** -- the new turbo models appear in the existing model picker. No UI changes needed.
 - **Correction pipeline** -- LLM correction still only runs in cloud mode. Unaffected by these changes.

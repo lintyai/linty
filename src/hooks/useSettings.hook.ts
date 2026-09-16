@@ -16,7 +16,6 @@ async function getStore() {
   if (!storeInstance) {
     storeInstance = await load(STORE_PATH, {
       defaults: {
-        groqApiKey: "",
         sttMode: "local",
         correctionEnabled: true,
         theme: "system",
@@ -85,10 +84,14 @@ export function useSettings() {
 
   // Load settings on mount
   useEffect(() => {
+    if (useAppStore.getState().settingsLoaded) return;
     (async () => {
       try {
         const store = await getStore();
-        const key = await store.get<string>("groqApiKey");
+        const key = await invoke<string>("get_groq_api_key").catch((error) => {
+          useAppStore.getState().addToast({ type: "error", message: String(error) });
+          return "";
+        });
         const mode = await store.get<SttMode>("sttMode");
         const correction = await store.get<boolean>("correctionEnabled");
         const savedTheme = await store.get<ThemePreference>("theme");
@@ -109,7 +112,7 @@ export function useSettings() {
         const savedObserve = await store.get<boolean>("observeCorrections");
         setObserveCorrections(savedObserve ?? false);
 
-        if (key) setGroqApiKey(key);
+        setGroqApiKey(key);
         if (mode) setSttMode(mode);
         if (correction !== null && correction !== undefined)
           setCorrectionEnabled(correction);
@@ -143,12 +146,21 @@ export function useSettings() {
 
   const saveGroqApiKey = useCallback(
     async (key: string) => {
-      setGroqApiKey(key);
-      const store = await getStore();
-      await store.set("groqApiKey", key);
+      const trimmed = key.trim();
+      await invoke("set_groq_api_key", { key: trimmed });
+      setGroqApiKey(trimmed);
     },
     [setGroqApiKey],
   );
+
+  const removeGroqApiKey = useCallback(async () => {
+    const state = useAppStore.getState();
+    if (state.isRecording || ["recording", "transcribing", "correcting", "pasting"].includes(state.status)) {
+      throw new Error("Finish dictating before removing your API key.");
+    }
+    await invoke("remove_groq_api_key");
+    useAppStore.setState({ groqApiKey: "", sttMode: "local" });
+  }, []);
 
   const saveTrackApplicationUsage = useCallback(async (enabled: boolean) => {
     const store = await getStore();
@@ -177,9 +189,15 @@ export function useSettings() {
 
   const saveSttMode = useCallback(
     async (mode: SttMode) => {
-      setSttMode(mode);
+      if (mode === "cloud" && !useAppStore.getState().groqApiKey.trim()) {
+        throw new Error("Add a Groq API key in Settings → Speech engine first.");
+      }
       const store = await getStore();
+      const previous = useAppStore.getState().sttMode;
       await store.set("sttMode", mode);
+      try { await store.save(); }
+      catch (error) { await store.set("sttMode", previous).catch(() => {}); throw error; }
+      setSttMode(mode);
     },
     [setSttMode],
   );
@@ -231,9 +249,17 @@ export function useSettings() {
 
   const saveTranscriptionLanguage = useCallback(
     async (language: string) => {
-      setTranscriptionLanguage(language);
+      if (!isSupportedLanguage(language)) throw new Error("Choose a supported transcription language.");
+      const state = useAppStore.getState();
+      if (state.isRecording || ["transcribing", "correcting", "pasting"].includes(state.status)) {
+        throw new Error("Finish dictating before changing the language.");
+      }
       const store = await getStore();
+      const previous = state.transcriptionLanguage;
       await store.set("transcriptionLanguage", language);
+      try { await store.save(); }
+      catch (error) { await store.set("transcriptionLanguage", previous).catch(() => {}); throw error; }
+      setTranscriptionLanguage(language);
     },
     [setTranscriptionLanguage],
   );
@@ -282,6 +308,7 @@ export function useSettings() {
     whisperPrompt,
     correctionPrompt,
     saveGroqApiKey,
+    removeGroqApiKey,
     saveSttMode,
     saveCorrectionEnabled,
     saveTheme,
