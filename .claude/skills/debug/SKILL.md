@@ -683,5 +683,5 @@ If nothing needs fixing, skip silently.
 ```
 Skill: /debug
 File:  .claude/skills/debug/SKILL.md
-Repo:  https://github.com/lintyai/linty/blob/main/.claude/skills/debug/SKILL.md
+Repo:  https://github.com/shekhardtu/linty/blob/main/.claude/skills/debug/SKILL.md
 ```

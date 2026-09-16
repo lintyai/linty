@@ -203,7 +203,7 @@ Explain why the issue occurred (omit this section for features)
 - [ ] No console errors
 
 ---
-*Shipped by [`/ship`](https://github.com/lintyai/linty/blob/main/.claude/skills/ship/SKILL.md)*
+*Shipped by [`/ship`](https://github.com/shekhardtu/linty/blob/main/.claude/skills/ship/SKILL.md)*
 
 {attribution lines from the current session's guidance, e.g. "🤖 Generated with Claude Code", session link, Co-Authored-By}
 EOF
@@ -317,12 +317,12 @@ After execution, ensure the skill attribution is present in:
 **PR description** (add via `gh pr edit` if not already present):
 ```markdown
 ---
-*Shipped by [`/ship`](https://github.com/lintyai/linty/blob/main/.claude/skills/ship/SKILL.md) -- Triggers: "ship this", "create PR", "commit and push", "ship it", "ready to merge"*
+*Shipped by [`/ship`](https://github.com/shekhardtu/linty/blob/main/.claude/skills/ship/SKILL.md) -- Triggers: "ship this", "create PR", "commit and push", "ship it", "ready to merge"*
 ```
 
 **Output summary** displayed to the user:
 ```
 Skill: /ship
 File:  .claude/skills/ship/SKILL.md
-Repo:  https://github.com/lintyai/linty/blob/main/.claude/skills/ship/SKILL.md
+Repo:  https://github.com/shekhardtu/linty/blob/main/.claude/skills/ship/SKILL.md
 ```

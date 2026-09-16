@@ -28,7 +28,7 @@ Run `/pr-merge` when:
 - The PR is ready to merge into main
 - **Auto-invoked** by `/pr-resolve` after all threads are resolved
 
-**Input**: PR number or URL (e.g., `18` or `https://github.com/lintyai/linty/pull/18`)
+**Input**: PR number or URL (e.g., `18` or `https://github.com/shekhardtu/linty/pull/18`)
 
 ---
 
@@ -42,7 +42,7 @@ If not authenticated, stop and instruct: `gh auth login`.
 
 ### 1.2 Fetch PR State
 ```bash
-gh pr view <PR_NUMBER> --repo lintyai/linty --json number,title,headRefName,baseRefName,state,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision,url,body
+gh pr view <PR_NUMBER> --repo shekhardtu/linty --json number,title,headRefName,baseRefName,state,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision,url,body
 ```
 
 ### 1.3 Verify Merge Conditions
@@ -64,7 +64,7 @@ Run through ALL checks before proceeding. **All must pass.**
 ```bash
 gh api graphql -f query='
 {
-  repository(owner: "lintyai", name: "linty") {
+  repository(owner: "shekhardtu", name: "linty") {
     pullRequest(number: PR_NUMBER) {
       reviewThreads(first: 100) {
         pageInfo {
@@ -91,7 +91,7 @@ Count threads where `isResolved: false` and `isOutdated: false`. If any exist, l
 ### 1.5 Check CI Status
 
 ```bash
-gh pr checks <PR_NUMBER> --repo lintyai/linty
+gh pr checks <PR_NUMBER> --repo shekhardtu/linty
 ```
 
 If any checks are still running, wait and re-check (up to 2 retries with 30s between). If checks fail, **block merge** and report which checks failed.
@@ -148,7 +148,7 @@ These produce a warning but do NOT block:
 Use squash merge (default for this repo) to keep history clean:
 
 ```bash
-gh pr merge <PR_NUMBER> --repo lintyai/linty --squash --delete-branch
+gh pr merge <PR_NUMBER> --repo shekhardtu/linty --squash --delete-branch
 ```
 
 **Merge strategy**: `--squash` combines all commits into one clean commit on main.
@@ -170,7 +170,7 @@ gh pr merge <PR_NUMBER> --repo lintyai/linty --squash --delete-branch
 ### 4.1 Verify Merge
 
 ```bash
-gh pr view <PR_NUMBER> --repo lintyai/linty --json state,mergedAt,mergeCommit
+gh pr view <PR_NUMBER> --repo shekhardtu/linty --json state,mergedAt,mergeCommit
 ```
 
 Confirm `state: MERGED`.
@@ -208,7 +208,7 @@ git pull origin main
 
 Skill: /pr-merge
 File:  .claude/skills/pr-merge/SKILL.md
-Repo:  https://github.com/lintyai/linty/blob/main/.claude/skills/pr-merge/SKILL.md
+Repo:  https://github.com/shekhardtu/linty/blob/main/.claude/skills/pr-merge/SKILL.md
 ```
 
 ---

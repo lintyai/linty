@@ -30,7 +30,7 @@ Run `/pr-resolve` when:
 - You need to resolve, reply, and re-request review in one pass
 - **Auto-invoked** by `/pr-review` when findings are posted
 
-**Input**: A GitHub PR URL (e.g., `https://github.com/lintyai/linty/pull/18`)
+**Input**: A GitHub PR URL (e.g., `https://github.com/shekhardtu/linty/pull/18`)
 
 ---
 
@@ -57,13 +57,13 @@ gh pr checkout <PR_NUMBER>
 ### 1.3 Fetch All Comments & Reviews
 ```bash
 # Review comments (inline code comments)
-gh api repos/lintyai/linty/pulls/{pr_number}/comments --paginate
+gh api repos/shekhardtu/linty/pulls/{pr_number}/comments --paginate
 
 # Issue comments (general PR comments)
-gh api repos/lintyai/linty/issues/{pr_number}/comments --paginate
+gh api repos/shekhardtu/linty/issues/{pr_number}/comments --paginate
 
 # Reviews with their states (APPROVED, CHANGES_REQUESTED, COMMENTED)
-gh api repos/lintyai/linty/pulls/{pr_number}/reviews --paginate
+gh api repos/shekhardtu/linty/pulls/{pr_number}/reviews --paginate
 ```
 
 ### 1.4 Fetch Review Threads (for later resolution)
@@ -92,7 +92,7 @@ gh api graphql -f query='
       }
     }
   }
-' -f owner='lintyai' -f repo='linty' -F pr=PR_NUMBER
+' -f owner='shekhardtu' -f repo='linty' -F pr=PR_NUMBER
 ```
 
 Save thread IDs mapped to file paths and line numbers for Phase 8.
@@ -423,7 +423,7 @@ The `{comment_id}` is the **numeric ID** of the root comment in the thread (from
 
 ```bash
 # Reply to a review comment thread (REST — primary method)
-gh api repos/lintyai/linty/pulls/{pr_number}/comments/{comment_id}/replies \
+gh api repos/shekhardtu/linty/pulls/{pr_number}/comments/{comment_id}/replies \
   -X POST \
   -f body='Your reply message here'
 ```
@@ -500,7 +500,7 @@ From Phase 2 classification, collect all comments with status `DEFERRED`.
 For each deferred comment, create a GitHub issue:
 
 ```bash
-gh issue create --repo lintyai/linty \
+gh issue create --repo shekhardtu/linty \
   --title "Brief description of the deferred improvement" \
   --body "$(cat <<'EOF'
 ## Context
@@ -563,7 +563,7 @@ gh pr edit <PR_NUMBER> --add-reviewer <reviewer1>,<reviewer2>
 
 ```bash
 # Find existing "PR Review Comments Addressed" comment by the bot/current user
-gh api repos/lintyai/linty/issues/{pr_number}/comments --jq '
+gh api repos/shekhardtu/linty/issues/{pr_number}/comments --jq '
   .[] | select(.body | startswith("## PR Review Comments Addressed")) | {id: .id, node_id: .node_id}
 '
 ```
@@ -572,7 +572,7 @@ gh api repos/lintyai/linty/issues/{pr_number}/comments --jq '
 
 **If an existing comment was found** — edit it with the updated summary (additive — merge new info into existing):
 ```bash
-gh api repos/lintyai/linty/issues/comments/{comment_id} \
+gh api repos/shekhardtu/linty/issues/comments/{comment_id} \
   -X PATCH \
   -f body='<updated summary body>'
 ```
@@ -608,7 +608,7 @@ All review feedback has been addressed and pushed. Here's a summary:
 Ready for re-review. @reviewer1 @reviewer2
 
 ---
-*Resolved by [`/pr-resolve`](https://github.com/lintyai/linty/blob/main/.claude/skills/pr-resolve/SKILL.md) — Triggers: "resolve PR", "fix PR comments", "address PR feedback", "resolve PR comments"*
+*Resolved by [`/pr-resolve`](https://github.com/shekhardtu/linty/blob/main/.claude/skills/pr-resolve/SKILL.md) — Triggers: "resolve PR", "fix PR comments", "address PR feedback", "resolve PR comments"*
 ```
 
 **Additive edits:** When editing an existing comment, merge new information:
@@ -629,7 +629,7 @@ After completing all phases, provide this final report:
 ===============================================================
 
  Pull Request: <PR_URL>
- Repository: lintyai/linty
+ Repository: shekhardtu/linty
  Branch: <branch-name>
 
 ---------------------------------------------------------------
@@ -706,7 +706,7 @@ Summary comment posted on PR: Yes
 
 Skill: /pr-resolve
 File:  .claude/skills/pr-resolve/SKILL.md
-Repo:  https://github.com/lintyai/linty/blob/main/.claude/skills/pr-resolve/SKILL.md
+Repo:  https://github.com/shekhardtu/linty/blob/main/.claude/skills/pr-resolve/SKILL.md
 ```
 
 ---
@@ -785,7 +785,7 @@ Re-read this skill file (`Read` tool on `.claude/skills/pr-resolve/SKILL.md`) an
 | **Build commands** | Did `yarn build` and `cargo check --features local-stt` work as expected? |
 | **Code quality checks** | Are the Phase 4 checklist items still valid for the current codebase conventions? |
 | **Workflow phases** | Did any phase need to be skipped, reordered, or modified? |
-| **Repo references** | Are all GitHub URLs pointing to `lintyai/linty`? |
+| **Repo references** | Are all GitHub URLs pointing to `shekhardtu/linty`? |
 
 ### 10.2 Fix Issues Found
 
@@ -810,12 +810,12 @@ After execution, append a skill attribution footer to:
 **PR summary comment** (add to the Phase 9.3 summary comment posted on the PR):
 ```markdown
 ---
-*Resolved by [`/pr-resolve`](https://github.com/lintyai/linty/blob/main/.claude/skills/pr-resolve/SKILL.md) — Triggers: "resolve PR", "fix PR comments", "address PR feedback", "resolve PR comments"*
+*Resolved by [`/pr-resolve`](https://github.com/shekhardtu/linty/blob/main/.claude/skills/pr-resolve/SKILL.md) — Triggers: "resolve PR", "fix PR comments", "address PR feedback", "resolve PR comments"*
 ```
 
 **Output report** displayed to the user (add to the final report in Output Format):
 ```
 Skill: /pr-resolve
 File:  .claude/skills/pr-resolve/SKILL.md
-Repo:  https://github.com/lintyai/linty/blob/main/.claude/skills/pr-resolve/SKILL.md
+Repo:  https://github.com/shekhardtu/linty/blob/main/.claude/skills/pr-resolve/SKILL.md
 ```

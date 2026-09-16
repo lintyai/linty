@@ -75,7 +75,7 @@ Configure these as **repository-level Actions secrets**, so release configuratio
 | `LINTY_TAURI_SIGNING_PRIVATE_KEY` | Existing updater signing key |
 | `LINTY_TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Updater key password |
 
-Keep the app identifier and updater signing identity stable across repository moves. The release workflow derives download URLs from `GITHUB_REPOSITORY`. Existing `lintyai/linty` release links redirect to `shekhardtu/linty`; do not recreate the old repository namespace, which would remove those redirects.
+Keep the app identifier and updater signing identity stable across repository moves. The release workflow derives download URLs from `GITHUB_REPOSITORY`. Previous repository release links redirect to `shekhardtu/linty`; do not recreate the old repository namespace, which would remove those redirects.
 
 ## Architecture and operational notes
 
