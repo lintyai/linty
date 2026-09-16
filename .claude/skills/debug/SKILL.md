@@ -450,7 +450,7 @@ For each hypothesis, design a minimal test:
 
 | Test Type | When to Use | Example |
 |-----------|-------------|---------|
-| **Tauri console log** | Check if Rust backend receives commands | Add `println!` or `eprintln!` in Tauri command handler |
+| **Tauri log** | Check if Rust backend receives commands | Add `log::debug!` in the Tauri command handler; read `~/Library/Logs/ai.linty.desktop/linty.log` or the `yarn tauri dev` terminal |
 | **Frontend console.log** | Check if events arrive in React | Add log in event listener callback |
 | **Breakpoint** | Complex logic flow | VS Code + `rust-analyzer` or browser DevTools |
 | **Cargo test** | Isolated Rust logic bug | Write a unit test reproducing the failure |
@@ -636,7 +636,7 @@ File:  .claude/skills/debug/SKILL.md
 - **Terminal vs Finder**: Always verify the issue from a Finder launch — terminal bypasses entitlements
 
 ### Debug Efficiently
-- Use Tauri dev console (Rust `println!` / `eprintln!`) for backend issues — don't add manual logging first
+- Read `~/Library/Logs/ai.linty.desktop/linty.log` (or the `yarn tauri dev` terminal) for backend issues before adding logging; new lines use `log::` macros, never print macros, and never log transcript text
 - Use browser DevTools console for frontend issues
 - Check macOS System Settings > Privacy & Security before diving into code
 - Verify the audio device is available before assuming cpal is broken

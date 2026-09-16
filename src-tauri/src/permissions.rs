@@ -39,7 +39,7 @@ pub fn check_microphone_permission() -> String {
             3 => "authorized",
             _ => "not_determined",
         };
-        eprintln!("[mic] check_microphone_permission: status={} ({})", status, result);
+        log::debug!("[mic] check_microphone_permission: status={} ({})", status, result);
         result.to_string()
     }
 }
@@ -80,7 +80,7 @@ unsafe extern "C" fn completion_dispose_helper(_block: *mut c_void) {}
 /// Request microphone permission from macOS. Blocks until the user responds.
 /// Returns `true` if granted.
 pub fn request_microphone_permission() -> bool {
-    eprintln!("[mic] request_microphone_permission: starting request");
+    log::info!("[mic] request_microphone_permission: starting request");
     let (tx, rx) = mpsc::channel();
     let tx_ptr = Box::into_raw(Box::new(tx));
 
@@ -120,6 +120,6 @@ pub fn request_microphone_permission() -> bool {
     let granted = rx
         .recv_timeout(std::time::Duration::from_secs(30))
         .unwrap_or(false);
-    eprintln!("[mic] request_microphone_permission: granted={}", granted);
+    log::info!("[mic] request_microphone_permission: granted={}", granted);
     granted
 }

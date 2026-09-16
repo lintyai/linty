@@ -206,7 +206,8 @@ ls ~/Library/Logs/DiagnosticReports/ | grep -i linty
 ```
 
 **Rust stderr/stdout:**
-- `yarn tauri dev` outputs Rust `println!`/`eprintln!` to terminal
+- Rust logs go to `~/Library/Logs/ai.linty.desktop/linty.log` (rotated `linty_<date>.log` files alongside) and to the `yarn tauri dev` terminal
+- `~/Library/Application Support/ai.linty.desktop/crash.marker` exists after a Rust panic; the matching backtrace is in the log
 - Look for panic messages, unwrap failures, FFI errors
 - Check whisper-rs model loading messages (Metal GPU init)
 

@@ -304,7 +304,7 @@ impl ParakeetEngine {
         let replacements_json = take_string(replacements, "[]");
         let replacements: Vec<VocabReplacement> = serde_json::from_str(&replacements_json)
             .unwrap_or_else(|e| {
-                eprintln!("[parakeet] ignoring unreadable vocabulary replacements: {}", e);
+                log::warn!("[parakeet] ignoring unreadable vocabulary replacements: {}", e);
                 Vec::new()
             });
         Ok(ParakeetVocabResult {

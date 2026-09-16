@@ -51,7 +51,7 @@ pub fn start(app: tauri::AppHandle) {
 
             if rate > MAX_CALLBACKS_PER_SEC {
                 consecutive_high_ticks += 1;
-                eprintln!(
+                log::warn!(
                     "[watchdog] High callback rate: {}/sec (tick {}/2)",
                     rate, consecutive_high_ticks
                 );
@@ -60,7 +60,7 @@ pub fn start(app: tauri::AppHandle) {
             }
 
             if consecutive_high_ticks >= 2 {
-                eprintln!("[watchdog] Runaway audio callbacks detected — recovering");
+                log::error!("[watchdog] Runaway audio callbacks detected — recovering");
                 recover(&app, &state, "Abnormal audio activity detected").await;
                 consecutive_high_ticks = 0;
                 continue;
@@ -93,7 +93,7 @@ pub fn start(app: tauri::AppHandle) {
                         let unloaded = state.unload_local_models();
                         state.local_model_last_used_at.store(0, Ordering::Relaxed);
                         if unloaded {
-                            eprintln!(
+                            log::info!(
                                 "[watchdog] Local model idle for {}min — unloaded to free memory",
                                 idle_secs / 60
                             );
@@ -150,7 +150,7 @@ async fn recover(app: &tauri::AppHandle, state: &AppState, reason: &str) {
         }
     });
 
-    eprintln!("[watchdog] Recovery complete: {}", reason);
+    log::info!("[watchdog] Recovery complete: {}", reason);
 }
 
 #[cfg(feature = "local-stt")]

@@ -29,7 +29,7 @@ pub struct CapsuleState {
 
 pub fn init_capsule_panel(app: &AppHandle) {
     let Some(capsule_window) = app.get_webview_window("capsule") else {
-        eprintln!("[capsule] No 'capsule' window found — skipping panel init");
+        log::warn!("[capsule] No 'capsule' window found — skipping panel init");
         return;
     };
 
@@ -38,18 +38,18 @@ pub fn init_capsule_panel(app: &AppHandle) {
         .expect("Failed to convert capsule to NSPanel");
 
     apply_panel_properties(&panel);
-    eprintln!("[capsule] NSPanel initialized");
+    log::info!("[capsule] NSPanel initialized");
 }
 
 /// Re-apply all native NSPanel properties. Called on init and after system wake
 /// to ensure the panel remains visible above all windows.
 pub fn reinit_capsule_properties(app: &AppHandle) {
     let Ok(panel) = app.get_webview_panel("capsule") else {
-        eprintln!("[capsule] reinit_properties: panel not found — cannot refresh");
+        log::warn!("[capsule] reinit_properties: panel not found — cannot refresh");
         return;
     };
     apply_panel_properties(&panel);
-    eprintln!("[capsule] NSPanel properties re-applied after wake");
+    log::info!("[capsule] NSPanel properties re-applied after wake");
 }
 
 fn apply_panel_properties(panel: &tauri_nspanel::raw_nspanel::RawNSPanel) {
@@ -76,7 +76,7 @@ fn apply_panel_properties(panel: &tauri_nspanel::raw_nspanel::RawNSPanel) {
 #[allow(unexpected_cfgs)]
 pub fn show_capsule(app: AppHandle) {
     let Ok(panel) = app.get_webview_panel("capsule") else {
-        eprintln!("[capsule] show_capsule: panel not found");
+        log::warn!("[capsule] show_capsule: panel not found");
         return;
     };
 

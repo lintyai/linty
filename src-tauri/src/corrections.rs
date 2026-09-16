@@ -184,7 +184,7 @@ pub fn watch_after_paste(app: tauri::AppHandle, generation: u64, transcript_id: 
         .name("correction-watch".into())
         .spawn(move || watch(app, generation, transcript_id, pasted));
     if let Err(e) = spawned {
-        eprintln!("[corrections] could not start the watch: {}", e);
+        log::warn!("[corrections] could not start the watch: {}", e);
     }
 }
 
@@ -234,7 +234,7 @@ fn watch(app: tauri::AppHandle, generation: u64, transcript_id: String, pasted: 
         }
     }
     let Some((first, value0, base, start)) = located else {
-        eprintln!("[corrections] nothing to learn from this paste: {}", reason);
+        log::debug!("[corrections] nothing to learn from this paste: {}", reason);
         return;
     };
     let span = start..start + pasted_words.len();
@@ -279,7 +279,7 @@ fn watch(app: tauri::AppHandle, generation: u64, transcript_id: String, pasted: 
     if pairs.is_empty() {
         return;
     }
-    eprintln!("[corrections] {} change(s) observed in {}", pairs.len(), first.app);
+    log::info!("[corrections] {} change(s) observed", pairs.len());
     let correction = ObservedCorrection {
         transcript_id,
         word_count: pasted_words.len(),
@@ -292,7 +292,7 @@ fn watch(app: tauri::AppHandle, generation: u64, transcript_id: String, pasted: 
         seconds_after_paste: changed_at.duration_since(started).as_secs(),
     };
     if let Err(e) = app.emit("correction-observed", &correction) {
-        eprintln!("[corrections] could not report the correction: {}", e);
+        log::warn!("[corrections] could not report the correction: {}", e);
     }
 }
 
