@@ -9,10 +9,28 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-pattern='\b(e?print(ln)?|dbg)!\s*\('
-if matches=$(grep -rnE "$pattern" src-tauri/src --include='*.rs'); then
-  echo "Use log::{error,warn,info,debug}! instead of print macros:"
-  echo "$matches"
-  exit 1
+src_dir=src-tauri/src
+# Some grep builds treat a missing directory as "no match", so check first.
+if [ ! -d "$src_dir" ] || [ -z "$(find "$src_dir" -name '*.rs' -print -quit)" ]; then
+  echo "No Rust sources under $src_dir; nothing was scanned." >&2
+  exit 2
 fi
-echo "No print macros in src-tauri/src."
+
+pattern='\b(e?print(ln)?|dbg)!\s*\('
+# grep exits 0 on a match, 1 on no match and 2 or more on an error.
+status=0
+matches=$(grep -rnE "$pattern" "$src_dir" --include='*.rs') || status=$?
+case "$status" in
+  0)
+    echo "Use log::{error,warn,info,debug}! instead of print macros:"
+    echo "$matches"
+    exit 1
+    ;;
+  1)
+    echo "No print macros in $src_dir."
+    ;;
+  *)
+    echo "grep failed (exit $status); $src_dir was not scanned." >&2
+    exit "$status"
+    ;;
+esac

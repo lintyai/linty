@@ -215,7 +215,7 @@ unsafe extern "C" fn block_invoke(block: *mut FnKeyBlock, event: *const c_void) 
 
     if fn_pressed {
         if !state.fn_held.swap(true, Ordering::SeqCst) {
-            log::debug!("[fnkey] fn PRESSED — starting recording");
+            log::info!("[fnkey] fn PRESSED — starting recording");
             let _ = state.app.emit("fnkey-pressed", ());
         }
     } else if state.fn_held.swap(false, Ordering::SeqCst) {
@@ -225,9 +225,9 @@ unsafe extern "C" fn block_invoke(block: *mut FnKeyBlock, event: *const c_void) 
             // (focus transition). Stay armed; the real release will produce
             // its own event.
             state.fn_held.store(true, Ordering::SeqCst);
-            log::debug!("[fnkey] release ignored — trigger key physically still down");
+            log::info!("[fnkey] release ignored — trigger key physically still down");
         } else {
-            log::debug!("[fnkey] fn RELEASED — stopping recording");
+            log::info!("[fnkey] fn RELEASED — stopping recording");
             let _ = state.app.emit("fnkey-released", ());
         }
     }
@@ -254,15 +254,15 @@ unsafe extern "C" fn local_block_invoke(block: *mut LocalFnKeyBlock, event: *con
 
     if fn_pressed {
         if !state.fn_held.swap(true, Ordering::SeqCst) {
-            log::debug!("[fnkey] fn PRESSED (local — app focused)");
+            log::info!("[fnkey] fn PRESSED (local — app focused)");
             let _ = state.app.emit("fnkey-pressed", ());
         }
     } else if state.fn_held.swap(false, Ordering::SeqCst) {
         if trigger_key_physically_down() {
             state.fn_held.store(true, Ordering::SeqCst);
-            log::debug!("[fnkey] release ignored — trigger key physically still down (local)");
+            log::info!("[fnkey] release ignored — trigger key physically still down (local)");
         } else {
-            log::debug!("[fnkey] fn RELEASED (local — app focused)");
+            log::info!("[fnkey] fn RELEASED (local — app focused)");
             let _ = state.app.emit("fnkey-released", ());
         }
     }

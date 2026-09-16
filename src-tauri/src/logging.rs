@@ -6,9 +6,13 @@
 //!
 //! Redaction rule for every `log::` call in this crate: never log transcript
 //! text, clipboard contents, API keys or dictionary words. Log counts, lengths,
-//! durations, engine and model names instead, and pass paths through
-//! [`display_path`] so the macOS username is not recorded.
+//! durations, engine and model names instead. Error strings from other code
+//! must be checked too: some quote the data they failed on.
+//!
+//! The formatter replaces the home folder with `~` in every line, whatever its
+//! source, so the macOS username is not recorded.
 
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -16,6 +20,8 @@ use std::sync::OnceLock;
 use log::LevelFilter;
 use tauri::{Manager, Runtime};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
+use time::format_description::FormatItem;
+use time::macros::format_description;
 
 /// Active log file is `linty.log`; rotated files are `linty_<date>.log`.
 const LOG_FILE_NAME: &str = "linty";
@@ -34,6 +40,10 @@ const LEGACY_FNKEY_LOG: &str = "linty-fnkey.log";
 /// Third-party crates whose info-level output is noise for support purposes.
 const QUIET_CRATES: [&str; 6] = ["tao", "wry", "reqwest", "hyper", "hyper_util", "rustls"];
 
+/// Same shape as the plugin's default: `[2026-09-16][18:34:36]`, in UTC.
+const TIMESTAMP: &[FormatItem<'static>] =
+    format_description!("[[[year]-[month]-[day]][[[hour]:[minute]:[second]]");
+
 static CRASH_MARKER_PATH: OnceLock<PathBuf> = OnceLock::new();
 static APP_VERSION: OnceLock<String> = OnceLock::new();
 thread_local! {
@@ -50,7 +60,25 @@ pub fn plugin<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
     } else {
         LevelFilter::Info
     };
+    let home = std::env::var("HOME").ok().filter(|home| !home.is_empty());
     let mut builder = tauri_plugin_log::Builder::new()
+        .format(move |out, message, record| {
+            let line = message.to_string();
+            let line = match home.as_deref() {
+                Some(home) => redact_home(&line, home),
+                None => Cow::Borrowed(line.as_str()),
+            };
+            let now = time::OffsetDateTime::now_utc()
+                .format(TIMESTAMP)
+                .unwrap_or_default();
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                now,
+                record.target(),
+                record.level(),
+                line
+            ))
+        })
         .clear_targets()
         .targets([
             Target::new(TargetKind::Stderr),
@@ -93,18 +121,27 @@ pub fn init<R: Runtime>(app: &tauri::AppHandle<R>) {
     remove_legacy_fnkey_log(app);
 }
 
-/// Show a path with the home directory as `~`.
-pub fn display_path(path: &Path) -> String {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    display_path_under(path, home.as_deref())
-}
-
-fn display_path_under(path: &Path, home: Option<&Path>) -> String {
-    match home.and_then(|home| path.strip_prefix(home).ok()) {
-        Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
-        Some(rest) => format!("~/{}", rest.display()),
-        None => path.display().to_string(),
+/// Replace every occurrence of `home` that ends at a path boundary with `~`.
+/// `/Users/alice/x` becomes `~/x`; `/Users/alicebob` is left alone.
+fn redact_home<'a>(text: &'a str, home: &str) -> Cow<'a, str> {
+    let home = home.trim_end_matches('/');
+    if home.is_empty() || !text.contains(home) {
+        return Cow::Borrowed(text);
     }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(home) {
+        let after = &rest[at + home.len()..];
+        let continues_name = after
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.'));
+        out.push_str(&rest[..at]);
+        out.push_str(if continues_name { home } else { "~" });
+        rest = after;
+    }
+    out.push_str(rest);
+    Cow::Owned(out)
 }
 
 fn install_panic_hook() {
@@ -192,8 +229,8 @@ fn remove_legacy_fnkey_log<R: Runtime>(app: &tauri::AppHandle<R>) {
     let legacy = home.join(LEGACY_FNKEY_LOG);
     if legacy.is_file() {
         match std::fs::remove_file(&legacy) {
-            Ok(()) => log::info!("[app] Removed legacy {}", display_path(&legacy)),
-            Err(e) => log::warn!("[app] Could not remove legacy {}: {}", display_path(&legacy), e),
+            Ok(()) => log::info!("[app] Removed legacy {}", legacy.display()),
+            Err(e) => log::warn!("[app] Could not remove legacy {}: {}", legacy.display(), e),
         }
     }
 }
@@ -217,24 +254,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn display_path_hides_the_home_directory() {
-        let home = Path::new("/Users/alice");
+    fn redact_home_replaces_every_home_path() {
         assert_eq!(
-            display_path_under(
-                Path::new("/Users/alice/Library/Application Support/ai.linty.desktop/models/x.bin"),
-                Some(home)
+            redact_home(
+                "Loading model from: /Users/alice/Library/Application Support/ai.linty.desktop/models/x.bin",
+                "/Users/alice"
             ),
-            "~/Library/Application Support/ai.linty.desktop/models/x.bin"
+            "Loading model from: ~/Library/Application Support/ai.linty.desktop/models/x.bin"
         );
-        assert_eq!(display_path_under(home, Some(home)), "~");
+        assert_eq!(
+            redact_home(
+                "modelNotFound(file:///Users/alice/Library/x) and \"/Users/alice\"",
+                "/Users/alice/"
+            ),
+            "modelNotFound(file://~/Library/x) and \"~\""
+        );
+        assert_eq!(redact_home("/Users/alice", "/Users/alice"), "~");
     }
 
     #[test]
-    fn display_path_leaves_other_paths_alone() {
-        let home = Path::new("/Users/alice");
-        assert_eq!(display_path_under(Path::new("/tmp/x"), Some(home)), "/tmp/x");
-        assert_eq!(display_path_under(Path::new("/Users/alicebob/x"), Some(home)), "/Users/alicebob/x");
-        assert_eq!(display_path_under(Path::new("/tmp/x"), None), "/tmp/x");
+    fn redact_home_leaves_other_paths_alone() {
+        assert!(matches!(redact_home("/tmp/x", "/Users/alice"), Cow::Borrowed("/tmp/x")));
+        assert_eq!(redact_home("/Users/alicebob/x", "/Users/alice"), "/Users/alicebob/x");
+        assert_eq!(redact_home("/Users/alice.old/x", "/Users/alice"), "/Users/alice.old/x");
+        assert_eq!(redact_home("/Users/alice/x", ""), "/Users/alice/x");
     }
 
     #[test]

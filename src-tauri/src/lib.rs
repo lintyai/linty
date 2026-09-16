@@ -72,11 +72,11 @@ async fn load_whisper_ctx(
     let model_path = data_dir.join("models").join(filename);
 
     if !model_path.exists() {
-        log::error!("[stt] Model file not found: {}", logging::display_path(&model_path));
+        log::error!("[stt] Model file not found: {}", model_path.display());
         return Err(format!("Model not found: {}", model_path.display()));
     }
 
-    log::info!("[stt] Loading model from: {}", logging::display_path(&model_path));
+    log::info!("[stt] Loading model from: {}", model_path.display());
     let path_str = model_path.to_str().ok_or("Invalid path")?.to_string();
 
     tokio::task::spawn_blocking(move || {
@@ -132,7 +132,7 @@ async fn load_local_engine(
         {
             let dir = models_dir(app)?.join(filename);
             let ctc_dir = models_dir(app)?.join(transcribe::PARAKEET_CTC_ID);
-            log::info!("[stt] Loading Parakeet bundle from: {}", logging::display_path(&dir));
+            log::info!("[stt] Loading Parakeet bundle from: {}", dir.display());
             let started = std::time::Instant::now();
             let engine = tokio::task::spawn_blocking(move || parakeet::ParakeetEngine::load(&dir))
                 .await
@@ -1001,7 +1001,7 @@ async fn prepare_parakeet_vocabulary(
         }
         let dir = models_dir(&app)?.join(transcribe::PARAKEET_CTC_ID);
         let downloaded = !dir.is_dir();
-        log::info!("[stt] Preparing Parakeet vocabulary models in {}", logging::display_path(&dir));
+        log::info!("[stt] Preparing Parakeet vocabulary models in {}", dir.display());
         let started = std::time::Instant::now();
         tokio::task::spawn_blocking(move || engine.load_ctc(&dir))
             .await

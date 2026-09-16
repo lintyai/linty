@@ -50,7 +50,7 @@ Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separat
 
 ### Logging (local only)
 - The backend logs through the `log` crate. `src-tauri/src/logging.rs` registers `tauri-plugin-log` and writes `~/Library/Logs/ai.linty.desktop/linty.log` (rotated at 5 MB, five files kept) plus stderr. Debug level in dev builds, info in release. Nothing is uploaded.
-- **Redaction rule:** never log transcript text, clipboard contents, API keys or dictionary words. Log counts, lengths (`chars().count()`), durations, engine and model names. Pass paths through `logging::display_path` so the home folder shows as `~`.
+- **Redaction rule:** never log transcript text, clipboard contents, API keys or dictionary words. Log counts, lengths (`chars().count()`), durations, engine and model names. Check error strings too: serde_json errors, for example, quote the value they failed on. The log formatter replaces the home folder with `~` in every line.
 - Messages keep a `[subsystem]` prefix (`[stt]`, `[paste]`, `[fnkey]`, ...). Per-dictation summaries are `info`; per-event detail is `debug`.
 - A panic hook logs the message and backtrace, then writes `crash.marker` (time, version, thread, location) to the app data dir. The next launch logs a warning while the marker exists; `reset_all_data` deletes it. Native crashes still go to `~/Library/Logs/DiagnosticReports`.
 - Startup removes the legacy `~/linty-fnkey.log` that older builds wrote.

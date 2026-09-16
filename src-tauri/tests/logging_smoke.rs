@@ -37,7 +37,8 @@ fn plugin_writes_the_log_file_and_startup_hook_tidies_up() {
     logging::init(app.handle());
 
     assert_eq!(app.path().app_log_dir().unwrap(), log_file.parent().unwrap());
-    log::info!("[test] after startup {}", logging::display_path(&data_dir));
+    log::info!("[test] after startup {}", data_dir.display());
+    log::warn!("[test] bridge error: file://{}/model.mlmodelc", data_dir.display());
     log::debug!("[test] debug lines are kept in debug builds");
     log::logger().flush();
 
@@ -52,6 +53,10 @@ fn plugin_writes_the_log_file_and_startup_hook_tidies_up() {
     assert!(written.contains("[app] Removed legacy ~/linty-fnkey.log"), "{written}");
     assert!(
         written.contains("[test] after startup ~/Library/Application Support/ai.linty.logging-smoke"),
+        "{written}"
+    );
+    assert!(
+        written.contains("[test] bridge error: file://~/Library/Application Support/ai.linty.logging-smoke/model.mlmodelc"),
         "{written}"
     );
     assert!(written.contains("[DEBUG]"), "{written}");

@@ -2561,6 +2561,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tauri-plugin-updater",
+ "time",
  "tokio",
  "whisper-rs",
 ]
