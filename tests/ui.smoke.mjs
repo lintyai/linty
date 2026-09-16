@@ -90,6 +90,7 @@ try {
   await estimateDialog.getByRole('button',{name:'Save typing speed',exact:true}).click();
   await estimateDialog.getByRole('alert').waitFor();
   assert.equal(await page.evaluate(()=>window.__QA__.stores[1].typingWordsPerMinute),40,'Failed save restores the persisted assumption');
+  assert.equal(await typingField.inputValue(),'60','A failed save preserves the typing-speed draft for retry');
   await page.evaluate(()=>{delete window.__QA__.failures['plugin:store|save'];});
   await estimateDialog.getByRole('button',{name:'Save typing speed',exact:true}).click();
   await estimateDialog.waitFor({state:'hidden'});

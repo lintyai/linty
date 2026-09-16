@@ -35,6 +35,7 @@ export function HistorySearch({
           type="button"
           className="search-clear"
           aria-label="Clear search"
+          data-tooltip="Clear search"
           onClick={() => {
             onChange("");
             document.getElementById("history-search")?.focus();

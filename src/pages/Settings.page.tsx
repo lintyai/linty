@@ -172,7 +172,7 @@ function GeneralSection() {
           <div className="flex flex-col gap-3 p-4">
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <label className="field-label">
+                <label className="field-label" htmlFor="correction-instructions">
                   Correction Instructions
                 </label>
                 {correctionInput !== DEFAULT_CORRECTION_PROMPT && (
@@ -188,6 +188,7 @@ function GeneralSection() {
                 )}
               </div>
               <textarea
+                id="correction-instructions"
                 aria-label="Correction instructions"
                 value={correctionInput || DEFAULT_CORRECTION_PROMPT}
                 onChange={(e) => setCorrectionInput(e.target.value)}
@@ -316,11 +317,12 @@ function ModelsSection() {
           <SectionCard>
             <div className="flex flex-col gap-3 p-4">
               <div className="flex flex-col gap-1.5">
-                <label className="field-label">
+                <label className="field-label" htmlFor="groq-api-key">
                   Groq API Key
                 </label>
                 <div className="relative">
                   <input
+                    id="groq-api-key"
                     aria-label="Groq API key"
                     type={showKey ? "text" : "password"}
                     value={keyInput}
@@ -342,6 +344,7 @@ function ModelsSection() {
                   <button
                     type="button"
                     aria-label={showKey ? "Hide API key" : "Show API key"}
+                    data-tooltip={showKey ? "Hide API key" : "Show API key"}
                     onClick={() => setShowKey(!showKey)}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
                   >
@@ -362,10 +365,11 @@ function ModelsSection() {
           <SectionCard>
             <div className="flex flex-col gap-3 p-4">
               <div className="flex flex-col gap-1.5">
-                <label className="field-label">
+                <label className="field-label" htmlFor="transcription-prompt">
                   Transcription Prompt
                 </label>
                 <textarea
+                  id="transcription-prompt"
                   aria-label="Transcription prompt"
                   value={whisperInput}
                   onChange={(e) => setWhisperInput(e.target.value)}

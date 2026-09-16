@@ -26,7 +26,7 @@ export function WindowToolbar() {
         aria-label={sidebarVisible ? "Hide sidebar" : "Show sidebar"}
         aria-expanded={sidebarVisible}
         aria-controls="app-sidebar"
-        title="Toggle sidebar (⌃⌘S)"
+        data-tooltip={`${sidebarVisible ? "Hide" : "Show"} sidebar (⌃⌘S)`}
       >
         <PanelLeft size={17} />
       </button>

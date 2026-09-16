@@ -69,6 +69,7 @@ export function ToastContainer() {
                 )}
                 <button
                   aria-label="Dismiss notification"
+                  data-tooltip="Dismiss notification"
                   onClick={() => removeToast(toast.toastId)}
                   className="shrink-0 text-text-muted hover:text-text-secondary transition-colors"
                 >

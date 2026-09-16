@@ -120,6 +120,7 @@ export function OverviewWidgets() {
             <button
               key={item.label}
               aria-label={`Show ${item.label.toLowerCase()}`}
+              data-tooltip={`Show ${item.label.toLowerCase()}`}
               aria-pressed={index === active}
               aria-controls={id}
               onClick={() => select(index)}
@@ -134,6 +135,7 @@ export function OverviewWidgets() {
         <button
           className="icon-button"
           aria-label="Previous widget"
+          data-tooltip="Previous widget"
           aria-controls={id}
           onClick={() => select(active - 1)}
         >
@@ -142,6 +144,7 @@ export function OverviewWidgets() {
         <button
           className="icon-button"
           aria-label="Next widget"
+          data-tooltip="Next widget"
           aria-controls={id}
           onClick={() => select(active + 1)}
         >

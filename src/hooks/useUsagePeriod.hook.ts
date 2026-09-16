@@ -6,8 +6,8 @@ import {
   periodStart,
   summarizeUsage,
   usageBuckets,
-  type UsagePeriod,
 } from "@/lib/usage.util";
+import type { UsageView } from "@/store/slices/workspace.slice";
 import { canCompareHistory, previousUsageWindow } from "@/lib/payoff.util";
 import type { UsageResult, UsageSummary } from "@/types/history.types";
 
@@ -32,8 +32,9 @@ const EMPTY: UsageResult = {
   })),
 };
 /** All metrics query the complete local archive with the same period boundaries. */
-export function useUsagePeriod(initialPeriod: UsagePeriod = "7d") {
-  const [period, setPeriod] = useState<UsagePeriod>(initialPeriod);
+export function useUsagePeriod(view: UsageView = "dashboard") {
+  const period = useAppStore((s) => s.usagePeriods[view]);
+  const setUsagePeriod = useAppStore((s) => s.setUsagePeriod);
   const [now, setNow] = useState(Date.now);
   const snapshot = useAppStore((s) => s.historySnapshot);
   const [data, setData] = useState<
@@ -96,7 +97,7 @@ export function useUsagePeriod(initialPeriod: UsagePeriod = "7d") {
   return {
     ...data,
     period,
-    setPeriod,
+    setPeriod: (nextPeriod: typeof period) => setUsagePeriod(view, nextPeriod),
     asOf: now,
     loading,
     error,

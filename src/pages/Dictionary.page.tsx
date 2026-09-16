@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   BookOpen,
   BookPlus,
@@ -11,7 +11,6 @@ import { useDictionary } from "@/hooks/useDictionary.hook";
 import { useSettings } from "@/hooks/useSettings.hook";
 import { useToast } from "@/hooks/useToast.hook";
 import { useAppStore } from "@/store/app.store";
-import { Metric } from "@/components/shared/Metric.component";
 import {
   PageHeader,
   PageLayout,
@@ -34,7 +33,6 @@ export function DictionaryPage() {
   const {
     entries,
     readySuggestions,
-    pendingSuggestions,
     loaded,
     addEntry,
     setEntryEnabled,
@@ -44,17 +42,14 @@ export function DictionaryPage() {
   } = useDictionary();
   const { dictionaryEnabled, autoLearnWords } = useSettings();
   const parakeetStatus = useAppStore((s) => s.parakeetVocabularyStatus);
-  const { correctionCount, correctionRate: rate } = useAppStore(s=>s.historySnapshot);
+  const correctionCount = useAppStore((s) => s.historySnapshot.correctionCount);
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
   const { success, error } = useToast();
-  const [right, setRight] = useState("");
-  const [wrong, setWrong] = useState("");
+  const draft = useAppStore((s) => s.dictionaryDraft);
+  const setDraft = useAppStore((s) => s.setDictionaryDraft);
+  const clearDraft = useAppStore((s) => s.clearDictionaryDraft);
+  const { right, wrong } = draft;
 
-  const recognized = entries.reduce(
-    (sum, e) => sum + (e.timesRecognized ?? 0),
-    0,
-  );
-  const corrected = entries.reduce((sum, e) => sum + e.timesApplied, 0);
   const sortedEntries = useMemo(
     () =>
       [...entries].sort(
@@ -73,8 +68,7 @@ export function DictionaryPage() {
       .filter(Boolean);
     try {
       await addEntry(rightForm, wrongForms, "manual");
-      setRight("");
-      setWrong("");
+      clearDraft(draft);
       success(`“${rightForm}” added to your dictionary`);
     } catch {
       error("Could not save the word. Please try again.");
@@ -105,37 +99,6 @@ export function DictionaryPage() {
           </button>
         }
       />
-
-      <div className="stat-grid">
-        <Metric
-          value={number(entries.length)}
-          label="Words in dictionary"
-          detail={`${number(entries.filter((e) => e.enabled).length)} active`}
-        />
-        <Metric
-          value={number(readySuggestions.length)}
-          label="Suggested"
-          detail={
-            pendingSuggestions.length
-              ? `${number(pendingSuggestions.length)} more waiting for a second sighting`
-              : "From your corrections"
-          }
-        />
-        <Metric
-          value={rate === null ? "—" : rate.toFixed(1)}
-          label="Corrections per 100 words"
-          detail={
-            correctionCount
-              ? `${number(correctionCount)} correction${correctionCount === 1 ? "" : "s"} recorded`
-              : "Edit a transcript in History to start"
-          }
-        />
-        <Metric
-          value={number(recognized + corrected)}
-          label="Times helped"
-          detail={`${number(recognized)} recognised by the engine · ${number(corrected)} corrected after`}
-        />
-      </div>
 
       <div className="dictionary-layout">
         <section className="dictionary-entries">
@@ -219,6 +182,7 @@ export function DictionaryPage() {
                           type="button"
                           className="icon-button"
                           aria-label={`Remove ${e.right}`}
+                          data-tooltip={`Remove ${e.right}`}
                           onClick={() =>
                             run(removeEntry(e.entryId), `“${e.right}” removed`)
                           }
@@ -257,7 +221,7 @@ export function DictionaryPage() {
               <input
                 id="dictionary-right"
                 value={right}
-                onChange={(e) => setRight(e.target.value)}
+                onChange={(e) => setDraft({ right: e.target.value })}
                 placeholder="Tauri"
                 spellCheck={false}
               />
@@ -267,7 +231,7 @@ export function DictionaryPage() {
               <input
                 id="dictionary-wrong"
                 value={wrong}
-                onChange={(e) => setWrong(e.target.value)}
+                onChange={(e) => setDraft({ wrong: e.target.value })}
                 placeholder="Tari, Tory"
                 spellCheck={false}
               />

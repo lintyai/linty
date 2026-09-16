@@ -11,7 +11,7 @@ export function StatusBar() {
   const label = status === "error" ? (error || "Transcription failed") : labels[status] || (needsSetup ? "API key required" : sttMode === "local" && !loadedModelFilename ? "Model will load on dictation" : "Ready to dictate");
   return (
     <footer className="status-bar">
-      <div className={`status-message ${status === "error" ? "text-error" : ""}`} role="status" title={label}>
+      <div className={`status-message ${status === "error" ? "text-error" : ""}`} role="status" aria-atomic="true" title={label}>
         {status === "error" ? <AlertCircle size={12} /> : busy ? <Loader2 size={12} className="animate-spin" /> : <span className={`status-dot ${status === "recording" ? "is-recording" : ""}`} />}
         <span>{label}</span>
       </div>

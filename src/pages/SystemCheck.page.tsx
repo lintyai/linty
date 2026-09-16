@@ -326,6 +326,7 @@ function RecordingTestWidget() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleToggle}
+            data-tooltip={isRecording ? "Stop microphone test" : "Start microphone test"}
             aria-label={
               isRecording ? "Stop microphone test" : "Start microphone test"
             }

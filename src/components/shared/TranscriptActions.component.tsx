@@ -40,7 +40,7 @@ export function TranscriptCopyButton({
           : "transcript-action"
       }
       aria-label="Copy transcript"
-      title="Copy transcript"
+      data-tooltip={labeled ? undefined : "Copy transcript"}
     >
       {copied ? (
         <Check className="text-success" size={14} />
@@ -78,7 +78,7 @@ function TranscriptDeleteButton({
         labeled ? "transcript-menu-delete" : "transcript-action is-destructive"
       }
       aria-label="Delete transcript"
-      title="Delete transcript"
+      data-tooltip={labeled ? undefined : "Delete transcript"}
       disabled={deleting}
     >
       <Trash2 size={14} />
@@ -113,7 +113,7 @@ export function TranscriptMoreActions(props: TranscriptActionsProps) {
         ref={trigger}
         popoverTarget={id}
         aria-label="More transcription actions"
-        title="More transcription actions"
+        data-tooltip="More transcription actions"
         className="transcript-action"
         onClick={(event) => {
           event.stopPropagation();

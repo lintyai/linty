@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { Info, TrendingUp, X } from "lucide-react";
 import { useAppStore } from "@/store/app.store";
 import { saveTypingSpeed } from "@/hooks/useSettings.hook";
@@ -13,7 +13,6 @@ import {
 } from "@/lib/payoff.util";
 import { formatDuration } from "@/lib/usage.util";
 import type { UsageSummary } from "@/types/history.types";
-import { FloatingTooltip } from "@/components/shared/FloatingTooltip.component";
 import { Metric } from "@/components/shared/Metric.component";
 
 export function PayoffSummary({
@@ -28,10 +27,7 @@ export function PayoffSummary({
   const baseline = useAppStore((s) => s.typingWordsPerMinute);
   const estimate = estimatePayoff(summary.timing, baseline);
   const [open, setOpen] = useState(false);
-  const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
-  const ref = useRef<HTMLElement>(null);
   const info = useRef<HTMLButtonElement>(null);
-  const tooltipId = useId();
   const positive = estimate && estimate.savedSeconds >= 30;
   const similar = estimate && Math.abs(estimate.savedSeconds) < 30;
   const label =
@@ -47,20 +43,10 @@ export function PayoffSummary({
       : change === 0
         ? `Same pace as previous ${comparisonDays} days`
         : `${change > 0 ? "+" : "−"}${Math.abs(change)}% vs previous ${comparisonDays} days`;
-  useEffect(() => {
-    const hide = () => setHover(null);
-    window.addEventListener("scroll", hide, true);
-    window.addEventListener("resize", hide);
-    return () => {
-      window.removeEventListener("scroll", hide, true);
-      window.removeEventListener("resize", hide);
-    };
-  }, []);
   return (
     <section
       className="editorial-metrics payoff-summary"
       aria-label="Dictation summary"
-      ref={ref}
     >
       <div className="payoff-label">
         <span>{label}</span>
@@ -70,28 +56,8 @@ export function PayoffSummary({
           aria-label="How time saved is estimated"
           aria-haspopup="dialog"
           aria-expanded={open}
-          aria-describedby={hover ? tooltipId : undefined}
-          onPointerEnter={(e) => {
-            if (e.pointerType !== "touch")
-              setHover({ x: e.clientX, y: e.clientY });
-          }}
-          onPointerLeave={() => setHover(null)}
-          onFocus={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            setHover({ x: r.left + r.width / 2, y: r.top });
-          }}
-          onBlur={() => setHover(null)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape" && hover) {
-              e.preventDefault();
-              e.stopPropagation();
-              setHover(null);
-            }
-          }}
-          onClick={() => {
-            setHover(null);
-            setOpen(true);
-          }}
+          data-tooltip={`Compared with typing at ${baseline} wpm\nClick to view the calculation and adjust.`}
+          onClick={() => setOpen(true)}
         >
           <Info size={14} />
         </button>
@@ -138,18 +104,6 @@ export function PayoffSummary({
             : "Your progress will come from your saved dictations."}
         </span>
       </div>
-      {hover && !open && ref.current && (
-        <FloatingTooltip
-          id={tooltipId}
-          anchor={hover}
-          boundary={
-            (ref.current.closest(".page-scroll") as HTMLElement) ?? ref.current
-          }
-        >
-          Compared with typing at {baseline} wpm
-          <strong>Click to view the calculation and adjust.</strong>
-        </FloatingTooltip>
-      )}
       <EstimateDetails
         open={open}
         summary={summary}
@@ -177,22 +131,26 @@ function EstimateDetails({
   const ref = useRef<HTMLDialogElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const id = useId();
+  const initialBaseline = useRef(baseline);
+  initialBaseline.current = baseline;
   const [draft, setDraft] = useState(String(baseline));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const speed = Number(draft),
     valid = validTypingSpeed(speed);
   const estimate = valid ? estimatePayoff(summary.timing, speed) : null;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
-    setDraft(String(baseline));
+    // Reset before the dialog becomes interactive, and only when opening.
+    // Saved-value changes must not replace a draft or interrupt a retry.
+    setDraft(String(initialBaseline.current));
     setError(null);
     setBusy(false);
     const dialog = ref.current;
     dialog?.showModal();
     field.current?.focus({ preventScroll: true });
     return () => dialog?.close();
-  }, [open, baseline]);
+  }, [open]);
   const save = async () => {
     if (!valid || busy) return;
     setBusy(true);
@@ -234,6 +192,7 @@ function EstimateDetails({
         <button
           className="icon-button"
           aria-label="Close estimate details"
+          data-tooltip="Close estimate details"
           disabled={busy}
           onClick={onClose}
         >

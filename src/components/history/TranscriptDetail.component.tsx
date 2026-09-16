@@ -236,7 +236,7 @@ export function TranscriptDetail({
         <button
           type="button"
           aria-label="Back to history"
-          title="Back to history (Esc)"
+          data-tooltip="Back to history (Esc)"
           onClick={onClose}
           className="detail-close icon-button"
         >

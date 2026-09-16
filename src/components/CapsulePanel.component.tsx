@@ -278,18 +278,17 @@ export function CapsulePanel() {
     };
   }, []);
 
-  if (mode === "idle") return null;
-
   const isRecording = mode === "recording";
   const isProcessing = mode === "transcribing" || mode === "correcting" || mode === "pasting";
   const isDone = mode === "done";
   const isError = mode === "error";
+  const announcement = mode === "idle" ? "" : isRecording ? "Recording" : isError ? errorMsg : isDone ? "Transcription complete" : PROCESSING_LABELS[mode] || "Processing";
 
   return (
     <div className="flex items-center justify-center h-full w-full">
-      <div
-        role="status"
-        aria-label={isRecording ? "Recording" : isError ? errorMsg : isDone ? "Transcription complete" : PROCESSING_LABELS[mode] || "Processing"}
+      <span className="sr-only" role="status" aria-atomic="true">{announcement}</span>
+      {mode !== "idle" && <div
+        aria-hidden="true"
         className={[
           "capsule-pill",
           "animate-capsule-in",
@@ -357,7 +356,7 @@ export function CapsulePanel() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

@@ -713,6 +713,7 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
           <button
             type="button"
             aria-label={showKey ? "Hide API key" : "Show API key"}
+            data-tooltip={showKey ? "Hide API key" : "Show API key"}
             onClick={() => setShowKey(!showKey)}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
           >

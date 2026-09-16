@@ -1,5 +1,6 @@
 import { Select } from "@/components/shared/Select.component";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import type { ApplicationSort } from "@/store/slices/workspace.slice";
 import { ArrowRight, ShieldCheck } from "lucide-react";
 import { HistoryStatus } from "@/components/shared/HistoryStatus.component";
 import { useHistory } from "@/hooks/useHistory.hook";
@@ -22,9 +23,7 @@ import {
 
 const number = (value: number) => value.toLocaleString();
 
-type SortKey = "words" | "seconds" | "sessions" | "lastUsedAt";
-
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+const SORT_OPTIONS: { value: ApplicationSort; label: string }[] = [
   { value: "words", label: "Words" },
   { value: "seconds", label: "Dictation time" },
   { value: "sessions", label: "Sessions" },
@@ -37,7 +36,8 @@ export function AppsPage() {
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
   const tracking = useAppStore((s) => s.trackApplicationUsage);
-  const [sort, setSort] = useState<SortKey>("words");
+  const sort = useAppStore((s) => s.applicationSort);
+  const setSort = useAppStore((s) => s.setApplicationSort);
   const {
     period,
     setPeriod,
@@ -47,7 +47,7 @@ export function AppsPage() {
     loading,
     error,
     retry,
-  } = useUsagePeriod("30d");
+  } = useUsagePeriod("apps");
   const apps = useMemo(
     () =>
       [...applications].sort(
@@ -120,7 +120,7 @@ export function AppsPage() {
           </div>
           <div className="sort-control">
             <span>Sort by</span>
-            <Select<SortKey>
+            <Select<ApplicationSort>
               label="Sort applications"
               value={sort}
               onChange={setSort}

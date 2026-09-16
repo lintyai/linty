@@ -12,7 +12,8 @@
     "build:mac:universal": "tauri build --target universal-apple-darwin --bundles dmg app -- --features local-stt,parakeet && mkdir -p release && cp -f src-tauri/target/release/bundle/dmg/*.dmg release/",
     "test": "node --experimental-strip-types --test tests/usage.test.mjs tests/languages.test.mjs tests/corrections.test.mjs tests/payoff.test.mjs",
     "test:ui": "node tests/ui.smoke.mjs",
-    "test:motion": "node tests/ui.motion.mjs"
+    "test:motion": "node tests/ui.motion.mjs",
+    "test:usability": "node tests/ui.usability.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",
