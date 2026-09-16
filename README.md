@@ -28,12 +28,12 @@ Privacy first means you can dictate without sending your speech to a server. Lin
 | | **Linty** | **VoiceInk** | **Superwhisper** | **Wispr Flow** |
 |---|---|---|---|---|
 | Offline speech recognition | Whisper Turbo Q5 and Parakeet TDT v3 | Local models | Local Whisper and Parakeet options | Requires an internet connection |
-| Cloud speech recognition | Optional Groq, your API key | Optional cloud providers | Optional cloud models | Cloud processing |
+| Cloud features | Optional Groq transcription / refinement, your API key | Optional text enhancement | Optional cloud models | Cloud processing |
 | Desktop availability | macOS 14+, Apple Silicon | macOS | macOS and Windows | macOS and Windows |
 | Source / access | **MIT; free app and source** | GPL-3.0 source; paid packaged app | Free tier and paid Pro | Free tier and paid plans |
 | Build or modify the app yourself | Yes | Yes | Use the vendor's app | Use the vendor's app |
 
-Comparison checked **17 September 2026** against the projects' own documentation: [VoiceInk](https://github.com/Beingpax/VoiceInk), [Superwhisper models](https://superwhisper.com/models) and [downloads](https://superwhisper.com/download), [Wispr Flow requirements](https://docs.wisprflow.ai/articles/1036674442-supported-devices-and-system-requirements) and [internet requirement](https://docs.wisprflow.ai/articles/4048537120-what-to-expect-from-flow-accuracy-and-known-limitations). This is a feature comparison, not a head-to-head speed or accuracy benchmark. Features and plans can change.
+Comparison checked **17 September 2026** against the projects' own documentation: [VoiceInk source](https://github.com/Beingpax/VoiceInk) and [product details](https://tryvoiceink.com), [Superwhisper models](https://superwhisper.com/models) and [downloads](https://superwhisper.com/download), [Wispr Flow requirements](https://docs.wisprflow.ai/articles/1036674442-supported-devices-and-system-requirements) [internet requirement](https://docs.wisprflow.ai/articles/4048537120-what-to-expect-from-flow-accuracy-and-known-limitations), and [plans](https://wisprflow.ai/pricing). This is a feature comparison, not a head-to-head speed or accuracy benchmark. Features and plans can change.
 
 ## Measured performance
 
