@@ -88,7 +88,6 @@ export const fixture = ({
       onboardingComplete: !onboarding,
       sttMode: "local",
       selectedModelFilename: "ggml-large-v3-turbo-q5_0.bin",
-      groqApiKey: "",
       triggerKey: "fn",
       correctionEnabled: false,
     },
@@ -399,9 +398,15 @@ export const fixture = ({
   let id = 0;
   window.__QA__ = {
     stores,
+    secureGroqKey: "",
     history,
     calls: [],
+    emittedEvents: [],
     clipboard: "",
+    audioInputs: { selected: null, defaultDevice: "Built-in Microphone", devices: [
+      { name: "Built-in Microphone", selectable: true },
+      { name: "USB Microphone", selectable: true },
+    ], error: null },
     failures: {},
     setUpdate: (next) => {
       update = next;
@@ -430,8 +435,31 @@ export const fixture = ({
       window.__QA__.calls.push(command);
       if (window.__QA__.failures[command])
         throw new Error(window.__QA__.failures[command]);
+      if (command === "plugin:event|emit") {
+        window.__QA__.emittedEvents.push(structuredClone(args));
+        return;
+      }
+      if (command === "get_groq_api_key") return window.__QA__.secureGroqKey;
+      if (command === "set_groq_api_key") {
+        window.__QA__.secureGroqKey = args.key.trim();
+        return;
+      }
+      if (command === "remove_groq_api_key") {
+        window.__QA__.secureGroqKey = "";
+        delete stores[1].groqApiKey;
+        stores[1].sttMode = "local";
+        return;
+      }
       if (command.startsWith("history_"))
         return structuredClone(historyCommand(command, structuredClone(args)));
+      if (command === "get_audio_inputs") return structuredClone(window.__QA__.audioInputs);
+      if (command === "stop_recording") return { sample_count: 0, duration_secs: 0 };
+      if (command === "set_audio_input") {
+        window.__QA__.audioInputs.selected = args.name;
+        stores[1].audioInputName = args.name;
+        window.__QA__.emit("audio-input-changed", structuredClone(window.__QA__.audioInputs));
+        return structuredClone(window.__QA__.audioInputs);
+      }
       if (
         command === "plugin:store|load" ||
         command === "plugin:store|get_store"

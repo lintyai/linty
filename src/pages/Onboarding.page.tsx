@@ -79,9 +79,7 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
 function WelcomeStep({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col items-center text-center animate-page-enter">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/15 mb-5">
-        <BrandMark />
-      </div>
+      <img src="/brand/icon.svg" alt="" width={80} height={80} className="mb-5" draggable={false} />
 
       <h1 className="text-[22px] font-bold text-text-primary mb-2">
         Welcome to Linty
@@ -642,16 +640,22 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
   const { setSttMode, setGroqApiKey } = useAppStore();
 
   const handleContinue = async () => {
+    if (!apiKey.trim() || saving) return;
     setSaving(true);
     setSaveError("");
     try {
       const store = await load("linty-settings.json", { defaults: {}, autoSave: true });
-      setSttMode("cloud");
-      await store.set("sttMode", "cloud");
-      if (apiKey.trim()) {
-        setGroqApiKey(apiKey.trim());
-        await store.set("groqApiKey", apiKey.trim());
+      const previousMode = await store.get<string>("sttMode");
+      await invoke("set_groq_api_key", { key: apiKey.trim() });
+      setGroqApiKey(apiKey.trim());
+      try {
+        await store.set("sttMode", "cloud");
+        await store.save();
+      } catch (error) {
+        await store.set("sttMode", previousMode ?? "local");
+        throw error;
       }
+      setSttMode("cloud");
     } catch (err) {
       console.error("[onboarding] Failed to save cloud settings:", err);
       setSaveError("Could not save your settings. Please try again.");
@@ -726,7 +730,7 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
       {/* Continue button */}
       <button
         onClick={handleContinue}
-        disabled={saving}
+        disabled={saving || !apiKey.trim()}
         className={cn(
           "flex items-center gap-2 rounded-xl px-6 py-2.5 text-[14px] font-semibold",
           "bg-accent text-white",
@@ -739,7 +743,7 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
           <Loader2 size={16} className="animate-spin" />
         ) : (
           <>
-            {apiKey.trim() ? "Continue" : "I'll add it later"}
+            Continue
             <ArrowRight size={16} />
           </>
         )}
@@ -747,7 +751,7 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
 
       {!apiKey.trim() && (
         <p className="mt-3 text-[11px] text-text-muted">
-          You can add the API key later in Settings
+          Add an API key to continue with Cloud
         </p>
       )}
     </div>

@@ -45,6 +45,7 @@ objc2 = "0.5"          # NSEvent monitoring for fn/globe key
 block2 = "0.5"
 cocoa = "0.26"          # Activation policy (Dock/menu bar)
 objc = "0.2"
+security-framework = "3.7"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
@@ -60,6 +61,10 @@ required-features = ["local-stt", "parakeet"]
 
 [[example]]
 name = "stt_capacity"
+required-features = ["local-stt", "parakeet"]
+
+[[example]]
+name = "stt_guards"
 required-features = ["local-stt", "parakeet"]
 
 [dev-dependencies]

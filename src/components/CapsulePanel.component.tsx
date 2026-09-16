@@ -229,7 +229,7 @@ export function CapsulePanel() {
 
       if (state === "error") {
         setErrorMsg(error || "Something went wrong");
-        dismissTimerRef.current = setTimeout(dismiss, 4000);
+        dismissTimerRef.current = setTimeout(dismiss, 6000);
       }
     });
 
@@ -350,7 +350,7 @@ export function CapsulePanel() {
           {isError && (
             <div className="flex items-center gap-2">
               <AlertIcon />
-              <span className="text-[10px] text-text-secondary truncate max-w-[200px]">
+              <span title={errorMsg} className="text-[11px] leading-[14px] text-text-secondary whitespace-normal line-clamp-2 max-w-[300px]">
                 {errorMsg}
               </span>
             </div>

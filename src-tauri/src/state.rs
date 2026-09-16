@@ -15,7 +15,11 @@ pub struct RecordingState {
 
 /// Commands sent to the dedicated audio thread.
 pub enum AudioCommand {
-    Start,
+    Start {
+        input_name: Option<String>,
+        generation: u64,
+        reply: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
     Stop,
 }
 
@@ -59,6 +63,8 @@ pub struct AppState {
     pub app_icon_cache: Mutex<HashMap<String, Option<String>>>,
     /// Incremented by audio callback, read+reset by watchdog to detect runaway callbacks.
     pub audio_callback_count: Arc<AtomicU64>,
+    /// Invalidates callbacks and pending startup from an abandoned recording.
+    pub audio_generation: Arc<AtomicU64>,
 }
 
 impl AppState {
@@ -83,6 +89,7 @@ impl AppState {
             correction_watch_generation: AtomicU64::new(0),
             app_icon_cache: Mutex::new(HashMap::new()),
             audio_callback_count: Arc::new(AtomicU64::new(0)),
+            audio_generation: Arc::new(AtomicU64::new(0)),
         }
     }
 

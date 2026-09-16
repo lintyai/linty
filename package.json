@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "yarn icons:check && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "build:mac": "bash scripts/build-mac.sh",
@@ -13,7 +13,10 @@
     "test": "node --experimental-strip-types --test tests/usage.test.mjs tests/languages.test.mjs tests/corrections.test.mjs tests/payoff.test.mjs tests/correction-service.test.mjs tests/force-update.test.mjs",
     "test:ui": "node tests/ui.smoke.mjs",
     "test:motion": "node tests/ui.motion.mjs",
-    "test:usability": "node tests/ui.usability.mjs"
+    "test:usability": "node tests/ui.usability.mjs",
+    "icons:generate": "node scripts/generate-icons.mjs",
+    "icons:check": "node scripts/generate-icons.mjs --check",
+    "test:recovery": "node tests/ui.recovery.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",

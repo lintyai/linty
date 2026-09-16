@@ -319,6 +319,40 @@ try {
     for (const section of ['general', 'audio', 'models', 'language', 'appearance', 'privacy']) {
       await chooseOption(page,'Settings category',settingLabels[section]);
       await audit(`${section}-${theme}`);
+      if (section === 'audio') {
+        const input = page.getByRole('combobox', { name: 'Input device', exact: true });
+        await page.waitForFunction(() => !document.querySelector('[role="combobox"][aria-label="Input device"]').disabled);
+        await chooseOption(page, 'Input device', 'USB Microphone');
+        await page.getByRole('heading', { name: 'USB Microphone', exact: true }).waitFor();
+        assert.equal(await page.evaluate(() => window.__QA__.stores[1].audioInputName), 'USB Microphone');
+        // A native tray selection updates Settings without remounting the page.
+        await page.evaluate(() => {
+          window.__QA__.audioInputs.selected = 'Built-in Microphone';
+          window.__QA__.emit('audio-input-changed', structuredClone(window.__QA__.audioInputs));
+        });
+        await page.getByRole('heading', { name: 'Built-in Microphone', exact: true }).waitFor();
+        await page.evaluate(() => { window.__QA__.failures.set_audio_input = 'Could not save microphone selection'; });
+        await chooseOption(page, 'Input device', 'USB Microphone');
+        await page.getByRole('main').getByText('Could not save microphone selection', { exact: true }).waitFor();
+        assert.equal(await input.innerText(), 'Built-in Microphone', 'A failed selection retains the confirmed microphone');
+        await page.evaluate(async () => {
+          delete window.__QA__.failures.set_audio_input;
+          const { useAppStore } = await import('/src/store/app.store.ts');
+          useAppStore.getState().setIsRecording(true);
+        });
+        assert.equal(await input.isDisabled(), true, 'Input selection is disabled during capture');
+        await page.evaluate(async () => {
+          const { useAppStore } = await import('/src/store/app.store.ts');
+          useAppStore.getState().setIsRecording(false);
+          window.__QA__.audioInputs.selected = 'Disconnected Microphone';
+          window.__QA__.emit('audio-input-changed', structuredClone(window.__QA__.audioInputs));
+        });
+        await page.getByText('Your selected microphone is unavailable or has an ambiguous name. Choose another input or System Default.', { exact: true }).waitFor();
+        assert.equal(await input.innerText(), 'Disconnected Microphone (Unavailable)');
+        await chooseOption(page, 'Input device', 'System Default — Built-in Microphone');
+        await page.getByRole('heading', { name: 'System microphone', exact: true }).waitFor();
+        await screenshot(`audio-${theme}`);
+      }
       if (section === 'language') {
         const dropdown=page.getByRole('combobox',{name:'Transcription language',exact:true});
         await dropdown.click();
@@ -327,6 +361,40 @@ try {
         const windowSize=page.viewportSize();
         assert.ok(bounds.x>=0 && bounds.y>=0 && bounds.x+bounds.width<=windowSize.width && bounds.y+bounds.height<=windowSize.height,'Dropdown stays within the window');
         await page.keyboard.press('Escape');
+        if (theme === 'light') {
+          const chooseTrayLanguage = async (language) => {
+            const before = await page.evaluate(() => window.__QA__.emittedEvents.filter(e => e.event === 'tray-language-result').length);
+            await page.evaluate(code => window.__QA__.emit('tray-language-changed', code), language);
+            await page.waitForFunction(count => window.__QA__.emittedEvents.filter(e => e.event === 'tray-language-result').length > count, before);
+          };
+          await chooseTrayLanguage('fr');
+          assert.equal(await dropdown.innerText(), 'French', 'Tray changes update Settings');
+          assert.equal(await page.evaluate(() => window.__QA__.stores[1].transcriptionLanguage), 'fr');
+          await page.waitForFunction(() => window.__QA__.emittedEvents.filter(e => e.event === 'tray-state-changed').at(-1)?.payload.transcriptionLanguage === 'fr');
+          const trayLanguages = await page.evaluate(() => window.__QA__.emittedEvents.filter(e => e.event === 'tray-state-changed').at(-1).payload.languages);
+          await dropdown.click();
+          assert.deepEqual(await page.getByRole('listbox', {name:'Transcription language',exact:true}).getByRole('option').allTextContents(), trayLanguages.map(language => language.label), 'Tray and Settings share language choices');
+          await page.keyboard.press('Escape');
+          await chooseOption(page, 'Transcription language', 'German');
+          await page.waitForFunction(() => window.__QA__.emittedEvents.filter(e => e.event === 'tray-state-changed').at(-1)?.payload.transcriptionLanguage === 'de');
+          await page.evaluate(() => { window.__QA__.failures['plugin:store|save'] = 'Language preferences could not be saved'; });
+          await chooseTrayLanguage('fr');
+          assert.equal(await dropdown.innerText(), 'German', 'Failed tray saves retain the confirmed selection');
+          assert.equal(await page.evaluate(() => window.__QA__.stores[1].transcriptionLanguage), 'de');
+          await page.evaluate(async () => {
+            delete window.__QA__.failures['plugin:store|save'];
+            (await import('/src/store/app.store.ts')).useAppStore.getState().setIsRecording(true);
+          });
+          await chooseTrayLanguage('fr');
+          assert.equal(await dropdown.innerText(), 'German', 'Language cannot change during dictation');
+          assert.equal(await dropdown.isDisabled(), true);
+          await page.evaluate(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().setIsRecording(false));
+          await chooseTrayLanguage('xx');
+          assert.equal(await dropdown.innerText(), 'German', 'Unsupported tray values are rejected');
+          await chooseTrayLanguage('auto');
+          assert.equal(await dropdown.innerText(), 'Auto-detect');
+          await chooseTrayLanguage('es'); // Restore the shared fixture for later cancellation checks.
+        }
       }
 
       if (section === 'models' || section === 'appearance' || section === 'language') await screenshot(`${section}-${theme}`);
@@ -377,6 +445,34 @@ try {
     }
     await page.keyboard.press('Meta+,');
   }
+  // A disconnected input must not leave the recording/hotkey state locked.
+  await page.evaluate(() => {
+    window.__QA__.failures.start_recording = 'Selected microphone is unavailable';
+    window.__QA__.emit('fnkey-pressed');
+  });
+  await page.getByText('Selected microphone is unavailable', {exact:true}).first().waitFor();
+  assert.equal(await page.evaluate(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().isRecording), false);
+  await page.evaluate(async () => {
+    delete window.__QA__.failures.start_recording;
+    (await import('/src/store/app.store.ts')).useAppStore.getState().resetTranscription();
+    window.__QA__.calls = [];
+    window.__QA__.originalMicInvoke = window.__TAURI_INTERNALS__.invoke;
+    window.__TAURI_INTERNALS__.invoke = (command, args) => {
+      if (command === 'start_recording') return new Promise(resolve => { window.__QA__.finishMicStart = resolve; });
+      return window.__QA__.originalMicInvoke(command, args);
+    };
+    window.__QA__.emit('fnkey-pressed');
+  });
+  await page.waitForFunction(() => Boolean(window.__QA__.finishMicStart));
+  await page.evaluate(() => window.__QA__.emit('fnkey-released'));
+  assert.equal(await page.evaluate(() => window.__QA__.calls.includes('stop_recording')), false, 'Quick release waits for microphone startup');
+  await page.evaluate(() => window.__QA__.finishMicStart());
+  await page.waitForFunction(async () => {
+    const state = (await import('/src/store/app.store.ts')).useAppStore.getState();
+    return window.__QA__.calls.includes('stop_recording') && !state.isRecording && state.status === 'idle';
+  });
+  await page.evaluate(() => { window.__TAURI_INTERNALS__.invoke = window.__QA__.originalMicInvoke; });
+
   // Expose recoverable failures from the same commands used by the desktop app.
   await page.getByRole('button', {name:'About',exact:true}).click();
   await page.evaluate(() => { window.__QA__.failures['plugin:updater|check'] = 'Offline'; });
@@ -429,8 +525,9 @@ try {
   await chooseOption(page,'Settings category',settingLabels['models']);
   await page.getByRole('button',{name:'Cloud',exact:true}).click();
   await page.getByLabel('Groq API key',{exact:true}).fill('synthetic-test-key');
-  await page.getByLabel('Groq API key',{exact:true}).blur();
-  assert.equal(await page.evaluate(() => window.__QA__.stores[1].groqApiKey), 'synthetic-test-key');
+  await page.getByRole('button',{name:'Save and use Cloud',exact:true}).click();
+  await page.waitForFunction(() => window.__QA__.secureGroqKey === 'synthetic-test-key' && window.__QA__.stores[1].sttMode === 'cloud');
+  assert.equal(await page.evaluate(() => 'groqApiKey' in window.__QA__.stores[1]), false);
   await page.getByLabel('Show API key',{exact:true}).click();
   assert.equal(await page.getByLabel('Groq API key',{exact:true}).getAttribute('type'),'text');
   await audit('cloud-settings');

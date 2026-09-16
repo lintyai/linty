@@ -23,6 +23,7 @@ pub fn start(app: tauri::AppHandle) {
         };
 
         let mut consecutive_high_ticks: u32 = 0;
+        let mut silent_ticks: u32 = 0;
         #[cfg(target_os = "macos")]
         let mut tick_count: u64 = 0;
 
@@ -48,6 +49,15 @@ pub fn start(app: tauri::AppHandle) {
             // ── Check 1: Callback rate ──
             let count = state.audio_callback_count.swap(0, Ordering::Relaxed);
             let rate = count / TICK_INTERVAL_SECS;
+            let recording = state.recording.lock().map(|r| r.is_recording).unwrap_or(false);
+            // Digital silence still produces callbacks. No callbacks at all
+            // means capture has stalled or its device disappeared.
+            silent_ticks = if recording && count == 0 { silent_ticks + 1 } else { 0 };
+            if silent_ticks >= 4 {
+                recover(&app, &state, "Microphone stopped responding. Check your input and try again.").await;
+                silent_ticks = 0;
+                continue;
+            }
 
             if rate > MAX_CALLBACKS_PER_SEC {
                 consecutive_high_ticks += 1;
@@ -107,6 +117,7 @@ pub fn start(app: tauri::AppHandle) {
 }
 
 async fn recover(app: &tauri::AppHandle, state: &AppState, reason: &str) {
+    state.audio_generation.fetch_add(1, Ordering::SeqCst);
     // 1. Send Stop command to audio thread
     if let Ok(tx_guard) = state.audio_tx.lock() {
         if let Some(tx) = tx_guard.as_ref() {
@@ -136,19 +147,8 @@ async fn recover(app: &tauri::AppHandle, state: &AppState, reason: &str) {
     // 4. Emit recovery event to frontend
     let _ = app.emit("watchdog-recovery", reason);
 
-    // 5. Hide capsule after a short delay
-    let app_clone = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        let _ = app_clone.emit("recording-stopped", ());
-        #[cfg(target_os = "macos")]
-        {
-            use tauri_nspanel::ManagerExt;
-            if let Ok(panel) = app_clone.get_webview_panel("capsule") {
-                panel.order_out(None);
-            }
-        }
-    });
+    // The frontend displays the reason in the capsule and owns its dismissal.
+    // A delayed native hide could otherwise dismiss a new recording.
 
     log::info!("[watchdog] Recovery complete: {}", reason);
 }

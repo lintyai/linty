@@ -1,4 +1,5 @@
 mod audio;
+mod audio_input;
 mod application;
 #[cfg(target_os = "macos")]
 #[allow(deprecated, unexpected_cfgs)]
@@ -8,6 +9,7 @@ mod clipboard;
 #[cfg(target_os = "macos")]
 #[allow(deprecated)]
 mod corrections;
+mod credentials;
 #[cfg(target_os = "macos")]
 mod fnkey;
 mod history;
@@ -250,21 +252,37 @@ fn warm_up_local_engine(engine: LocalEngine) {
 }
 
 #[tauri::command]
-fn start_recording(
+async fn start_recording(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     track_application: Option<bool>,
 ) -> Result<(), String> {
-    {
+    let previous_generation = state.audio_generation.load(Ordering::SeqCst);
+    let application = if track_application.unwrap_or(false) {
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let _ = reply.send(application::frontmost_application());
+        }).map_err(|e| e.to_string())?;
+        tokio::time::timeout(std::time::Duration::from_secs(3), receive)
+            .await.map_err(|_| "Could not identify the active application. Try again.".to_string())?
+            .map_err(|e| e.to_string())?
+    } else {
+        None
+    };
+    let (input_name, generation) = {
         let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
+        if state.audio_generation.load(Ordering::SeqCst) != previous_generation {
+            return Err("Recording startup was cancelled".into());
+        }
+        if rec.is_recording {
+            return Err("Already recording".into());
+        }
+        let selected = audio_input::snapshot(&app).selected;
         rec.samples = Vec::new();
-        rec.application = if track_application.unwrap_or(false) {
-            application::frontmost_application()
-        } else {
-            None
-        };
+        rec.application = application;
         rec.is_recording = true;
-    }
+        (selected, state.audio_generation.fetch_add(1, Ordering::SeqCst) + 1)
+    };
 
     // Reset callback monitoring and keep the local model warm while recording.
     {
@@ -280,16 +298,49 @@ fn start_recording(
                 app.clone(),
                 Arc::clone(&state.audio_buffer),
                 Arc::clone(&state.audio_callback_count),
+                Arc::clone(&state.audio_generation),
             );
             *tx_guard = Some(tx);
         }
     }
 
-    let tx_guard = state.audio_tx.lock().map_err(|e| e.to_string())?;
-    if let Some(tx) = tx_guard.as_ref() {
-        tx.send(AudioCommand::Start).map_err(|e| e.to_string())?;
+    let (reply, ready) = tokio::sync::oneshot::channel();
+    let sent = state.audio_tx.lock().map_err(|e| e.to_string())?
+        .as_ref().ok_or_else(|| "Audio thread is unavailable".to_string())?
+        .send(AudioCommand::Start { input_name, generation, reply });
+    let result = match sent {
+        Ok(()) => tokio::time::timeout(std::time::Duration::from_secs(8), ready).await
+            .map_err(|_| "Microphone did not start. Check your input and try again.".to_string())
+            .and_then(|reply| reply.map_err(|_| "Audio startup was interrupted".to_string()))
+            .and_then(|result| result),
+        Err(error) => Err(error.to_string()),
+    };
+    if result.is_err() {
+        log::warn!("[audio] Microphone startup failed");
+        if let Ok(mut rec) = state.recording.lock() {
+            if state.audio_generation.load(Ordering::SeqCst) == generation {
+                rec.is_recording = false;
+            }
+        }
     }
+    result
+}
 
+/// Abandon the old capture worker. Generation checks prevent a late startup or
+/// old CoreAudio callback from modifying the next recording's buffer.
+#[tauri::command]
+async fn recover_recording(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
+    state.audio_generation.fetch_add(1, Ordering::SeqCst);
+    if let Some(tx) = state.audio_tx.lock().map_err(|e| e.to_string())?.take() {
+        let _ = tx.send(AudioCommand::Stop);
+    }
+    rec.is_recording = false;
+    rec.samples = Vec::new();
+    rec.application = None;
+    *state.audio_buffer.lock().map_err(|e| e.to_string())? = Vec::new();
+    state.audio_callback_count.store(0, Ordering::Relaxed);
+    log::info!("[recovery] Recording reset; next attempt will open a fresh audio stream");
     Ok(())
 }
 
@@ -298,6 +349,7 @@ async fn stop_recording(
     _app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<StopResult, String> {
+    let generation = state.audio_generation.load(Ordering::SeqCst);
     // A long recording is activity, not idle time. Start the idle clock at stop.
     #[cfg(feature = "local-stt")]
     state.local_model_last_used_at.store(now_epoch_ms(), Ordering::Relaxed);
@@ -312,6 +364,10 @@ async fn stop_recording(
     // Let the audio thread drain in-flight callbacks — async so the main
     // thread keeps servicing events (sync commands run on the main thread).
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
+    if state.audio_generation.load(Ordering::SeqCst) != generation {
+        return Err("Recording was cancelled".into());
+    }
 
     // Zero-copy move: take samples out of audio buffer, place into recording state
     let samples = {
@@ -327,12 +383,9 @@ async fn stop_recording(
         duration_secs
     );
 
-    let application = {
-        let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
-        rec.is_recording = false;
-        rec.samples = samples;
-        rec.application.take()
-    };
+    rec.is_recording = false;
+    rec.samples = samples;
+    let application = rec.application.take();
 
     Ok(StopResult {
         sample_count,
@@ -355,6 +408,7 @@ async fn transcribe_buffer(
     let _ = &vocabulary;
     #[cfg(feature = "local-stt")]
     {
+        let generation = state.audio_generation.load(Ordering::SeqCst);
         state
             .local_model_last_used_at
             .store(now_epoch_ms(), Ordering::Relaxed);
@@ -362,10 +416,16 @@ async fn transcribe_buffer(
         // Resolve the engine BEFORE taking samples — if the model can't be
         // loaded, we fail early and leave samples intact for a retry.
         let engine = resolve_local_engine(&app, &state).await?;
+        if state.audio_generation.load(Ordering::SeqCst) != generation {
+            return Err("Transcription was cancelled".into());
+        }
 
         // Take samples from recording state (zero-copy move)
         let samples = {
             let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
+            if state.audio_generation.load(Ordering::SeqCst) != generation {
+                return Err("Transcription was cancelled".into());
+            }
             std::mem::take(&mut rec.samples)
         };
 
@@ -379,6 +439,8 @@ async fn transcribe_buffer(
             LocalEngine::Whisper(ctx) => {
                 let app_seg = app.clone();
                 let app_prog = app.clone();
+                let segment_generation = state.audio_generation.clone();
+                let progress_generation = state.audio_generation.clone();
                 tokio::task::spawn_blocking(move || {
                     transcribe::transcribe_local(
                         &ctx,
@@ -387,10 +449,14 @@ async fn transcribe_buffer(
                         language.as_deref(),
                         // Stream partial text / progress to the capsule as whisper decodes.
                         move |partial| {
-                            let _ = app_seg.emit_to("capsule", "capsule-partial-text", partial);
+                            if segment_generation.load(Ordering::SeqCst) == generation {
+                                let _ = app_seg.emit_to("capsule", "capsule-partial-text", partial);
+                            }
                         },
                         move |progress| {
-                            let _ = app_prog.emit_to("capsule", "capsule-stt-progress", progress);
+                            if progress_generation.load(Ordering::SeqCst) == generation {
+                                let _ = app_prog.emit_to("capsule", "capsule-stt-progress", progress);
+                            }
                         },
                     )
                     .map(transcribe::Transcription::from)
@@ -737,6 +803,7 @@ fn reset_all_data(
         .map_err(|e| format!("No app data dir: {}", e))?;
 
     // Delete settings store
+    credentials::remove_groq_api_key(app.clone())?;
     let settings_path = data_dir.join("linty-settings.json");
     if settings_path.exists() {
         std::fs::remove_file(&settings_path)
@@ -785,6 +852,7 @@ fn reset_all_data(
     }
 
     log::info!("[reset] All data cleared — app will reload");
+    audio_input::reset(&app);
     Ok(())
 }
 
@@ -795,6 +863,7 @@ fn reset_all_data(
 /// NSWorkspace/NSImage calls belong. Results are cached for the app's lifetime.
 #[tauri::command]
 fn get_app_icons(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     bundle_ids: Vec<String>,
 ) -> std::collections::HashMap<String, Option<String>> {
@@ -808,7 +877,14 @@ fn get_app_icons(
         let icon = cache
             .entry(bundle_id.clone())
             .or_insert_with(|| {
-                application::app_icon_png(&bundle_id).map(|png| {
+                // Always use this build's Linty icon. NSWorkspace may resolve an
+                // older installed copy while a newer local build is running.
+                let png = if bundle_id == app.config().identifier {
+                    Some(include_bytes!("../icons/128x128.png").to_vec())
+                } else {
+                    application::app_icon_png(&bundle_id)
+                };
+                png.map(|png| {
                     format!(
                         "data:image/png;base64,{}",
                         base64::engine::general_purpose::STANDARD.encode(png)
@@ -1282,6 +1358,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_nspanel::init())
         .manage(AppState::new())
+        .manage(audio_input::AudioInputState::default())
         .manage(history::HistoryState::default())
         // macOS app menu bar (Linty + Edit)
         .menu(|app| {
@@ -1330,6 +1407,7 @@ pub fn run() {
             // anything else in setup can fail or panic.
             logging::init(app.handle());
 
+            audio_input::init(app.handle())?;
             // Tray icon (menu, engine selector, status)
             tray::init_tray(app)?;
 
@@ -1387,7 +1465,13 @@ pub fn run() {
             history::history_add_correction,
             history::history_export,
             start_recording,
+            credentials::get_groq_api_key,
+            credentials::set_groq_api_key,
+            credentials::remove_groq_api_key,
+            audio_input::get_audio_inputs,
+            audio_input::set_audio_input,
             stop_recording,
+            recover_recording,
             transcribe_buffer,
             transcribe_buffer_cloud,
             paste_text,

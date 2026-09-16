@@ -7,6 +7,8 @@ import type { TranscriptRecord } from "@/types/transcript.types";
 import type { StopResult } from "./useRecording.hook";
 import { modelLabel } from "@/lib/model-labels.util";
 import { applyDictionary, engineTerms, promptWithDictionary } from "@/lib/dictionary.util";
+import { currentDictation, ownsDictation, finishEmptyDictation, GROQ_SETUP_ERROR, recoverDictation } from "@/services/dictation-recovery.service";
+import { transcriptionTimeoutMs } from "@/lib/dictation-session";
 import { noteDictionaryUse } from "@/services/dictionary.service";
 
 
@@ -35,7 +37,6 @@ export function useTranscription() {
     setRawTranscript,
     setCorrectedTranscript,
     setFinalText,
-    setError,
     resetTranscription,
     addToast,
   } = useAppStore();
@@ -60,49 +61,21 @@ export function useTranscription() {
       // Cancel any pending hide/reset from a previous session
       clearPendingTimers();
 
-      if (!result.sample_count) {
-        setError("No audio recorded");
-        emitCapsule("error", undefined, "No audio recorded");
-        invoke("play_capsule_sound", { sound: "error" }).catch(() => {});
-        setTimeout(() => {
-          invoke("hide_capsule").catch(() => {});
-        }, 3000);
-        return;
-      }
-
-      // Captured audio is authoritative; wall time includes device/IPC delays.
+      const session = currentDictation();
+      if (session.cancelled) return;
+      if (!result.sample_count) { finishEmptyDictation(session); return; }
+      const run = <T,>(operation: () => Promise<T>, timeout = 5000, message = "Linty took too long to respond. Please try again.") =>
+        session.run(operation, timeout, message);
       const recordingDuration = result.duration_secs;
-
       processingStartRef.current = Date.now();
-
-      // Always honor the user's chosen engine — never silently switch modes.
       const effectiveMode = sttMode;
-      if (effectiveMode === "local") {
-        let localAvailable = false;
-        try {
-          localAvailable = await invoke<boolean>("is_local_stt_available");
-        } catch {
-          localAvailable = false;
-        }
-        if (!localAvailable) {
-          const msg = "Local transcription isn't available in this build. Switch engine to Cloud in Settings.";
-          setError(msg);
-          emitCapsule("error", undefined, msg);
-          invoke("play_capsule_sound", { sound: "error" }).catch(() => {});
-          hideTimerRef.current = setTimeout(() => {
-            invoke("hide_capsule").catch(() => {});
-          }, 5000);
-          return;
-        }
-      }
-
-      if (effectiveMode === "cloud" && !groqApiKey) {
-        setError("Groq API key not set. Open Settings to configure.");
-        return;
-      }
-
       let clipboardDirty = false;
       try {
+        if (effectiveMode === "local" && !(await run(() => invoke<boolean>("is_local_stt_available")))) {
+          throw new Error("Local transcription is unavailable in this build.");
+        }
+        if (effectiveMode === "cloud" && !groqApiKey.trim()) throw new Error(GROQ_SETUP_ERROR);
+
         // Step 1: Transcribe (samples stay in Rust — no IPC transfer)
         setStatus("transcribing");
         emitCapsule("transcribing");
@@ -126,19 +99,19 @@ export function useTranscription() {
         if (effectiveMode === "local") {
           // No cloud fallback — the user chose local; surface errors instead
           // of silently sending audio to the cloud.
-          const output = await invoke<{ text: string; vocabularyApplied: { from: string; to: string }[] }>("transcribe_buffer", {
+          const output = await run(() => invoke<{ text: string; vocabularyApplied: { from: string; to: string }[] }>("transcribe_buffer", {
             prompt: enginePrompt || null,
             language: langParam,
             vocabulary: vocabulary.length ? vocabulary : null,
-          });
+          }), transcriptionTimeoutMs(recordingDuration), "Transcription timed out. Please try again.");
           transcript = output.text;
           engineApplied = output.vocabularyApplied ?? [];
         } else {
-          transcript = await invoke<string>("transcribe_buffer_cloud", {
+          transcript = await run(() => invoke<string>("transcribe_buffer_cloud", {
             apiKey: groqApiKey,
             prompt: enginePrompt || null,
             language: langParam,
-          });
+          }), transcriptionTimeoutMs(recordingDuration), "Transcription timed out. Please try again.");
         }
         const sttTimeMs = Date.now() - sttStart;
 
@@ -146,7 +119,7 @@ export function useTranscription() {
           resetTranscription();
           emitCapsule("idle");
           invoke("hide_capsule").catch(() => {});
-          addToast({ type: "warning", message: "No speech detected — try speaking louder or closer to the mic" });
+          addToast({ type: "warning", message: "No transcript returned — try again or check your microphone" });
           return;
         }
 
@@ -160,11 +133,12 @@ export function useTranscription() {
           emitCapsule("correcting");
           const correctionStart = Date.now();
           try {
-            const corrected = await correctText(transcript, groqApiKey, correctionPrompt || undefined);
+            const corrected = await run(() => correctText(transcript, groqApiKey, correctionPrompt || undefined), 20_000, "Text refinement timed out.");
             setCorrectedTranscript(corrected);
             finalResult = corrected;
             correctionTimeMs = Date.now() - correctionStart;
           } catch {
+            if (session.cancelled) return;
             correctionTimeMs = Date.now() - correctionStart;
             finalResult = transcript;
           }
@@ -199,15 +173,19 @@ export function useTranscription() {
         const pasteStart = Date.now();
 
         // Snapshot ALL clipboard content (images, files, RTF, etc.) via NSPasteboard
-        await invoke("snapshot_clipboard");
+        await run(() => invoke("snapshot_clipboard"));
         clipboardDirty = true;
-        await invoke("write_transient_text", { text: finalResult });
+        await run(() => invoke("write_transient_text", { text: finalResult }));
         const transcriptId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
         try {
           // observe: let the Rust side watch the target field for fixes to this paste.
-          await invoke("paste_text", { observe: observeCorrections, transcriptId });
+          await run(() => invoke("paste_text", { observe: observeCorrections, transcriptId }));
+          clipboardDirty = false;
         } catch (pasteErr) {
+          if (session.cancelled) return;
+          void invoke("restore_clipboard").catch(() => {});
+          clipboardDirty = false;
           console.warn("Paste failed (accessibility?):", pasteErr);
           addToast({
             type: "error",
@@ -253,29 +231,23 @@ export function useTranscription() {
         invoke("play_capsule_sound", { sound: "success" }).catch(() => {});
         // Safety fallback — CapsulePanel handles primary hide via dismiss callback
         hideTimerRef.current = setTimeout(() => {
+          if (!ownsDictation(session) || session.cancelled) return;
           invoke("hide_capsule").catch(() => {});
         }, 5000);
 
         // Reset after showing result
         resetTimerRef.current = setTimeout(() => {
+          if (!ownsDictation(session) || session.cancelled) return;
           resetTranscription();
         }, 3000);
       } catch (err) {
-        // Restore clipboard if we snapshotted but failed before paste completed
-        if (clipboardDirty) {
-          invoke("restore_clipboard").catch(() => {});
-        }
+        if (session.cancelled || !ownsDictation(session)) return;
+        if (clipboardDirty) void invoke("restore_clipboard").catch(() => {});
         const rawMsg = err instanceof Error ? err.message : String(err);
         const errMsg = rawMsg.includes("not loaded")
-          ? "No local model loaded — download a model in Settings, or switch engine to Cloud."
+          ? "Download a local model in Settings → Speech engine."
           : rawMsg;
-        setError(errMsg);
-        emitCapsule("error", undefined, errMsg);
-        invoke("play_capsule_sound", { sound: "error" }).catch(() => {});
-        // Safety fallback — CapsulePanel handles primary hide via dismiss callback
-        hideTimerRef.current = setTimeout(() => {
-          invoke("hide_capsule").catch(() => {});
-        }, 10000);
+        await recoverDictation(errMsg, session);
       }
     },
     [
@@ -294,7 +266,6 @@ export function useTranscription() {
       setRawTranscript,
       setCorrectedTranscript,
       setFinalText,
-      setError,
       resetTranscription,
       addToast,
     ],

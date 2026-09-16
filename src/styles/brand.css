@@ -1,42 +1,24 @@
 /* Three strokes, one short rule, and a quiet sound pattern. */
 .brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-width: 26px;
+  display: inline-block;
+  width: 26px;
   height: 32px;
   color: var(--color-accent);
   flex-shrink: 0;
 }
-.brand-mark > i {
+.brand-mark::before {
+  content: "";
   display: block;
-  width: 4px;
-  border-radius: 4px;
+  width: 100%;
+  height: 100%;
   background: currentColor;
-  height: 15px;
-}
-.brand-mark > i:nth-child(2) {
-  height: 29px;
-}
-.brand-mark > i:nth-child(3) {
-  height: 21px;
+  mask: url("../assets/linty-mark.svg") center / contain no-repeat;
+  -webkit-mask: url("../assets/linty-mark.svg") center / contain no-repeat;
 }
 .nav-signal {
   margin-left: auto;
-  min-width: 15px;
+  width: 15px;
   height: 18px;
-  gap: 3px;
-}
-.nav-signal > i {
-  width: 2px;
-  height: 7px;
-}
-.nav-signal > i:nth-child(2) {
-  height: 14px;
-}
-.nav-signal > i:nth-child(3) {
-  height: 10px;
 }
 .nav-button[aria-current="page"]::before {
   content: "";

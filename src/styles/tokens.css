@@ -1,5 +1,7 @@
 /* Linty's mineral palette. The window, capsule, controls and theme previews share these foundations. */
 :root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  --font-code: "SF Mono", ui-monospace, Menlo, monospace;
   --motion-fast: 100ms;
   --motion-control: 160ms;
   --motion-surface: 220ms;

@@ -14,9 +14,7 @@ body,
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
-    system-ui, sans-serif;
+  font-family: var(--font-ui);
   background: var(--color-bg);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
@@ -360,6 +358,7 @@ kbd { border: 1px solid var(--color-border); border-bottom-width: 2px; border-ra
 /* Overview: summary first, detail on demand. */
 .segmented-control { display: inline-flex; align-items: stretch; gap: 2px; background: var(--color-bg-secondary); border: 1px solid var(--color-border-subtle); padding: 2px; border-radius: 7px; flex-shrink: 0; }
 .segmented-control > button { min-height: 26px; padding: 3px 10px; border: 0; border-radius: 4px; }
+.segmented-control > button[data-pending="true"] { background: var(--color-info-glow); border: 1px dashed var(--color-info); padding: 2px 9px; box-shadow: none; }
 .first-dictation-banner { display: flex; gap: 16px; align-items: center; padding: 16px 0 24px; margin-bottom: 8px; }
 .first-dictation-banner h2 { margin-bottom: 4px; font-size: 14px; font-weight: 600; }
 .voice-mark { display: grid; place-items: center; color: var(--color-accent); width: 40px; height: 40px; flex-shrink: 0; }

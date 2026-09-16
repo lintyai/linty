@@ -7,7 +7,6 @@ import { useAppStore } from "@/store/app.store";
 import { SectionCard } from "@/components/shared/SettingsLayout.component";
 import { cn } from "@/lib/utils";
 import { PageLayout } from "@/components/shared/PageLayout.component";
-import { BrandMark } from "@/components/shared/BrandMark.component";
 import { BackgroundArtwork } from "@/components/shared/BackgroundArtwork.component";
 
 export function AboutPage() {
@@ -32,7 +31,7 @@ export function AboutPage() {
     <PageLayout reading className="about-page">
       <div className="flex flex-col gap-8">
         <header className="about-identity">
-          <BrandMark />
+          <img className="about-app-icon" src="/brand/icon.svg" alt="" width={72} height={72} draggable={false} />
           <h1>Linty</h1>
           <p>
             A little less typing.

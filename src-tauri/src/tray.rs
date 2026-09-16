@@ -1,36 +1,89 @@
+//! Native macOS menu. Preferences remain owned by the recording/settings stores.
+use std::sync::Mutex;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
-    tray::{MouseButton, MouseButtonState},
     Emitter, Listener, Manager,
 };
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
-/// The config-created tray icon always has id "main" in Tauri v2.
 const TRAY_ID: &str = "main";
-const RECENT_TRANSCRIPT_LIMIT: usize = 10;
-const TRANSCRIPT_PREVIEW_LENGTH: usize = 60;
+const RECENT_TRANSCRIPT_LIMIT: usize = 5;
+const TRANSCRIPT_PREVIEW_LENGTH: usize = 52;
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TrayTranscript {
     transcript_id: String,
     final_text: String,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
+struct TrayLanguage {
+    code: String,
+    label: String,
+}
+
+#[derive(Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TrayState {
     status: String,
     stt_mode: String,
-    /// Name of the selected local engine ("Parakeet" or "Whisper"), for the menu label.
-    #[serde(default)]
     local_engine: Option<String>,
-    #[serde(default)]
+    local_ready: bool,
+    cloud_ready: bool,
+    setup_complete: bool,
+    trigger_label: String,
     recent_transcripts: Vec<TrayTranscript>,
+    transcription_language: String,
+    languages: Vec<TrayLanguage>,
 }
 
-/// "Local (Parakeet)" / "Local (Whisper)": the menu names the engine that will actually run.
-fn local_engine_label(local_engine: Option<&str>) -> String {
-    format!("Local ({})", local_engine.filter(|s| !s.is_empty()).unwrap_or("Whisper"))
+struct TrayMenuState(Mutex<TrayState>);
+
+fn snapshot(app: &tauri::AppHandle) -> TrayState {
+    let mut state = app
+        .state::<TrayMenuState>()
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    // Capture may start before its frontend status event reaches the tray.
+    if app
+        .state::<crate::state::AppState>()
+        .recording
+        .lock()
+        .map(|r| r.is_recording)
+        .unwrap_or(true)
+    {
+        state.status = "recording".into();
+    }
+    state
+}
+
+fn busy(state: &TrayState) -> bool {
+    matches!(
+        state.status.as_str(),
+        "recording" | "transcribing" | "correcting" | "pasting"
+    )
+}
+
+fn activity_label(state: &TrayState) -> String {
+    match state.status.as_str() {
+        "recording" => "Recording…".into(),
+        "transcribing" => "Transcribing…".into(),
+        "correcting" => "Polishing…".into(),
+        "pasting" => "Pasting…".into(),
+        "error" => "Check Linty for details".into(),
+        _ if !state.setup_complete => "Complete setup in Linty".into(),
+        _ => format!("Hold {} to dictate", state.trigger_label),
+    }
+}
+
+fn local_engine_label(engine: Option<&str>) -> String {
+    format!(
+        "{} · On-device",
+        engine.filter(|s| !s.is_empty()).unwrap_or("Local")
+    )
 }
 
 fn transcript_preview(text: &str) -> String {
@@ -40,220 +93,381 @@ fn transcript_preview(text: &str) -> String {
     if chars.next().is_some() {
         preview.push('…');
     }
-    // Native menus treat ampersands as mnemonic markers; preserve literal text.
+    // Native menu labels treat ampersands as mnemonic markers.
     preview.replace('&', "&&")
 }
 
-fn status_label(status: &str) -> &str {
-    match status {
-        "recording" => "Recording...",
-        "transcribing" => "Transcribing...",
-        "correcting" => "Correcting...",
-        "pasting" => "Pasting...",
-        _ => "Ready",
-    }
-}
-
-fn tooltip_text(status: &str, stt_mode: &str, local_engine: Option<&str>) -> String {
-    let engine = if stt_mode == "local" {
-        local_engine_label(local_engine)
-    } else {
-        "Cloud (Groq)".to_string()
-    };
-    match status {
-        "recording" => format!("Linty — Recording... [{}]", engine),
-        "transcribing" => format!("Linty — Transcribing... [{}]", engine),
-        "correcting" => format!("Linty — Correcting... [{}]", engine),
-        "pasting" => format!("Linty — Pasting... [{}]", engine),
-        _ => format!("Linty — Hold fn to record [{}]", engine),
-    }
-}
-
-fn build_tray_menu(
+fn microphone_menu(
     app: &tauri::AppHandle,
-    status: &str,
-    stt_mode: &str,
-    local_engine: Option<&str>,
-    recent_transcripts: &[TrayTranscript],
-) -> Result<Menu<tauri::Wry>, tauri::Error> {
-    let latest_item = match recent_transcripts.first() {
-        Some(transcript) => MenuItem::with_id(
+    recording: bool,
+) -> Result<Submenu<tauri::Wry>, tauri::Error> {
+    let input = crate::audio_input::snapshot(app);
+    let menu = Submenu::new(app, "Microphone", true)?;
+    let default_label = input
+        .default_device
+        .as_ref()
+        .map(|name| format!("System Default — {}", name.replace('&', "&&")))
+        .unwrap_or_else(|| "System Default".into());
+    menu.append(&CheckMenuItem::with_id(
+        app,
+        "tray-microphone-default",
+        default_label,
+        !recording,
+        input.selected.is_none(),
+        None::<&str>,
+    )?)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    for device in &input.devices {
+        let label = if device.selectable {
+            device.name.clone()
+        } else {
+            format!("{} (multiple devices; use System Default)", device.name)
+        };
+        menu.append(&CheckMenuItem::with_id(
             app,
-            format!("copy-latest-{}", transcript.transcript_id),
-            transcript_preview(&transcript.final_text),
+            format!("tray-microphone-device:{}", device.name),
+            label.replace('&', "&&"),
+            !recording && device.selectable,
+            input.selected.as_ref() == Some(&device.name),
+            None::<&str>,
+        )?)?;
+    }
+    if let Some(name) = input
+        .selected
+        .as_ref()
+        .filter(|name| !input.devices.iter().any(|d| &d.name == *name))
+    {
+        menu.append(&CheckMenuItem::with_id(
+            app,
+            "tray-microphone-unavailable",
+            format!("{} (Unavailable)", name.replace('&', "&&")),
+            false,
             true,
             None::<&str>,
-        )?,
-        None => MenuItem::with_id(
+        )?)?;
+    }
+    let notice = if recording {
+        Some("Stop recording to change microphone")
+    } else if input.error.is_some() {
+        Some("Could not list microphones")
+    } else if input.devices.is_empty() {
+        Some("No microphones connected")
+    } else {
+        None
+    };
+    if let Some(notice) = notice {
+        menu.append(&MenuItem::with_id(
             app,
-            "copy-latest-empty",
+            "tray-microphone-notice",
+            notice,
+            false,
+            None::<&str>,
+        )?)?;
+    }
+    Ok(menu)
+}
+
+fn build_menu(app: &tauri::AppHandle, state: &TrayState) -> Result<Menu<tauri::Wry>, tauri::Error> {
+    let input = crate::audio_input::snapshot(app);
+    let input_available = input.error.is_none()
+        && match &input.selected {
+            Some(name) => input
+                .devices
+                .iter()
+                .any(|d| &d.name == name && d.selectable),
+            None => input.default_device.is_some(),
+        };
+    let ready = state.setup_complete && input_available && !busy(state) && state.status != "error";
+    let engine_label = |label: String, selected: bool, configured: bool| {
+        if selected && configured && ready {
+            format!("{label} 🟢")
+        } else {
+            label
+        }
+    };
+    let local_selected = state.stt_mode == "local";
+    let activity = MenuItem::with_id(
+        app,
+        "tray-activity",
+        activity_label(state),
+        false,
+        None::<&str>,
+    )?;
+    let local = CheckMenuItem::with_id(
+        app,
+        "tray-engine-local",
+        engine_label(
+            local_engine_label(state.local_engine.as_deref()),
+            local_selected,
+            state.local_ready,
+        ),
+        !busy(state),
+        local_selected,
+        None::<&str>,
+    )?;
+    let cloud = CheckMenuItem::with_id(
+        app,
+        "tray-engine-cloud",
+        engine_label(if state.cloud_ready { "Groq · Cloud".into() } else { "Groq · Cloud (API key required)".into() }, !local_selected, state.cloud_ready),
+        !busy(state) && state.cloud_ready,
+        !local_selected,
+        None::<&str>,
+    )?;
+    let microphone = microphone_menu(app, state.status == "recording")?;
+    let selected_language = state.languages.iter()
+        .find(|language| language.code == state.transcription_language);
+    let language_title = selected_language
+        .map(|language| format!("Language · {}", language.label.replace('&', "&&")))
+        .unwrap_or_else(|| "Language".into());
+    let language_menu = Submenu::new(app, language_title, !busy(state) && !state.languages.is_empty())?;
+    for language in &state.languages {
+        language_menu.append(&CheckMenuItem::with_id(
+            app,
+            format!("tray-language:{}", language.code),
+            language.label.replace('&', "&&"),
+            !busy(state),
+            language.code == state.transcription_language,
+            None::<&str>,
+        )?)?;
+    }
+
+    let copy_latest = MenuItem::with_id(
+        app,
+        "tray-copy-latest",
+        "Copy Last Transcription",
+        !state.recent_transcripts.is_empty(),
+        None::<&str>,
+    )?;
+    let recent = Submenu::new(app, "Recent Transcriptions", true)?;
+    if state.recent_transcripts.is_empty() {
+        recent.append(&MenuItem::with_id(
+            app,
+            "tray-recent-empty",
             "No transcriptions yet",
             false,
             None::<&str>,
-        )?,
-    };
-    let recent_menu = Submenu::new(app, "Recent", !recent_transcripts.is_empty())?;
-    for (index, transcript) in recent_transcripts
+        )?)?;
+    }
+    for transcript in state
+        .recent_transcripts
         .iter()
         .take(RECENT_TRANSCRIPT_LIMIT)
-        .enumerate()
     {
-        let item = MenuItem::with_id(
+        recent.append(&MenuItem::with_id(
             app,
-            format!("copy-recent-{}", transcript.transcript_id),
-            format!(
-                "{}. {}",
-                index + 1,
-                transcript_preview(&transcript.final_text)
-            ),
+            format!("tray-copy:{}", transcript.transcript_id),
+            transcript_preview(&transcript.final_text),
             true,
             None::<&str>,
-        )?;
-        recent_menu.append(&item)?;
+        )?)?;
     }
-    let history_sep = PredefinedMenuItem::separator(app)?;
-    let status_item = MenuItem::with_id(app, "status", status_label(status), false, None::<&str>)?;
-    let sep1 = PredefinedMenuItem::separator(app)?;
-
-    let cloud_checked = stt_mode != "local";
-    let local_checked = stt_mode == "local";
-    let cloud_item = CheckMenuItem::with_id(
+    recent.append(&PredefinedMenuItem::separator(app)?)?;
+    recent.append(&MenuItem::with_id(
         app,
-        "engine-cloud",
-        "Cloud (Groq)",
+        "tray-history",
+        "View History…",
         true,
-        cloud_checked,
         None::<&str>,
-    )?;
-    let local_item = CheckMenuItem::with_id(
+    )?)?;
+
+    let open = MenuItem::with_id(app, "tray-show", "Open Linty", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "tray-settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+    let quit = MenuItem::with_id(
         app,
-        "engine-local",
-        local_engine_label(local_engine),
-        true,
-        local_checked,
-        None::<&str>,
+        "tray-quit",
+        "Quit Linty",
+        !busy(state),
+        Some("CmdOrCtrl+Q"),
     )?;
-
-    let sep2 = PredefinedMenuItem::separator(app)?;
-    let show_item = MenuItem::with_id(app, "show", "Show Linty", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "Quit Linty", true, None::<&str>)?;
-
     Menu::with_items(
         app,
         &[
-            &latest_item,
-            &recent_menu,
-            &history_sep,
-            &status_item,
-            &sep1,
-            &cloud_item,
-            &local_item,
-            &sep2,
-            &show_item,
-            &quit_item,
+            &activity,
+            &local,
+            &cloud,
+            &microphone,
+            &language_menu,
+            &PredefinedMenuItem::separator(app)?,
+            &copy_latest,
+            &recent,
+            &PredefinedMenuItem::separator(app)?,
+            &open,
+            &settings,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
         ],
     )
 }
 
+fn refresh_menu(app: &tauri::AppHandle) {
+    let state = snapshot(app);
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        match build_menu(app, &state) {
+            Ok(menu) => {
+                let _ = tray.set_menu(Some(menu));
+            }
+            Err(error) => log::warn!("[tray] Could not refresh menu: {error}"),
+        }
+        let engine = if state.stt_mode == "local" {
+            local_engine_label(state.local_engine.as_deref())
+        } else {
+            "Groq · Cloud".into()
+        };
+        let _ = tray.set_tooltip(Some(format!(
+            "Linty — {} · {engine}",
+            activity_label(&state)
+        )));
+    }
+}
+
+fn select_microphone(app: &tauri::AppHandle, name: Option<String>) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(error) = crate::audio_input::select(&app, name) {
+            let _ = app.emit("audio-input-error", error);
+        }
+        // Native checked items toggle before persistence; always restore confirmed state.
+        refresh_menu(&app);
+    });
+}
+
+fn open_app(app: &tauri::AppHandle, destination: &str) {
+    let _ = app.emit_to("main", "tray-navigate", destination);
+    if let Some(window) = app.get_webview_window("main") {
+        super::set_activation_policy_regular();
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn copy_transcript(app: &tauri::AppHandle, id: String) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        // Resolve by ID from storage, so deleted/edited records are never copied from a stale menu.
+        let result = crate::history::history_get(
+            app.clone(),
+            app.state::<crate::history::HistoryState>(),
+            id,
+        )
+        .and_then(|record| {
+            let text = record
+                .as_ref()
+                .and_then(|r| r.get("finalText"))
+                .and_then(|v| v.as_str())
+                .filter(|text| !text.trim().is_empty())
+                .ok_or("This transcription is no longer available.")?;
+            app.clipboard()
+                .write_text(text)
+                .map_err(|_| "Could not copy to the clipboard.".into())
+        });
+        let _ = app.emit_to("main", "tray-copy-result", result.err());
+    });
+}
+
 pub fn init_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    // Attach to the tray icon already created by tauri.conf.json (id = "main").
-    // Do NOT create a second tray with TrayIconBuilder — that produces a ghost icon
-    // where handlers are attached to an invisible duplicate instead of the real one.
-    let tray = app
-        .tray_by_id(TRAY_ID)
-        .expect("tray icon must exist from tauri.conf.json trayIcon config");
-
-    let menu = build_tray_menu(app.handle(), "idle", "cloud", None, &[])?;
-    tray.set_menu(Some(menu))?;
-    tray.set_show_menu_on_left_click(false)?; // left-click toggles window, right-click opens menu
-
+    app.manage(TrayMenuState(Mutex::new(TrayState {
+        status: "idle".into(),
+        stt_mode: "local".into(),
+        local_engine: None,
+        local_ready: false,
+        cloud_ready: false,
+        setup_complete: false,
+        trigger_label: "fn".into(),
+        recent_transcripts: vec![],
+        transcription_language: String::new(),
+        languages: vec![],
+    })));
+    // Reuse the config-created template icon; AppKit owns all menu presentation and interaction.
+    let tray = app.tray_by_id(TRAY_ID).expect("configured tray icon");
+    tray.set_menu(Some(build_menu(app.handle(), &snapshot(app.handle()))?))?;
+    tray.set_show_menu_on_left_click(true)?;
     tray.on_menu_event(|app, event| match event.id.as_ref() {
-        "show" => {
-            if let Some(window) = app.get_webview_window("main") {
-                super::set_activation_policy_regular();
-                let _ = window.show();
-                let _ = window.set_focus();
-                let _ = window.center();
+        "tray-show" => open_app(app, "show"),
+        "tray-settings" => open_app(app, "settings"),
+        "tray-history" => open_app(app, "history"),
+        "tray-quit" => {
+            if !busy(&snapshot(app)) {
+                app.exit(0);
             }
         }
-        "quit" => {
-            app.exit(0);
+        "tray-engine-local" | "tray-engine-cloud" => {
+            let state = snapshot(app);
+            if !busy(&state) && (event.id.as_ref() != "tray-engine-cloud" || state.cloud_ready) {
+                let mode = if event.id.as_ref() == "tray-engine-local" {
+                    "local"
+                } else {
+                    "cloud"
+                };
+                let _ = app.emit_to("main", "tray-engine-changed", mode);
+            }
+            refresh_menu(app);
         }
-        "engine-cloud" => {
-            let _ = app.emit("tray-engine-changed", "cloud");
-        }
-        "engine-local" => {
-            let _ = app.emit("tray-engine-changed", "local");
+        "tray-microphone-default" => select_microphone(app, None),
+        "tray-copy-latest" => {
+            if let Some(transcript) = snapshot(app).recent_transcripts.first() {
+                copy_transcript(app, transcript.transcript_id.clone());
+            }
         }
         id => {
-            if let Some(transcript_id) = id
-                .strip_prefix("copy-latest-")
-                .or_else(|| id.strip_prefix("copy-recent-"))
-            {
-                let _ = app.emit_to("main", "tray-copy-transcript", transcript_id);
-            }
-        }
-    });
-
-    tray.on_tray_icon_event(|tray, event| {
-        if let tauri::tray::TrayIconEvent::Click {
-            button: MouseButton::Left,
-            button_state: MouseButtonState::Up,
-            ..
-        } = event
-        {
-            let app = tray.app_handle();
-            if let Some(window) = app.get_webview_window("main") {
-                if window.is_visible().unwrap_or(false) {
-                    let _ = window.hide();
-                    super::set_activation_policy_accessory();
-                } else {
-                    super::set_activation_policy_regular();
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                    let _ = window.center();
+            if let Some(code) = id.strip_prefix("tray-language:") {
+                let state = snapshot(app);
+                if !busy(&state) && state.languages.iter().any(|language| language.code == code) {
+                    let _ = app.emit_to("main", "tray-language-changed", code);
                 }
+                refresh_menu(app);
+            } else if let Some(name) = id.strip_prefix("tray-microphone-device:") {
+                select_microphone(app, Some(name.to_owned()));
+            } else if let Some(id) = id.strip_prefix("tray-copy:") {
+                copy_transcript(app, id.to_owned());
             }
         }
     });
-
-    // Listen for frontend state changes to update tray menu + tooltip
     let handle = app.handle().clone();
     app.listen("tray-state-changed", move |event| {
-        let state: TrayState = match serde_json::from_str(event.payload()) {
-            Ok(v) => v,
-            Err(_) => return,
-        };
-
-        // Rebuild menu
-        if let Ok(menu) = build_tray_menu(
-            &handle,
-            &state.status,
-            &state.stt_mode,
-            state.local_engine.as_deref(),
-            &state.recent_transcripts,
-        ) {
-            if let Some(tray) = handle.tray_by_id(TRAY_ID) {
-                let _ = tray.set_menu(Some(menu));
-                let _ = tray.set_tooltip(Some(&tooltip_text(&state.status, &state.stt_mode, state.local_engine.as_deref())));
-            }
+        if let Ok(mut state) = serde_json::from_str::<TrayState>(event.payload()) {
+            state.recent_transcripts.truncate(RECENT_TRANSCRIPT_LIMIT);
+            *handle
+                .state::<TrayMenuState>()
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = state;
+            refresh_menu(&handle);
         }
     });
-
+    for event in [
+        crate::audio_input::CHANGED,
+        "recording-started",
+        "recording-stopped",
+        "tray-engine-result",
+        "tray-language-result",
+    ] {
+        let handle = app.handle().clone();
+        app.listen(event, move |_| refresh_menu(&handle));
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{local_engine_label, tooltip_text};
+    use super::{local_engine_label, transcript_preview};
 
     #[test]
     fn menu_names_the_selected_local_engine() {
-        assert_eq!(local_engine_label(Some("Parakeet")), "Local (Parakeet)");
-        assert_eq!(local_engine_label(Some("Whisper")), "Local (Whisper)");
-        assert_eq!(local_engine_label(None), "Local (Whisper)");
-        assert_eq!(local_engine_label(Some("")), "Local (Whisper)");
-        assert_eq!(tooltip_text("idle", "local", Some("Parakeet")), "Linty — Hold fn to record [Local (Parakeet)]");
-        assert_eq!(tooltip_text("recording", "cloud", Some("Parakeet")), "Linty — Recording... [Cloud (Groq)]");
+        assert_eq!(local_engine_label(Some("Parakeet")), "Parakeet · On-device");
+        assert_eq!(local_engine_label(Some("Whisper")), "Whisper · On-device");
+        assert_eq!(local_engine_label(None), "Local · On-device");
+    }
+
+    #[test]
+    fn previews_preserve_unicode_and_escape_menu_mnemonics() {
+        assert_eq!(
+            transcript_preview("Hello\n\tworld & friends"),
+            "Hello world && friends"
+        );
+        assert_eq!(
+            transcript_preview(&"語".repeat(54)),
+            format!("{}…", "語".repeat(52))
+        );
     }
 }

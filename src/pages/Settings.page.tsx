@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   Cloud,
+  CircleDashed,
   Check,
   Loader2,
   Play,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { useSettings } from "@/hooks/useSettings.hook";
+import { audioInputOptions, useAudioInput } from "@/hooks/useAudioInput.hook";
 import { useAppStore } from "@/store/app.store";
 import { useModelDownload } from "@/hooks/useModelDownload.hook";
 import { Toggle } from "@/components/shared/Toggle.component";
@@ -121,7 +123,9 @@ export function SettingsPage() {
           </div>
         )}
       </div>
-      <p className="preferences-footnote">Changes are saved automatically.</p>
+      <p className="preferences-footnote">
+        {section === "models" ? "Use Save to store your API key. Other changes save automatically." : "Changes are saved automatically."}
+      </p>
     </PageLayout>
   );
 }
@@ -223,6 +227,11 @@ function GeneralSection() {
 
 /* ═══ Audio ═══ */
 function AudioSection() {
+  const { inputs, saving, error, select } = useAudioInput();
+  const recording = useAppStore((state) => state.isRecording);
+  const selected = inputs?.selected;
+  const available = !selected || inputs?.devices.some((device) => device.name === selected && device.selectable);
+  const options = audioInputOptions(inputs);
   return (
     <div className="settings-section">
       <SectionHeader title="Audio & Input" />
@@ -232,16 +241,16 @@ function AudioSection() {
         </span>
         <div>
           <span className="eyebrow">INPUT SOURCE</span>
-          <h3>System microphone</h3>
-          <p>Follows the microphone selected in macOS.</p>
+          <h3>{selected ?? "System microphone"}</h3>
+          <p>{selected ? "This microphone is used for dictation in Linty." : "Follows the microphone selected in macOS."}</p>
         </div>
       </div>
 
       <SectionCard>
         <SettingRow
           label="Input device"
-          description="System default microphone"
-          right={<ValueBadge>Default</ValueBadge>}
+          description={recording ? "Stop recording to change the microphone." : "Also available in Linty’s menu bar menu."}
+          right={<Select label="Input device" value={selected ?? ""} options={options} onChange={select} disabled={!inputs || saving || recording} />}
           className="border-b border-border-subtle"
         />
         <SettingRow
@@ -250,6 +259,7 @@ function AudioSection() {
           right={<ValueBadge>16 kHz</ValueBadge>}
         />
       </SectionCard>
+      {(error || !available) && <p role="status" className="text-sm text-warning">{error || "Your selected microphone is unavailable or has an ambiguous name. Choose another input or System Default."}</p>}
     </div>
   );
 }
@@ -261,6 +271,7 @@ function ModelsSection() {
     sttMode,
     whisperPrompt,
     saveGroqApiKey,
+    removeGroqApiKey,
     saveSttMode,
     saveWhisperPrompt,
     modelIdleUnloadMinutes,
@@ -281,6 +292,14 @@ function ModelsSection() {
 
   const [showKey, setShowKey] = useState(false);
   const [keyInput, setKeyInput] = useState(groqApiKey);
+  const [cloudSetupOpen, setCloudSetupOpen] = useState(false);
+  const engineView = cloudSetupOpen ? "cloud" : sttMode;
+  const cloudPending = engineView === "cloud" && sttMode !== "cloud";
+  const [savingKey, setSavingKey] = useState(false);
+  const [removingKey, setRemovingKey] = useState(false);
+  const dictationBusy = useAppStore((s) => s.isRecording || ["recording", "transcribing", "correcting", "pasting"].includes(s.status));
+  const keyBusy = savingKey || removingKey;
+  const [keyError, setKeyError] = useState<string | null>(null);
   const [whisperInput, setWhisperInput] = useState(whisperPrompt);
 
   useEffect(() => {
@@ -291,8 +310,45 @@ function ModelsSection() {
     setWhisperInput(whisperPrompt);
   }, [whisperPrompt]);
 
-  const handleKeyBlur = () => {
-    if (keyInput !== groqApiKey) saveGroqApiKey(keyInput);
+  const handleEngineChoice = async (mode: SttMode) => {
+    setKeyError(null);
+    setCloudSetupOpen(mode === "cloud");
+    if (mode === "local") {
+      setKeyInput(groqApiKey);
+      setShowKey(false);
+    }
+    if (mode === sttMode) return;
+    if (mode === "cloud" && !groqApiKey.trim()) return;
+    try { await saveSttMode(mode); }
+    catch (error) { setKeyError(error instanceof Error ? error.message : String(error)); }
+  };
+
+  const handleSaveCloud = async () => {
+    if (!keyInput.trim() || keyBusy) return;
+    setSavingKey(true);
+    setKeyError(null);
+    try {
+      await saveGroqApiKey(keyInput);
+      await saveSttMode("cloud");
+      setCloudSetupOpen(false);
+    } catch (error) {
+      setKeyError(error instanceof Error ? error.message : String(error));
+    } finally { setSavingKey(false); }
+  };
+
+  const handleRemoveKey = async () => {
+    if (keyBusy || dictationBusy) return;
+    setRemovingKey(true);
+    setKeyError(null);
+    try {
+      await removeGroqApiKey();
+      setKeyInput("");
+      setShowKey(false);
+      setCloudSetupOpen(false);
+      useAppStore.getState().addToast({ type: "success", message: "API key removed. Switched to Local." });
+    } catch (error) {
+      setKeyError(error instanceof Error ? error.message : String(error));
+    } finally { setRemovingKey(false); }
   };
 
   const handleWhisperBlur = () => {
@@ -303,16 +359,30 @@ function ModelsSection() {
     <div className="settings-section">
       <SectionHeader title="Speech Engine" />
 
-      <SegmentedControl
-        label="Speech engine"
-        segments={ENGINE_SEGMENTS}
-        value={sttMode}
-        onChange={saveSttMode}
-        className="self-start"
-      />
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <SegmentedControl
+            label="Speech engine"
+            segments={ENGINE_SEGMENTS.map((segment) => ({
+              ...segment, disabled: keyBusy, pending: segment.value === "cloud" && cloudPending,
+            }))}
+            value={engineView}
+            onChange={(mode) => { void handleEngineChoice(mode); }}
+          />
+          <span role="status" className={cn("inline-flex items-center gap-1.5 text-[12px]", cloudPending ? "text-info" : "text-accent")}>
+            {cloudPending ? <CircleDashed size={13} aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
+            {cloudPending ? "Setup required" : "Active"}
+          </span>
+        </div>
+        {cloudPending && <div className="flex flex-wrap items-center gap-x-4 gap-y-2 animate-fade-in">
+          <p className="text-sm text-text-secondary">Local is still active. Save an API key to switch to Cloud.</p>
+          <button className="text-link text-[12px]" disabled={keyBusy}
+            onClick={() => { void handleEngineChoice("local"); }}>Cancel setup</button>
+        </div>}
+      </div>
 
-      {/* Cloud settings */}
-      {sttMode === "cloud" && (
+      {/* Opening Cloud setup does not change the active engine. */}
+      {engineView === "cloud" && (
         <div className="settings-section animate-fade-in">
           <SectionCard>
             <div className="settings-form">
@@ -326,11 +396,9 @@ function ModelsSection() {
                     aria-label="Groq API key"
                     type={showKey ? "text" : "password"}
                     value={keyInput}
-                    onChange={(e) => setKeyInput(e.target.value)}
-                    onBlur={handleKeyBlur}
-                    onKeyDown={(e) =>
-                      e.key === "Enter" && (e.target as HTMLInputElement).blur()
-                    }
+                    disabled={keyBusy}
+                    onChange={(e) => { setKeyInput(e.target.value); setKeyError(null); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleSaveCloud(); } }}
                     placeholder="gsk_..."
                     spellCheck={false}
                     autoComplete="off"
@@ -352,6 +420,23 @@ function ModelsSection() {
                   </button>
                 </div>
               </div>
+              {keyError && <p role="alert" className="text-sm text-error">{keyError}</p>}
+              <p className="text-sm text-text-secondary">
+                {groqApiKey ? "Saved in macOS Keychain." : "Your key will be stored in macOS Keychain."}
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button className="standard-button" disabled={keyBusy || !keyInput.trim()}
+                  onClick={() => { void handleSaveCloud(); }}>
+                  {savingKey ? "Saving…" : sttMode === "cloud" ? "Save API key" : "Save and use Cloud"}
+                </button>
+                {!!groqApiKey && <button className="standard-button text-error" disabled={keyBusy || dictationBusy}
+                  onClick={() => { void handleRemoveKey(); }}>
+                  {removingKey ? "Removing…" : "Remove API key"}
+                </button>}
+              </div>
+              {!!groqApiKey && <p className="text-sm text-text-secondary">
+                {dictationBusy ? "Finish dictating to remove your key." : "Removing your key switches to Local."}
+              </p>}
               <button
                 onClick={() => open("https://console.groq.com/keys")}
                 className="text-link self-start"
@@ -362,6 +447,7 @@ function ModelsSection() {
             </div>
           </SectionCard>
 
+          {sttMode === "cloud" && <>
           <SectionCard>
             <div className="settings-form">
               <div className="flex flex-col gap-1.5">
@@ -411,11 +497,12 @@ function ModelsSection() {
               (~1-2s) with a free tier available.
             </p>
           </div>
+          </>}
         </div>
       )}
 
       {/* Local settings */}
-      {sttMode === "local" && (
+      {engineView === "local" && (
         <div className="settings-section animate-fade-in">
           {!isLocalAvailable ? (
             <div className="flex items-start gap-2.5 rounded-[10px] bg-warning-glow border border-warning/10 px-4 py-3">
@@ -580,6 +667,7 @@ function ModelsSection() {
 
 function LanguageSection() {
   const { transcriptionLanguage, saveTranscriptionLanguage } = useSettings();
+  const dictating = useAppStore((s) => s.isRecording || ["transcribing", "correcting", "pasting"].includes(s.status));
 
   return (
     <div className="settings-section">
@@ -609,7 +697,12 @@ function LanguageSection() {
             <Select
               label="Transcription language"
               value={transcriptionLanguage}
-              onChange={saveTranscriptionLanguage}
+              disabled={dictating}
+              onChange={(language) => {
+                void saveTranscriptionLanguage(language).catch((error) => {
+                  useAppStore.getState().addToast({ type: "error", message: String(error) });
+                });
+              }}
               options={TRANSCRIPTION_LANGUAGES.map((language) => ({
                 value: language.code,
                 label: language.label,

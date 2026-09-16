@@ -38,7 +38,7 @@ export default function App() {
   const currentView = useAppStore((s) => s.currentView);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const sidebarVisible = useAppStore((s) => s.sidebarVisible);
-  const { groqApiKey, sttMode, saveSttMode, onboardingComplete, saveOnboardingComplete, settingsLoaded } = useSettings();
+  const { groqApiKey, sttMode, saveSttMode, saveTranscriptionLanguage, onboardingComplete, saveOnboardingComplete, settingsLoaded } = useSettings();
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [micPermission, setMicPermission] = useState<string | null>(null);
@@ -77,7 +77,7 @@ export default function App() {
     return () => { clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, []);
   useUpdaterAutoCheck();
-  useTraySync(saveSttMode);
+  useTraySync(saveSttMode, saveTranscriptionLanguage);
   const { checkForUpdate } = useUpdater();
 
   const handleOnboardingComplete = useCallback(async () => {

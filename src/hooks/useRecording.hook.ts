@@ -1,8 +1,10 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store/app.store";
 import type { ApplicationIdentity } from "@/types/transcript.types";
+import { beginDictation, currentDictation, finishEmptyDictation, GROQ_SETUP_ERROR, isRecoveringDictation, ownsDictation, recoverDictation } from "@/services/dictation-recovery.service";
+import type { DictationSession } from "@/lib/dictation-session";
 
 export interface StopResult {
   sample_count: number;
@@ -10,85 +12,68 @@ export interface StopResult {
   application?: ApplicationIdentity | null;
 }
 
+// The hotkey and microphone-test widget control the same native recording.
+let starting: { session: DictationSession; promise: Promise<boolean> } | null = null;
+let startedAt = 0;
+
 export function useRecording() {
   const isRecording = useAppStore((s) => s.isRecording);
   const recordingDuration = useAppStore((s) => s.recordingDuration);
   const amplitude = useAppStore((s) => s.amplitude);
-  const setIsRecording = useAppStore((s) => s.setIsRecording);
-  const setRecordingDuration = useAppStore((s) => s.setRecordingDuration);
-  const setAmplitude = useAppStore((s) => s.setAmplitude);
-  const setStatus = useAppStore((s) => s.setStatus);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTimeRef = useRef<number>(0);
-
-  const startRecording = useCallback(async () => {
-    try {
-      const settings = useAppStore.getState();
-      await invoke("start_recording", { trackApplication: settings.settingsLoaded && settings.trackApplicationUsage });
-      setIsRecording(true);
-      setStatus("recording");
-      startTimeRef.current = Date.now();
-
-      timerRef.current = setInterval(() => {
-        const elapsed = (Date.now() - startTimeRef.current) / 1000;
-        setRecordingDuration(elapsed);
-      }, 100);
-    } catch (err) {
-      console.error("Failed to start recording:", err);
-      setIsRecording(false);
-    }
-  }, [setIsRecording, setStatus, setRecordingDuration]);
+  const startRecording = useCallback(() => {
+    if (starting && ownsDictation(starting.session) && !starting.session.cancelled) return starting.promise;
+    const state = useAppStore.getState();
+    if (isRecoveringDictation() || state.isRecording || ["transcribing", "correcting", "pasting"].includes(state.status)) return Promise.resolve(false);
+    const session = beginDictation();
+    const promise = (async () => {
+      try {
+        const settings = useAppStore.getState();
+        if (settings.sttMode === "cloud" && !settings.groqApiKey.trim()) throw new Error(GROQ_SETUP_ERROR);
+        await session.run(() => invoke("start_recording", { trackApplication: settings.settingsLoaded && settings.trackApplicationUsage }), 10_000, "Microphone did not start. Check your input and try again.");
+        startedAt = Date.now();
+        useAppStore.getState().setIsRecording(true);
+        useAppStore.getState().setStatus("recording");
+        return true;
+      } catch (error) {
+        if (!session.cancelled) await recoverDictation(error instanceof Error ? error.message : String(error), session);
+        return false;
+      }
+    })();
+    starting = { session, promise };
+    void promise.finally(() => { if (starting?.session === session) starting = null; });
+    return promise;
+  }, []);
 
   const stopRecording = useCallback(async (): Promise<StopResult> => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
+    const session = currentDictation();
+    const empty = { sample_count: 0, duration_secs: 0 };
+    if (starting?.session === session && !(await starting.promise)) return empty;
+    if (session.cancelled) return empty;
     try {
-      const result = await invoke<StopResult>("stop_recording");
-      setIsRecording(false);
-      setStatus("transcribing");
+      const result = await session.run(() => invoke<StopResult>("stop_recording"), 5000, "Microphone did not stop. Please try again.");
+      useAppStore.getState().setIsRecording(false);
+      if (result.sample_count > 0) useAppStore.getState().setStatus("transcribing");
+      else finishEmptyDictation(session);
       return result;
-    } catch (err) {
-      console.error("Failed to stop recording:", err);
-      setIsRecording(false);
-      setStatus("error");
-      return { sample_count: 0, duration_secs: 0 };
+    } catch (error) {
+      if (!session.cancelled) await recoverDictation(error instanceof Error ? error.message : String(error), session);
+      return empty;
     }
-  }, [setIsRecording, setStatus]);
-
-  const getRecordingStartTime = useCallback(() => {
-    return startTimeRef.current;
   }, []);
 
-  // Listen for audio amplitude events from Rust
   useEffect(() => {
-    const unlisten = listen<number>("audio-amplitude", (event) => {
-      setAmplitude(event.payload);
+    if (!isRecording) return;
+    const timer = setInterval(() => useAppStore.getState().setRecordingDuration((Date.now() - startedAt) / 1000), 100);
+    return () => clearInterval(timer);
+  }, [isRecording]);
+
+  useEffect(() => {
+    const unlisten = listen<number>("audio-amplitude", ({ payload }) => {
+      if (useAppStore.getState().isRecording) useAppStore.getState().setAmplitude(payload);
     });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [setAmplitude]);
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
+    return () => { void unlisten.then((off) => off()); };
   }, []);
 
-  return {
-    isRecording,
-    recordingDuration,
-    amplitude,
-    startRecording,
-    stopRecording,
-    getRecordingStartTime,
-  };
+  return { isRecording, recordingDuration, amplitude, startRecording, stopRecording, getRecordingStartTime: () => startedAt };
 }

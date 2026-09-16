@@ -3,6 +3,10 @@ use serde::Deserialize;
 use std::sync::OnceLock;
 use std::time::Duration;
 
+#[cfg(test)]
+#[path = "transcribe_tests.rs"]
+mod tests;
+
 /// Shared HTTP client for Groq API calls — avoids rebuilding TLS state
 /// and connection pools per transcription.
 fn api_client() -> &'static reqwest::Client {
@@ -28,84 +32,105 @@ fn download_client() -> &'static reqwest::Client {
     })
 }
 
-// ── Silence & hallucination guards ──
+// ── Audio and decoder evidence ──
 
-/// Minimum RMS energy threshold for f32 samples in [-1.0, 1.0].
-/// Audio below this is considered silence.
-const SILENCE_RMS_THRESHOLD: f32 = 0.01;
-
-/// Minimum fraction of 50ms windows that must contain speech-level energy.
-/// Kept very low (2%) — only rejects truly blank/muted recordings.
-/// Natural speech with long pauses easily exceeds this.
-/// Whisper hallucination guard handles false positives from near-silent audio.
-const MIN_SPEECH_RATIO: f32 = 0.02;
-
-/// Returns true if enough of the audio contains speech-level energy.
-pub(crate) fn audio_has_speech(samples: &[f32]) -> bool {
-    // 800 samples = 50ms at 16kHz
-    let window_size = 800;
-    let total_windows = samples.len() / window_size;
-    if total_windows == 0 {
-        return false;
-    }
-    let active_windows = samples
-        .chunks(window_size)
-        .filter(|chunk| {
-            let sum_sq: f64 = chunk.iter().map(|&s| (s as f64) * (s as f64)).sum();
-            let rms = (sum_sq / chunk.len() as f64).sqrt() as f32;
-            rms > SILENCE_RMS_THRESHOLD
-        })
-        .count();
-    (active_windows as f32 / total_windows as f32) >= MIN_SPEECH_RATIO
+/// Only short-circuit effectively digital silence (the same 1e-10 floor used
+/// by FluidAudio's VAD). This is NOT a speech detector: noise can pass it.
+/// A volume threshold or active-window ratio can discard quiet speech and
+/// short answers surrounded by pauses, before the model gets to hear them.
+pub(crate) fn audio_has_signal(samples: &[f32]) -> bool {
+    samples.iter().any(|s| s.is_finite() && s.abs() > 1e-10)
 }
 
-/// Known Whisper hallucination phrases on silent/near-silent audio.
-const HALLUCINATION_PHRASES: &[&str] = &[
-    "you",
-    "thank you",
-    "thanks",
-    "thanks for watching",
-    "thank you for watching",
-    "the end",
-    "bye",
-    "bye bye",
-    "so",
-    "okay",
-    "the",
-    "subtitles by the amara.org community",
-    "subtitles by",
-    "thanks for listening",
-    "please subscribe",
-    "subscribe",
-    "like and subscribe",
-    "see you next time",
-];
+// whisper.cpp's paired defaults. Neither a phrase nor low confidence alone
+// proves silence. These thresholds do not apply to Parakeet's token confidence.
+const WHISPER_NO_SPEECH_THRESHOLD: f32 = 0.6;
+const WHISPER_LOGPROB_THRESHOLD: f32 = -1.0;
 
-/// Returns true if the text is a known Whisper hallucination (or degenerate
-/// output any engine can produce on near-silence: empty, 1–2 chars, or one
-/// word repeated).
-pub(crate) fn is_hallucination(text: &str) -> bool {
-    let normalized = text.trim().to_lowercase();
-    if normalized.is_empty() || normalized.len() <= 2 {
-        return true;
-    }
-    if HALLUCINATION_PHRASES.iter().any(|&phrase| normalized == phrase) {
-        return true;
-    }
-    // Detect repetition: same word repeated 3+ times
-    let words: Vec<&str> = normalized.split_whitespace().collect();
-    if words.len() >= 3 {
-        let first = words[0];
-        if words.iter().all(|&w| w == first) {
-            return true;
+/// Repetition is diagnostic only; intentional emphasis and stutters are valid.
+fn has_repeated_word(text: &str) -> bool {
+    let normalized = text.to_lowercase();
+    let mut words = normalized
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
+        .filter(|w| !w.is_empty());
+    let Some(first) = words.next() else {
+        return false;
+    };
+    let mut count = 1;
+    for word in words {
+        if word != first {
+            return false;
         }
+        count += 1;
     }
-    false
+    count >= 3
+}
+
+/// Never reject a transcript based on its words, byte length, or repetition.
+fn finish_transcript(text: &str, engine: &str) -> String {
+    let text = text.trim();
+    if has_repeated_word(text) {
+        log::info!("[transcribe] {engine}: repeated words retained; repetition alone is not evidence of silence");
+    }
+    text.to_string()
 }
 
 #[derive(Deserialize)]
 struct GroqTranscription {
     text: String,
+    #[serde(default)]
+    segments: Option<Vec<GroqSegment>>,
+}
+
+#[derive(Deserialize)]
+struct GroqSegment {
+    #[serde(default)]
+    text: String,
+    no_speech_prob: Option<f32>,
+    avg_logprob: Option<f32>,
+}
+
+impl GroqSegment {
+    fn is_no_speech(&self) -> bool {
+        match (self.no_speech_prob, self.avg_logprob) {
+            (Some(silence), Some(confidence)) => {
+                silence.is_finite()
+                    && (0.0..=1.0).contains(&silence)
+                    && confidence.is_finite()
+                    && silence > WHISPER_NO_SPEECH_THRESHOLD
+                    && confidence < WHISPER_LOGPROB_THRESHOLD
+            }
+            // Missing confidence is uncertainty, not permission to delete text.
+            _ => false,
+        }
+    }
+}
+
+impl GroqTranscription {
+    fn into_text(self) -> String {
+        if let Some(segments) = self.segments {
+            let reconstructed: String = segments.iter().map(|s| s.text.as_str()).collect();
+            // Only reconstruct a filtered response when the segments cover the
+            // full transcript exactly. Partial or changed metadata must not
+            // silently truncate the top-level text.
+            if !segments.is_empty() && reconstructed.trim() == self.text.trim() {
+                let retained: String = segments
+                    .iter()
+                    .filter_map(|segment| {
+                        if segment.is_no_speech() {
+                            log::info!("[transcribe] Cloud: omitted segment with high silence probability and low confidence");
+                            None
+                        } else {
+                            Some(segment.text.as_str())
+                        }
+                    })
+                    .collect();
+                return finish_transcript(&retained, "Cloud");
+            }
+        }
+        finish_transcript(&self.text, "Cloud")
+    }
 }
 
 /// Encode f32 PCM samples (16kHz mono) into a WAV byte buffer.
@@ -155,8 +180,8 @@ pub async fn transcribe_cloud(
     prompt: Option<&str>,
     language: Option<&str>,
 ) -> Result<String, String> {
-    if !audio_has_speech(samples) {
-        log::info!("[transcribe] Cloud: audio too quiet, skipping");
+    if !audio_has_signal(samples) {
+        log::info!("[transcribe] Cloud: empty or digitally silent audio, skipping");
         return Ok(String::new());
     }
 
@@ -170,7 +195,7 @@ pub async fn transcribe_cloud(
     // Turbo is ~3x cheaper and faster on Groq with comparable accuracy.
     let mut form = multipart::Form::new()
         .text("model", "whisper-large-v3-turbo")
-        .text("response_format", "json")
+        .text("response_format", "verbose_json")
         .part("file", file_part);
 
     // Only set language if explicitly specified (not "auto")
@@ -207,17 +232,12 @@ pub async fn transcribe_cloud(
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-    let text = result.text.trim().to_string();
+    let text = result.into_text();
     log::info!(
-        "[transcribe] Cloud done in {:.0}ms: {} chars",
+        "[transcribe] Cloud done in {}ms: {} chars",
         started.elapsed().as_millis(),
         text.chars().count()
     );
-    if is_hallucination(&text) {
-        log::info!("[transcribe] Cloud: dropped a likely hallucination ({} chars)", text.chars().count());
-        return Ok(String::new());
-    }
-
     Ok(text)
 }
 
@@ -255,8 +275,8 @@ where
         ));
     }
 
-    if !audio_has_speech(samples) {
-        log::info!("[transcribe] Local: audio too quiet, skipping");
+    if !audio_has_signal(samples) {
+        log::info!("[transcribe] Local: empty or digitally silent audio, skipping");
         return Ok(String::new());
     }
 
@@ -291,7 +311,10 @@ where
     // Timestamp tokens remain internal; the returned transcript is plain text.
     params.set_no_timestamps(duration_secs <= 20.0);
     params.set_suppress_nst(true);
-    params.set_no_speech_thold(0.6);
+    // whisper.cpp skips only when BOTH silence probability is high and
+    // average log probability is low. Keep its high-confidence override.
+    params.set_no_speech_thold(WHISPER_NO_SPEECH_THRESHOLD);
+    params.set_logprob_thold(WHISPER_LOGPROB_THRESHOLD);
     params.set_entropy_thold(2.4);
 
     // Single segment for short recordings — avoids segment boundary overhead
@@ -355,19 +378,15 @@ where
         result.chars().count()
     );
 
-    if is_hallucination(&result) {
-        log::info!("[transcribe] Local: dropped a likely hallucination ({} chars)", result.chars().count());
-        return Ok(String::new());
-    }
-
-    Ok(result)
+    Ok(finish_transcript(&result, "Whisper"))
 }
 
 // ── Local STT via Parakeet (Neural Engine) ──
 
-/// Run Parakeet TDT over `samples` with the same silence and degenerate-output
-/// guards as the whisper path. `language` is an ISO 639-1 hint; "auto"/None
-/// lets the model detect it. Parakeet has no vocabulary prompt.
+/// Run Parakeet TDT over `samples`, short-circuiting only digital silence.
+/// Whisper's phrase lists and confidence thresholds do not apply to this engine.
+/// `language` is an ISO 639-1 hint; "auto"/None lets the model detect it.
+/// Parakeet has no vocabulary prompt.
 #[cfg(feature = "parakeet")]
 pub fn transcribe_parakeet(
     engine: &crate::parakeet::ParakeetEngine,
@@ -388,8 +407,8 @@ pub fn transcribe_parakeet(
         ));
     }
 
-    if !audio_has_speech(samples) {
-        log::info!("[transcribe] Parakeet: audio too quiet, skipping");
+    if !audio_has_signal(samples) {
+        log::info!("[transcribe] Parakeet: empty or digitally silent audio, skipping");
         return Ok(String::new());
     }
 
@@ -403,11 +422,8 @@ pub fn transcribe_parakeet(
         result.processing_secs * 1000.0,
         text.chars().count()
     );
-    if is_hallucination(&text) {
-        log::info!("[transcribe] Parakeet: dropped degenerate output ({} chars)", text.chars().count());
-        return Ok(String::new());
-    }
-    Ok(text)
+
+    Ok(finish_transcript(&text, "Parakeet"))
 }
 
 /// What a local transcription produced: the text, plus any dictionary words the
@@ -450,8 +466,8 @@ pub fn transcribe_parakeet_with_vocabulary(
         ));
     }
 
-    if !audio_has_speech(samples) {
-        log::info!("[transcribe] Parakeet: audio too quiet, skipping");
+    if !audio_has_signal(samples) {
+        log::info!("[transcribe] Parakeet: empty or digitally silent audio, skipping");
         return Ok(Transcription::default());
     }
 
@@ -469,11 +485,11 @@ pub fn transcribe_parakeet_with_vocabulary(
         result.replacements.len(),
         applied.len()
     );
-    if is_hallucination(&text) {
-        log::info!("[transcribe] Parakeet: dropped degenerate output ({} chars)", text.chars().count());
-        return Ok(Transcription::default());
-    }
-    Ok(Transcription { text, vocabulary_applied: applied })
+
+    Ok(Transcription {
+        text: finish_transcript(&text, "Parakeet vocabulary"),
+        vocabulary_applied: applied,
+    })
 }
 
 // ── Model catalog & download ──
