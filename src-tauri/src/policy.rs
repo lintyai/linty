@@ -610,10 +610,11 @@ impl PolicyStore {
 
     /// Comparator for `tauri_plugin_updater::Builder::default_version_comparator`.
     pub fn allows_release(&self, current: &Version, release: &tauri_plugin_updater::RemoteRelease) -> bool {
+        // Same lookup order as the updater: `{os}-{arch}-app`, then `{os}-{arch}`.
         let platform = platform();
         let signature = release
-            .signature(&platform)
-            .or_else(|_| release.signature(&format!("{platform}-app")))
+            .signature(&format!("{platform}-app"))
+            .or_else(|_| release.signature(&platform))
             .ok()
             .map(String::as_str);
         let inner = self.lock();
