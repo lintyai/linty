@@ -24,7 +24,7 @@ Add `--dry-run` to see the new `latest.json` without uploading. The script uses 
 
 For a release that is about to be built, run the "Build macOS DMG" workflow by hand (Actions → Build macOS DMG → Run workflow) with **Require every older copy to install this release** ticked. The new release is published with `minimum_version` set to its own version.
 
-Every new release keeps the minimum of the release before it, so an ordinary release never drops a requirement.
+Every new release keeps the minimum of the release before it, so an ordinary release never drops a requirement. The build reads that minimum just before it publishes, so don't change the minimum while "Build macOS DMG" is running: the script refuses to, and `--show` after a release confirms the requirement is still there.
 
 ## Undo
 

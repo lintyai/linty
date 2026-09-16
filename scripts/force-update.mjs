@@ -55,6 +55,15 @@ function gh(args) {
   return result.stdout;
 }
 
+/// A release build reads the current minimum just before publishing; a change
+/// made meanwhile would not reach the new release.
+function releaseBuildRunning() {
+  const runs = JSON.parse(
+    gh(["run", "list", "--repo", REPO, "--workflow", "build-dmg.yml", "--limit", "10", "--json", "status"]),
+  );
+  return runs.some((run) => run.status !== "completed");
+}
+
 async function liveMinimum() {
   const response = await fetch(LATEST_MANIFEST, { redirect: "follow", headers: { "Cache-Control": "no-cache" } });
   if (!response.ok) throw new Error(`${LATEST_MANIFEST} answered HTTP ${response.status}`);
@@ -84,6 +93,9 @@ async function main() {
       return;
     }
 
+    if (releaseBuildRunning()) {
+      throw new Error("a release build is running; wait for it to publish, then run this again");
+    }
     writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
     gh(["release", "upload", release.tagName, path, "--repo", REPO, "--clobber"]);
     const wanted = minimumVersion(next);
