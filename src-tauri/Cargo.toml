@@ -55,5 +55,12 @@ parakeet = ["local-stt"]
 name = "stt_bench"
 required-features = ["local-stt", "parakeet"]
 
+[[example]]
+name = "stt_capacity"
+required-features = ["local-stt", "parakeet"]
+
+[dev-dependencies]
+libc = "0.2"
+
 [lints.rust]
 unexpected_cfgs = "allow"

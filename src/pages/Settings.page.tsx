@@ -152,7 +152,7 @@ function GeneralSection() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="settings-section">
       <SectionHeader title="General" />
 
       <SectionCard tone="inset">
@@ -169,7 +169,7 @@ function GeneralSection() {
 
       {correctionEnabled && (
         <SectionCard className="animate-fade-in">
-          <div className="flex flex-col gap-3 p-4">
+          <div className="settings-form">
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <label className="field-label" htmlFor="correction-instructions">
@@ -224,7 +224,7 @@ function GeneralSection() {
 /* ═══ Audio ═══ */
 function AudioSection() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="settings-section">
       <SectionHeader title="Audio & Input" />
       <div className="settings-feature">
         <span className="feature-symbol">
@@ -300,7 +300,7 @@ function ModelsSection() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="settings-section">
       <SectionHeader title="Speech Engine" />
 
       <SegmentedControl
@@ -313,9 +313,9 @@ function ModelsSection() {
 
       {/* Cloud settings */}
       {sttMode === "cloud" && (
-        <div className="flex flex-col gap-4 animate-fade-in">
+        <div className="settings-section animate-fade-in">
           <SectionCard>
-            <div className="flex flex-col gap-3 p-4">
+            <div className="settings-form">
               <div className="flex flex-col gap-1.5">
                 <label className="field-label" htmlFor="groq-api-key">
                   Groq API Key
@@ -363,7 +363,7 @@ function ModelsSection() {
           </SectionCard>
 
           <SectionCard>
-            <div className="flex flex-col gap-3 p-4">
+            <div className="settings-form">
               <div className="flex flex-col gap-1.5">
                 <label className="field-label" htmlFor="transcription-prompt">
                   Transcription Prompt
@@ -416,7 +416,7 @@ function ModelsSection() {
 
       {/* Local settings */}
       {sttMode === "local" && (
-        <div className="flex flex-col gap-4 animate-fade-in">
+        <div className="settings-section animate-fade-in">
           {!isLocalAvailable ? (
             <div className="flex items-start gap-2.5 rounded-[10px] bg-warning-glow border border-warning/10 px-4 py-3">
               <HardDrive size={13} className="text-warning shrink-0 mt-px" />
@@ -539,7 +539,7 @@ function ModelsSection() {
               </SectionCard>
 
               <SectionCard>
-                <div className="flex items-center justify-between px-4 py-3">
+                <div className="settings-field-row">
                   <div className="flex flex-col gap-0.5 min-w-0">
                     <span className="field-label">
                       Unload model when idle
@@ -582,7 +582,7 @@ function LanguageSection() {
   const { transcriptionLanguage, saveTranscriptionLanguage } = useSettings();
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="settings-section">
       <SectionHeader title="Language" />
       <div className="language-feature">
         <Languages size={29} />
@@ -596,7 +596,7 @@ function LanguageSection() {
       </div>
 
       <SectionCard>
-        <div className="flex items-center justify-between px-4 py-3">
+        <div className="settings-field-row">
           <div className="flex flex-col gap-0.5 min-w-0">
             <span className="field-label">
               Transcription language
@@ -650,7 +650,7 @@ function PrivacySection() {
       addToast({ type: "error", message: "Could not save that preference." }),
     );
   return (
-    <div className="flex flex-col gap-4">
+    <div className="settings-section">
       <SectionHeader title="Privacy & Storage" />
       <div className="privacy-feature">
         <ShieldCheck size={27} />
@@ -705,7 +705,7 @@ function PrivacySection() {
           label="Learn from corrections in other apps"
           description="For a minute after each paste, notice words you fix in the field you dictated into. Uses the Accessibility permission Linty already has; the field’s text is compared in memory and never saved. Works in most apps, not all."
         />
-        <div className="px-4 pb-3">
+        <div className="pb-4">
           <button
             className="text-link"
             onClick={() => setCurrentView("dictionary")}
@@ -730,7 +730,7 @@ function AppearanceSection() {
   const { theme, saveTheme } = useSettings();
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="settings-section">
       <SectionHeader title="Appearance" />
       <div className="appearance-specimen">
         <BrandMark />

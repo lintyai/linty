@@ -5,6 +5,9 @@
   height: 100%;
   min-height: 0;
   min-width: 0;
+  overflow: auto;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
   padding: var(--page-padding) var(--page-padding) 0;
 }
 .history-page-header,
@@ -234,10 +237,6 @@
 .detail-toolbar > button {
   flex-shrink: 0;
 }
-.detail-close {
-  width: 26px;
-  height: 26px;
-}
 .detail-back-icon,
 .detail-close-label {
   display: none;
@@ -432,11 +431,14 @@
   .history-detail {
     padding-inline: 0;
   }
-  .detail-close {
+  .history-page .detail-close {
     order: -1;
     width: auto;
     gap: 3px;
     padding-right: 8px;
+  }
+  .detail-close > svg {
+    flex-shrink: 0;
   }
   .detail-back-icon,
   .detail-close-label {

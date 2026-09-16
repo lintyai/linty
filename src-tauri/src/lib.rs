@@ -265,14 +265,11 @@ fn start_recording(
         rec.is_recording = true;
     }
 
-    // Record start timestamp and reset callback counter
+    // Reset callback monitoring and keep the local model warm while recording.
     {
-        let now = now_epoch_ms();
-        state.recording_started_at.store(now, Ordering::Relaxed);
         state.audio_callback_count.store(0, Ordering::Relaxed);
-        // Touch the whisper idle clock — never unload the model mid-dictation.
         #[cfg(feature = "local-stt")]
-        state.local_model_last_used_at.store(now, Ordering::Relaxed);
+        state.local_model_last_used_at.store(now_epoch_ms(), Ordering::Relaxed);
     }
 
     {
@@ -300,8 +297,9 @@ async fn stop_recording(
     _app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<StopResult, String> {
-    // Clear recording timestamp
-    state.recording_started_at.store(0, Ordering::Relaxed);
+    // A long recording is activity, not idle time. Start the idle clock at stop.
+    #[cfg(feature = "local-stt")]
+    state.local_model_last_used_at.store(now_epoch_ms(), Ordering::Relaxed);
 
     {
         let tx_guard = state.audio_tx.lock().map_err(|e| e.to_string())?;
@@ -1194,7 +1192,6 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
             }
 
             // 5. Reset recording state (prevents desync if recording was active during sleep)
-            state.recording_started_at.store(0, Ordering::Relaxed);
             if let Ok(mut rec) = state.recording.lock() {
                 rec.is_recording = false;
                 rec.samples = Vec::new();

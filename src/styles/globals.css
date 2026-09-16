@@ -411,15 +411,15 @@ kbd { border: 1px solid var(--color-border); border-bottom-width: 2px; border-ra
 .usage-insight svg { flex-shrink: 0; }
 .dashboard-footnote { font-size: 11px; color: var(--color-text-muted); margin-top: 24px; }
 
-/* Preferences and utility pages share the same reading width and rows. */
+/* Preferences and utility pages use the workspace width and shared rows. */
 .settings-group { border:0;border-radius:0;background:transparent; }
 .settings-section-title { font-size:12px;font-weight:550;color:var(--color-text-primary);margin-bottom:2px; }
 .settings-pane > div > div > .settings-section-title:first-child { display: none; }
-.setting-row { display:flex;align-items:center;justify-content:space-between;gap:16px;padding:17px 0; }
+.setting-row { display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 0; }
 .setting-row + .setting-row { border-top: 1px solid var(--color-border-subtle); }
 .setting-row > div:last-child { margin-left: 0; }
 .setting-row span, .setting-toggle span { overflow-wrap: anywhere; }
-.setting-toggle { padding:17px 0; }
+.setting-toggle { padding:16px 0; }
 .preferences-footnote { color: var(--color-text-muted); font-size: 11px; margin-top: 24px; }
 
 /* History: valid sibling controls and a comfortable reading pane. */
@@ -512,8 +512,6 @@ kbd { border: 1px solid var(--color-border); border-bottom-width: 2px; border-ra
 /* Accent buttons retain readable foregrounds in both appearances. */
 button.bg-accent { color: var(--color-text-inverted); }
 @media (max-width: 800px) {
-  .permission-row { flex-wrap: wrap; }
-  .permission-row > div:last-child { margin-left: 46px; }
   .settings-pane .settings-group > div > div.flex.items-center.justify-between { flex-wrap: wrap; gap: 12px; }
 }
 

@@ -2505,6 +2505,7 @@ dependencies = [
  "cpal",
  "futures-util",
  "hound",
+ "libc",
  "objc",
  "objc2 0.5.2",
  "reqwest 0.12.28",

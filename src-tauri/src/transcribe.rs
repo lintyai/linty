@@ -280,7 +280,10 @@ where
     params.set_print_timestamps(false);
     params.set_no_context(true);
     params.set_suppress_blank(true);
-    params.set_no_timestamps(true);
+    // Longer inputs need timestamp-guided window advancement. Disabling it
+    // forces fixed jumps and can skip speech when a window ends mid-sentence.
+    // Timestamp tokens remain internal; the returned transcript is plain text.
+    params.set_no_timestamps(duration_secs <= 20.0);
     params.set_suppress_nst(true);
     params.set_no_speech_thold(0.6);
     params.set_entropy_thold(2.4);
