@@ -57,6 +57,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU2MUE0OTQ1MDcwNUY5MzMKUldReitRVUhSVWthNW5GSkVMZFdBK0UrTms5QlZVOUhVQkZ2NWxUL0JmOXZKek9ZT3V0Y0VQKzUK",
       "endpoints": [
+        "https://updates.linty.ai/v1/manifest/stable/{{target}}-{{arch}}/{{current_version}}",
         "https://github.com/lintyai/linty/releases/latest/download/latest.json"
       ]
     }

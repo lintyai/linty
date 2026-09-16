@@ -43,3 +43,7 @@ artifacts/
 
 # Local benchmark Python bytecode
 __pycache__/
+
+# Cloudflare Wrangler local state (infra/updates)
+.wrangler/
+.dev.vars

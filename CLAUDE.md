@@ -22,6 +22,8 @@ cargo run --release --example stt_bench --features local-stt,parakeet -- clip.wa
 
 Release builds (`build:mac`, CI) use `--features local-stt,parakeet`.
 
+`node scripts/policy/publish.mjs --show` prints the live update policy (see `docs/runbooks/update-policy.md`).
+
 `scripts/check-rust-logging.sh` fails on `println!`/`eprintln!`/`dbg!` in `src-tauri/src` (runs on every PR via `.github/workflows/checks.yml`).
 
 Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separated).
@@ -61,6 +63,8 @@ Tauri CLI bundle syntax: `--bundles dmg,app` (comma-separated, NOT space-separat
 - Policy fields: `seq`, `issued`/`expires` (RFC 3339), `channel`, `target.version` + `target.signatures` (per platform, copied from that release's `latest.json`), `action` (`prompt` | `force` | `rollback` | `pause`), optional `min_supported_version`, `blocked_versions`, `rollout.percent`/`rollout.force_bypasses`, `message`, `config.cloud_stt_enabled`/`config.banner`.
 - A policy is adopted only if its signature verifies with `keys::POLICY_PUBLIC_KEY`, it is for this channel, it has not expired, and `seq` is higher than any accepted before (equal only if byte-identical). Installs it directs must match the pinned tarball signature, which is what makes downgrades safe. Once a policy has expired, its target stays a ceiling: only newer releases up to that target are offered. A copy that never accepted a policy offers any newer release. Blocked versions are never offered. An `action` this build does not know is treated as `pause`.
 - State lives in `linty-policy.json` (app data dir): highest `seq`, the last policy and signature (re-verified on load), the sticky blocked versions and ceiling, and a local 0–99 rollout bucket that is never sent. `reset_all_data` keeps it.
+- Host: `infra/updates` is a Cloudflare Worker at `updates.linty.ai`. It serves the policy envelope from KV (`policy:<channel>`) and, at `/v1/manifest/<channel>/<platform>/<version>`, the target release's `latest.json` from GitHub (204 when already on the target, 404 without a policy so the updater falls back to GitHub). The updater's first endpoint in `tauri.conf.json` is this route. The worker stores only per-request counts (route, channel, platform, version) in Analytics Engine; Workers Logs are off.
+- Publishing: `node scripts/policy/publish.mjs` (`--show`, `--dry-run`, `--action`, `--version`, `--percent`, `--block`, `--min`, `--cloud-stt`, `--banner`, `--refresh`). It carries blocked versions, the minimum and remote config over, signs with `tauri signer`, verifies against `keys.rs`, and uploads with Wrangler. Operations: `docs/runbooks/update-policy.md`. Once a policy is published, a new GitHub release reaches no one until a policy targets it.
 - Keys: `src-tauri/src/keys.rs` holds the policy and root public keys. The maintainer holds the private halves outside the repository and CI; they must never be regenerated, because installed copies trust only the keys they shipped with.
 
 ### State Management

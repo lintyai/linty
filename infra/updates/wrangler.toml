@@ -1,0 +1,26 @@
+# Linty update host (updates.linty.ai). Setup and operations:
+# docs/runbooks/update-policy.md. Deploy from this directory with
+#   npx wrangler@4.132.0 deploy
+name = "linty-updates"
+main = "src/worker.ts"
+compatibility_date = "2026-09-01"
+workers_dev = false
+preview_urls = false
+
+# Wrangler creates the DNS record for a custom domain on deploy.
+routes = [{ pattern = "updates.linty.ai", custom_domain = true }]
+
+# Request logs would record client IP addresses. Keep them off.
+[observability]
+enabled = false
+
+# Signed policy envelopes, one key per channel: policy:<channel>.
+# Create once with `npx wrangler@4.132.0 kv namespace create POLICY` and paste the id.
+[[kv_namespaces]]
+binding = "POLICY"
+id = "REPLACE_WITH_POLICY_NAMESPACE_ID"
+
+# Request counts per route, channel, platform and version. Nothing else.
+[[analytics_engine_datasets]]
+binding = "UPDATE_CHECKS"
+dataset = "linty_update_checks"

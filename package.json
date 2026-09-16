@@ -10,7 +10,7 @@
     "tauri": "tauri",
     "build:mac": "bash scripts/build-mac.sh",
     "build:mac:universal": "tauri build --target universal-apple-darwin --bundles dmg app -- --features local-stt,parakeet && mkdir -p release && cp -f src-tauri/target/release/bundle/dmg/*.dmg release/",
-    "test": "node --experimental-strip-types --test tests/usage.test.mjs tests/languages.test.mjs tests/corrections.test.mjs tests/payoff.test.mjs tests/correction-service.test.mjs",
+    "test": "node --experimental-strip-types --test tests/usage.test.mjs tests/languages.test.mjs tests/corrections.test.mjs tests/payoff.test.mjs tests/correction-service.test.mjs tests/update-worker.test.mjs tests/update-policy.test.mjs",
     "test:ui": "node tests/ui.smoke.mjs",
     "test:motion": "node tests/ui.motion.mjs",
     "test:usability": "node tests/ui.usability.mjs"
