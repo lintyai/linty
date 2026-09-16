@@ -2,6 +2,11 @@ name: Build macOS DMG
 
 on:
   workflow_dispatch:
+    inputs:
+      force_update:
+        description: Require every older copy to install this release
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -143,6 +148,8 @@ jobs:
           echo "DMG notarized and stapled."
 
       - name: Generate latest.json for updater
+        env:
+          FORCE_UPDATE: ${{ inputs.force_update }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           MACOS_DIR="src-tauri/target/release/bundle/macos"
@@ -161,19 +168,26 @@ jobs:
           TAR_GZ_NAME=$(basename "$TAR_GZ")
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-          cat > latest.json <<EOF
-          {
-            "version": "v${VERSION}",
-            "notes": "Linty v${VERSION}",
-            "pub_date": "${PUB_DATE}",
-            "platforms": {
-              "darwin-aarch64": {
-                "signature": "${SIGNATURE}",
-                "url": "https://github.com/lintyai/linty/releases/download/v${VERSION}/${TAR_GZ_NAME}"
-              }
-            }
-          }
-          EOF
+          # Force update (docs/runbooks/force-update.md): copies below
+          # minimum_version must install this release. Keep the minimum the
+          # current latest release requires; a forced release raises it.
+          PREVIOUS_MINIMUM=$(curl -fsSL --max-time 30 https://github.com/lintyai/linty/releases/latest/download/latest.json | jq -r '.minimum_version // empty' || true)
+          if [ "$FORCE_UPDATE" = "true" ]; then
+            MINIMUM="$VERSION"
+          else
+            MINIMUM="$PREVIOUS_MINIMUM"
+          fi
+
+          jq -n \
+            --arg version "v${VERSION}" \
+            --arg notes "Linty v${VERSION}" \
+            --arg pub_date "$PUB_DATE" \
+            --arg signature "$SIGNATURE" \
+            --arg url "https://github.com/lintyai/linty/releases/download/v${VERSION}/${TAR_GZ_NAME}" \
+            --arg minimum "$MINIMUM" \
+            '{version: $version, notes: $notes, pub_date: $pub_date,
+              platforms: {"darwin-aarch64": {signature: $signature, url: $url}}}
+             + (if $minimum == "" then {} else {minimum_version: $minimum} end)' > latest.json
 
           echo "Generated latest.json for v${VERSION}"
           cat latest.json

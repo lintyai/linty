@@ -110,7 +110,7 @@ export function AboutPage() {
             <button
               onClick={handleCheckUpdate}
               disabled={
-                updateStatus === "checking" || updateStatus === "downloading"
+                updateStatus === "checking" || updateStatus === "downloading" || updateStatus === "waiting" || updateStatus === "installing"
               }
               className={cn(
                 "flex items-center justify-between px-4 py-[10px] hover:bg-bg-hover transition-colors border-b border-border-subtle",

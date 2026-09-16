@@ -4,6 +4,7 @@ export const fixture = ({
   onboarding = false,
   theme = "light",
   historyCount = 18,
+  update = null,
 } = {}) => {
   const now = Date.now();
   const words = [
@@ -402,6 +403,9 @@ export const fixture = ({
     calls: [],
     clipboard: "",
     failures: {},
+    setUpdate: (next) => {
+      update = next;
+    },
     emit: (event, payload) => {
       for (const [key, listener] of listeners)
         if (listener.event === event)
@@ -459,7 +463,10 @@ export const fixture = ({
         window.__QA__.clipboard = args.text;
         return;
       }
-      if (command === "plugin:updater|check") return null;
+      if (command === "plugin:updater|check") return update;
+      if (command === "plugin:updater|download") return 11;
+      if (command === "plugin:updater|install") return null;
+      if (command === "plugin:process|restart") return null;
       if (command === "check_microphone") return "authorized";
       if (
         [
