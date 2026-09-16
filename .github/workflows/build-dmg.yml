@@ -151,6 +151,10 @@ jobs:
           xcrun stapler staple "$DMG_PATH"
           echo "DMG notarized and stapled."
 
+          # A stable asset name makes /releases/latest/download/ a direct
+          # installer link for the README and website across all versions.
+          mv "$DMG_PATH" "$(dirname "$DMG_PATH")/Linty_aarch64.dmg"
+
       - name: Generate latest.json for updater
         env:
           FORCE_UPDATE: ${{ inputs.force_update }}
