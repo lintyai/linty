@@ -220,8 +220,8 @@ export function TriggerKeyPicker({ value, onChange, className }: TriggerKeyPicke
               className={cn(
                 "rounded-lg px-3 py-[5px] text-[12px] font-medium",
                 "bg-bg-elevated border border-border text-text-secondary",
-                "hover:bg-bg-hover hover:text-text-primary active:scale-95",
-                "transition-all duration-150",
+                "hover:bg-bg-hover hover:text-text-primary active:scale-[0.97]",
+                "transition-interaction duration-150",
               )}
             >
               Use it anyway

@@ -1,16 +1,26 @@
 import { cn } from "@/lib/utils";
 
 export function SectionHeader({ title }: { title: string }) {
-  return (
-    <h2 className="settings-section-title">
-      {title}
-    </h2>
-  );
+  return <h2 className="settings-section-title">{title}</h2>;
 }
 
-export function SectionCard({ children, className }: { children: React.ReactNode; className?: string }) {
+export function SectionCard({
+  children,
+  className,
+  tone = "open",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  tone?: "open" | "inset";
+}) {
   return (
-    <div className={cn("settings-group", className)}>
+    <div
+      className={cn(
+        "settings-group",
+        tone === "inset" && "settings-group-inset",
+        className,
+      )}
+    >
       {children}
     </div>
   );
@@ -30,9 +40,11 @@ export function SettingRow({
   return (
     <div className={cn("setting-row", className)}>
       <div className="flex flex-col gap-0.5 min-w-0">
-        <span className="text-[13px] text-text-primary">{label}</span>
+        <span className="field-label">{label}</span>
         {description && (
-          <span className="text-[12px] text-text-muted leading-snug">{description}</span>
+          <span className="text-[12px] text-text-muted leading-snug">
+            {description}
+          </span>
         )}
       </div>
       {right && <div className="shrink-0 ml-4">{right}</div>}
@@ -41,9 +53,5 @@ export function SettingRow({
 }
 
 export function ValueBadge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-[12px] text-text-secondary bg-bg-hover rounded-md px-2.5 py-1">
-      {children}
-    </span>
-  );
+  return <span className="setting-value">{children}</span>;
 }

@@ -1,4 +1,5 @@
 import type { StateCreator } from "zustand";
+import { DEFAULT_TYPING_SPEED } from "@/lib/payoff.util";
 
 export type SttMode = "cloud" | "local";
 export type ThemePreference = "light" | "dark" | "system";
@@ -80,6 +81,8 @@ export interface SettingsSlice {
   triggerKey: string;
   settingsLoaded: boolean;
   trackApplicationUsage: boolean;
+  typingWordsPerMinute: number;
+  setTypingWordsPerMinute: (speed: number) => void;
   setTrackApplicationUsage: (enabled: boolean) => void;
   setLoadedModelFilename: (filename: string | null) => void;
   setSelectedModelFilename: (filename: string | null) => void;
@@ -123,6 +126,8 @@ export const createSettingsSlice: StateCreator<SettingsSlice> = (set) => ({
   triggerKey: DEFAULT_TRIGGER_KEY,
   settingsLoaded: false,
   trackApplicationUsage: true,
+  typingWordsPerMinute: DEFAULT_TYPING_SPEED,
+  setTypingWordsPerMinute: (typingWordsPerMinute) => set({typingWordsPerMinute}),
   setTrackApplicationUsage: (trackApplicationUsage) => set({ trackApplicationUsage }),
   setLoadedModelFilename: (loadedModelFilename) => set({ loadedModelFilename }),
   setSelectedModelFilename: (selectedModelFilename) => set({ selectedModelFilename }),

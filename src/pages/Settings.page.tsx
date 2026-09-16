@@ -1,3 +1,4 @@
+import { Select } from "@/components/shared/Select.component";
 import { useState, useEffect, useRef } from "react";
 import {
   Cpu,
@@ -10,11 +11,10 @@ import {
   Download,
   HardDrive,
   ExternalLink,
-  Sun,
-  Moon,
-  Monitor,
   Languages,
-  ChevronDown,
+  Mic,
+  ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-shell";
 import { useSettings } from "@/hooks/useSettings.hook";
@@ -22,17 +22,48 @@ import { useAppStore } from "@/store/app.store";
 import { useModelDownload } from "@/hooks/useModelDownload.hook";
 import { Toggle } from "@/components/shared/Toggle.component";
 import { SegmentedControl } from "@/components/shared/SegmentedControl.component";
-import { SectionHeader, SectionCard, SettingRow, ValueBadge } from "@/components/shared/SettingsLayout.component";
+import {
+  SectionHeader,
+  SectionCard,
+  SettingRow,
+  ValueBadge,
+} from "@/components/shared/SettingsLayout.component";
 import { cn } from "@/lib/utils";
-import { AUTO_LANGUAGE, TRANSCRIPTION_LANGUAGES, languageLabel } from "@/lib/languages.util";
+import {
+  AUTO_LANGUAGE,
+  TRANSCRIPTION_LANGUAGES,
+  languageLabel,
+} from "@/lib/languages.util";
 import { DEFAULT_CORRECTION_PROMPT } from "@/services/correction.service";
-import { SETTINGS_SECTIONS } from "@/store/slices/navigation.slice";
+import { SETTINGS_SECTIONS } from "@/config/navigation.config";
+import {
+  PageLayout,
+  PageHeader,
+  SectionHeading,
+} from "@/components/shared/PageLayout.component";
+import { ProcessingDetails } from "@/components/settings/ProcessingDetails.component";
+import { ThemePreview } from "@/components/settings/ThemePreview.component";
+import { BrandMark } from "@/components/shared/BrandMark.component";
+import { HistoryStorage } from "@/components/settings/HistoryStorage.component";
+import { modelLabel } from "@/lib/model-labels.util";
 import type { SttMode, ThemePreference } from "@/store/slices/settings.slice";
 
 const THEME_SEGMENTS = [
-  { value: "light" as ThemePreference, label: "Light", icon: <Sun size={13} /> },
-  { value: "dark" as ThemePreference, label: "Dark", icon: <Moon size={13} /> },
-  { value: "system" as ThemePreference, label: "System", icon: <Monitor size={13} /> },
+  {
+    value: "light" as ThemePreference,
+    label: "Light",
+    icon: <ThemePreview theme="light" />,
+  },
+  {
+    value: "dark" as ThemePreference,
+    label: "Dark",
+    icon: <ThemePreview theme="dark" />,
+  },
+  {
+    value: "system" as ThemePreference,
+    label: "System",
+    icon: <ThemePreview theme="system" />,
+  },
 ];
 
 const ENGINE_SEGMENTS = [
@@ -51,29 +82,58 @@ const IDLE_UNLOAD_OPTIONS = [
 export function SettingsPage() {
   const section = useAppStore((s) => s.settingsSection);
   const [visited, setVisited] = useState(() => new Set([section]));
-  useEffect(() => { setVisited((old) => old.has(section) ? old : new Set([...old, section])); }, [section]);
+  useEffect(() => {
+    setVisited((old) => (old.has(section) ? old : new Set([...old, section])));
+  }, [section]);
   const metadata = SETTINGS_SECTIONS.find((item) => item.id === section)!;
   return (
-    <div className="preferences-scroll">
-      <div className="preferences-content">
-        <div className="page-intro"><h2>{metadata.label}</h2><p>{metadata.description}</p></div>
-        <div className="settings-pane">
-          {(visited.has("general") || section === "general") && <div hidden={section !== "general"}><GeneralSection /></div>}
-          {(visited.has("audio") || section === "audio") && <div hidden={section !== "audio"}><AudioSection /></div>}
-          {(visited.has("models") || section === "models") && <div hidden={section !== "models"}><ModelsSection /></div>}
-          {(visited.has("language") || section === "language") && <div hidden={section !== "language"}><LanguageSection /></div>}
-          {(visited.has("appearance") || section === "appearance") && <div hidden={section !== "appearance"}><AppearanceSection /></div>}
-          {(visited.has("privacy") || section === "privacy") && <div hidden={section !== "privacy"}><PrivacySection /></div>}
-        </div>
-        <p className="preferences-footnote">Changes are saved automatically.</p>
+    <PageLayout reading className={`settings-page settings-${section}`}>
+      <PageHeader page="settings" title={metadata.label} description={metadata.description} />
+      <div className="settings-pane">
+        {(visited.has("general") || section === "general") && (
+          <div hidden={section !== "general"}>
+            <GeneralSection />
+          </div>
+        )}
+        {(visited.has("audio") || section === "audio") && (
+          <div hidden={section !== "audio"}>
+            <AudioSection />
+          </div>
+        )}
+        {(visited.has("models") || section === "models") && (
+          <div hidden={section !== "models"}>
+            <ModelsSection />
+          </div>
+        )}
+        {(visited.has("language") || section === "language") && (
+          <div hidden={section !== "language"}>
+            <LanguageSection />
+          </div>
+        )}
+        {(visited.has("appearance") || section === "appearance") && (
+          <div hidden={section !== "appearance"}>
+            <AppearanceSection />
+          </div>
+        )}
+        {(visited.has("privacy") || section === "privacy") && (
+          <div hidden={section !== "privacy"}>
+            <PrivacySection />
+          </div>
+        )}
       </div>
-    </div>
+      <p className="preferences-footnote">Changes are saved automatically.</p>
+    </PageLayout>
   );
 }
 
 /* ═══ General ═══ */
 function GeneralSection() {
-  const { correctionEnabled, correctionPrompt, saveCorrectionEnabled, saveCorrectionPrompt } = useSettings();
+  const {
+    correctionEnabled,
+    correctionPrompt,
+    saveCorrectionEnabled,
+    saveCorrectionPrompt,
+  } = useSettings();
   const [correctionInput, setCorrectionInput] = useState(correctionPrompt);
   const correctionInitRef = useRef(false);
 
@@ -87,14 +147,18 @@ function GeneralSection() {
   }, [correctionPrompt]);
 
   const handleCorrectionBlur = () => {
-    if (correctionInput !== correctionPrompt) saveCorrectionPrompt(correctionInput);
+    if (correctionInput !== correctionPrompt)
+      saveCorrectionPrompt(correctionInput);
   };
 
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title="General" />
 
-      <SectionCard>
+      <SectionCard tone="inset">
+        <div className="setting-feature-icon">
+          <Sparkles size={23} />
+        </div>
         <Toggle
           enabled={correctionEnabled}
           onChange={saveCorrectionEnabled}
@@ -108,7 +172,7 @@ function GeneralSection() {
           <div className="flex flex-col gap-3 p-4">
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-[12px] font-medium text-text-secondary">
+                <label className="field-label">
                   Correction Instructions
                 </label>
                 {correctionInput !== DEFAULT_CORRECTION_PROMPT && (
@@ -133,7 +197,7 @@ function GeneralSection() {
                 className={cn(
                   "w-full rounded-lg border border-border bg-bg-input px-3 py-2",
                   "text-[13px] text-text-primary placeholder:text-text-muted",
-                  "outline-none transition-all duration-150 resize-none",
+                  "outline-none transition-interaction duration-150 resize-none",
                   "focus:border-border-focus focus:bg-bg-elevated",
                 )}
               />
@@ -161,6 +225,16 @@ function AudioSection() {
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title="Audio & Input" />
+      <div className="settings-feature">
+        <span className="feature-symbol">
+          <Mic size={35} />
+        </span>
+        <div>
+          <span className="eyebrow">INPUT SOURCE</span>
+          <h3>System microphone</h3>
+          <p>Follows the microphone selected in macOS.</p>
+        </div>
+      </div>
 
       <SectionCard>
         <SettingRow
@@ -242,7 +316,7 @@ function ModelsSection() {
           <SectionCard>
             <div className="flex flex-col gap-3 p-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-[12px] font-medium text-text-secondary">
+                <label className="field-label">
                   Groq API Key
                 </label>
                 <div className="relative">
@@ -261,7 +335,7 @@ function ModelsSection() {
                     className={cn(
                       "w-full rounded-lg border border-border bg-bg-input px-3 py-[7px] pr-9",
                       "text-[13px] text-text-primary placeholder:text-text-muted",
-                      "outline-none transition-all duration-150",
+                      "outline-none transition-interaction duration-150",
                       "focus:border-border-focus focus:bg-bg-elevated",
                     )}
                   />
@@ -277,10 +351,10 @@ function ModelsSection() {
               </div>
               <button
                 onClick={() => open("https://console.groq.com/keys")}
-                className="flex items-center gap-1 text-[11px] text-text-muted hover:text-text-secondary transition-colors self-start"
+                className="text-link self-start"
               >
                 Get a free API key at console.groq.com
-                <ExternalLink size={10} />
+                <ExternalLink size={12} />
               </button>
             </div>
           </SectionCard>
@@ -288,7 +362,7 @@ function ModelsSection() {
           <SectionCard>
             <div className="flex flex-col gap-3 p-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-[12px] font-medium text-text-secondary">
+                <label className="field-label">
                   Transcription Prompt
                 </label>
                 <textarea
@@ -302,7 +376,7 @@ function ModelsSection() {
                   className={cn(
                     "w-full rounded-lg border border-border bg-bg-input px-3 py-2",
                     "text-[13px] text-text-primary placeholder:text-text-muted",
-                    "outline-none transition-all duration-150 resize-none",
+                    "outline-none transition-interaction duration-150 resize-none",
                     "focus:border-border-focus focus:bg-bg-elevated",
                   )}
                 />
@@ -329,7 +403,8 @@ function ModelsSection() {
           <div className="flex items-start gap-2.5 rounded-[10px] bg-info-glow border border-info/10 px-4 py-3">
             <Cloud size={13} className="text-info shrink-0 mt-px" />
             <p className="text-[12px] text-text-secondary leading-relaxed">
-              Audio is sent to Groq API for transcription. Processing is fast (~1-2s) with a free tier available.
+              Audio is sent to Groq API for transcription. Processing is fast
+              (~1-2s) with a free tier available.
             </p>
           </div>
         </div>
@@ -346,12 +421,28 @@ function ModelsSection() {
                   On-device transcription unavailable
                 </span>
                 <span className="text-[12px] text-text-muted leading-relaxed">
-                  This build does not include on-device transcription. Choose Cloud to continue, or install the full macOS version.
+                  This build does not include on-device transcription. Choose
+                  Cloud to continue, or install the full macOS version.
                 </span>
               </div>
             </div>
           ) : (
             <>
+              {loadedModel && (
+                <div className="current-model">
+                  <div>
+                    <span className="eyebrow">ACTIVE MODEL</span>
+                    <h3>{modelLabel(loadedModel)}</h3>
+                    <p>
+                      On-device transcription · Ready for your next dictation
+                    </p>
+                  </div>
+                  <span>
+                    <Check size={13} /> Loaded
+                  </span>
+                </div>
+              )}
+              <SectionHeading title="Available models" />
               <SectionCard>
                 <div className="flex flex-col">
                   {models.map((model, i) => {
@@ -364,11 +455,12 @@ function ModelsSection() {
                         key={model.filename}
                         className={cn(
                           "flex items-center justify-between px-4 py-3",
-                          i < models.length - 1 && "border-b border-border-subtle",
+                          i < models.length - 1 &&
+                            "border-b border-border-subtle",
                         )}
                       >
                         <div className="flex flex-col gap-0.5">
-                          <span className="text-[13px] text-text-primary">
+                          <span className="field-label">
                             {model.name}
                           </span>
                           <span className="text-[11px] text-text-muted">
@@ -380,8 +472,8 @@ function ModelsSection() {
                           <div className="flex items-center gap-2.5">
                             <div className="h-1.5 w-20 overflow-hidden rounded-full bg-border">
                               <div
-                                className="h-full rounded-full bg-accent transition-all duration-300"
-                                style={{ width: `${downloadProgress}%` }}
+                                className="progress-fill h-full rounded-full bg-accent"
+                                style={{ transform: `scaleX(${downloadProgress / 100})` }}
                               />
                             </div>
                             <span className="text-[11px] tabular-nums text-text-muted w-9 text-right">
@@ -400,13 +492,17 @@ function ModelsSection() {
                                 try {
                                   await loadModel(model.filename);
                                 } catch {
-                                  useAppStore.getState().addToast({ type: "error", message: "Could not load model. Try again or choose another model." });
+                                  useAppStore.getState().addToast({
+                                    type: "error",
+                                    message:
+                                      "Could not load model. Try again or choose another model.",
+                                  });
                                 }
                               }}
                               disabled={loadingFilename !== null}
                               className={cn(
                                 "flex h-[30px] items-center gap-1.5 rounded-md border border-success/20 px-3 text-[12px] font-medium text-success",
-                                "hover:bg-success/8 active:scale-95 transition-all duration-150",
+                                "hover:bg-success/8 active:scale-[0.97] transition-interaction duration-150",
                                 "disabled:cursor-not-allowed disabled:opacity-40",
                               )}
                             >
@@ -424,7 +520,7 @@ function ModelsSection() {
                             disabled={isDownloading}
                             className={cn(
                               "flex h-[30px] items-center gap-1.5 rounded-md border border-border px-3 text-[12px] font-medium text-text-secondary",
-                              "hover:bg-bg-hover hover:text-text-primary active:scale-95 transition-all duration-150",
+                              "hover:bg-bg-hover hover:text-text-primary active:scale-[0.97] transition-interaction duration-150",
                               "disabled:cursor-not-allowed disabled:opacity-40",
                             )}
                           >
@@ -441,32 +537,20 @@ function ModelsSection() {
               <SectionCard>
                 <div className="flex items-center justify-between px-4 py-3">
                   <div className="flex flex-col gap-0.5 min-w-0">
-                    <span className="text-[13px] text-text-primary">Unload model when idle</span>
+                    <span className="field-label">
+                      Unload model when idle
+                    </span>
                     <span className="text-[12px] text-text-muted leading-snug">
-                      Frees memory after inactivity — reloads automatically on next dictation
+                      Frees memory after inactivity — reloads automatically on
+                      next dictation
                     </span>
                   </div>
                   <div className="shrink-0 ml-4 relative">
-                    <select
-                      aria-label="Unload model when idle"
+                    <Select
+                      label="Unload model when idle"
                       value={modelIdleUnloadMinutes}
-                      onChange={(e) => saveModelIdleUnloadMinutes(Number(e.target.value))}
-                      className={cn(
-                        "appearance-none rounded-lg border border-border bg-bg-input pl-3 pr-8 py-[7px]",
-                        "text-[13px] text-text-primary",
-                        "outline-none transition-all duration-150 cursor-pointer",
-                        "focus:border-border-focus focus:bg-bg-elevated",
-                      )}
-                    >
-                      {IDLE_UNLOAD_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      size={13}
-                      className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted"
+                      onChange={saveModelIdleUnloadMinutes}
+                      options={IDLE_UNLOAD_OPTIONS}
                     />
                   </div>
                 </div>
@@ -475,13 +559,15 @@ function ModelsSection() {
               <div className="flex items-start gap-2.5 rounded-[10px] bg-success-glow border border-success/10 px-4 py-3">
                 <Cpu size={13} className="text-success shrink-0 mt-px" />
                 <p className="text-[12px] text-text-secondary leading-relaxed">
-                  Audio stays on your device. Whisper runs on the GPU; Parakeet runs on the Neural Engine and is usually under a second.
+                  Audio stays on your device. Whisper runs on the GPU; Parakeet
+                  runs on the Neural Engine and is usually under a second.
                 </p>
               </div>
             </>
           )}
         </div>
       )}
+      <ProcessingDetails />
     </div>
   );
 }
@@ -494,36 +580,36 @@ function LanguageSection() {
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title="Language" />
+      <div className="language-feature">
+        <Languages size={29} />
+        <span className="eyebrow">TRANSCRIPTION LANGUAGE</span>
+        <h3>{languageLabel(transcriptionLanguage)}</h3>
+        <p>
+          {transcriptionLanguage === AUTO_LANGUAGE
+            ? "Let the speech engine recognize the language you’re speaking."
+            : "A familiar language. Your own words."}
+        </p>
+      </div>
 
       <SectionCard>
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[13px] text-text-primary">Transcription language</span>
+            <span className="field-label">
+              Transcription language
+            </span>
             <span className="text-[12px] text-text-muted leading-snug">
               Set the spoken language or let the speech engine auto-detect
             </span>
           </div>
           <div className="shrink-0 ml-4 relative">
-            <select
-              aria-label="Transcription language"
+            <Select
+              label="Transcription language"
               value={transcriptionLanguage}
-              onChange={(e) => saveTranscriptionLanguage(e.target.value)}
-              className={cn(
-                "appearance-none rounded-lg border border-border bg-bg-input pl-3 pr-8 py-[7px]",
-                "text-[13px] text-text-primary",
-                "outline-none transition-all duration-150 cursor-pointer",
-                "focus:border-border-focus focus:bg-bg-elevated",
-              )}
-            >
-              {TRANSCRIPTION_LANGUAGES.map((lang) => (
-                <option key={lang.code} value={lang.code}>
-                  {lang.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              size={13}
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted"
+              onChange={saveTranscriptionLanguage}
+              options={TRANSCRIPTION_LANGUAGES.map((language) => ({
+                value: language.code,
+                label: language.label,
+              }))}
             />
           </div>
         </div>
@@ -543,18 +629,47 @@ function LanguageSection() {
 
 /* ═══ Privacy ═══ */
 function PrivacySection() {
-  const { trackApplicationUsage, saveTrackApplicationUsage, dictionaryEnabled, saveDictionaryEnabled, autoLearnWords, saveAutoLearnWords, observeCorrections, saveObserveCorrections } = useSettings();
+  const {
+    trackApplicationUsage,
+    saveTrackApplicationUsage,
+    dictionaryEnabled,
+    saveDictionaryEnabled,
+    autoLearnWords,
+    saveAutoLearnWords,
+    observeCorrections,
+    saveObserveCorrections,
+  } = useSettings();
   const addToast = useAppStore((s) => s.addToast);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const savePreference = (work: Promise<void>) =>
-    work.catch(() => addToast({ type: "error", message: "Could not save that preference." }));
+    work.catch(() =>
+      addToast({ type: "error", message: "Could not save that preference." }),
+    );
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title="Privacy & Storage" />
+      <div className="privacy-feature">
+        <ShieldCheck size={27} />
+        <div>
+          <h3>Your words are yours.</h3>
+          <p>
+            History and your dictionary are saved on this Mac. Cloud
+            transcription sends audio to Groq; refinement sends transcribed text
+            when enabled.
+          </p>
+        </div>
+      </div>
       <SectionCard>
         <Toggle
           enabled={trackApplicationUsage}
-          onChange={(enabled) => { saveTrackApplicationUsage(enabled).catch(() => addToast({ type: "error", message: "Could not save app attribution preference." })); }}
+          onChange={(enabled) => {
+            saveTrackApplicationUsage(enabled).catch(() =>
+              addToast({
+                type: "error",
+                message: "Could not save app attribution preference.",
+              }),
+            );
+          }}
           label="Attribute dictations to apps"
           description="Save the active app’s name when dictation starts. See words and dictation time per app in your dashboard."
         />
@@ -563,7 +678,9 @@ function PrivacySection() {
         <div className="border-b border-border-subtle">
           <Toggle
             enabled={dictionaryEnabled}
-            onChange={(enabled) => savePreference(saveDictionaryEnabled(enabled))}
+            onChange={(enabled) =>
+              savePreference(saveDictionaryEnabled(enabled))
+            }
             label="Apply my dictionary"
             description="Fix words you have corrected before and teach the speech engine your words. Parakeet fetches a 100 MB vocabulary model the first time."
           />
@@ -578,20 +695,27 @@ function PrivacySection() {
         </div>
         <Toggle
           enabled={observeCorrections}
-          onChange={(enabled) => savePreference(saveObserveCorrections(enabled))}
+          onChange={(enabled) =>
+            savePreference(saveObserveCorrections(enabled))
+          }
           label="Learn from corrections in other apps"
           description="For a minute after each paste, notice words you fix in the field you dictated into. Uses the Accessibility permission Linty already has; the field’s text is compared in memory and never saved. Works in most apps, not all."
         />
         <div className="px-4 pb-3">
-          <button className="text-link" onClick={() => setCurrentView("dictionary")}>Open your dictionary</button>
+          <button
+            className="text-link"
+            onClick={() => setCurrentView("dictionary")}
+          >
+            Open your dictionary
+          </button>
         </div>
       </SectionCard>
-      <SectionCard>
-        <SettingRow label="History retention" description="The latest 500 transcriptions. Dashboard statistics use this saved history." right={<ValueBadge>500 records</ValueBadge>} />
-        <SettingRow label="Storage location" description="Transcripts and app usage are saved on this Mac in Linty’s application data folder." right={<ValueBadge>On this Mac</ValueBadge>} />
-      </SectionCard>
+      <HistoryStorage />
       <div className="rounded-xl border border-border-subtle bg-bg-elevated px-4 py-3 text-[12px] leading-relaxed text-text-secondary">
-        App attribution records only the app name and identifier, once per dictation. It does not read window titles, browser URLs, or track time spent in other apps. Turning it off affects new dictations; deleting history removes its app statistics too.
+        App attribution records only the app name and identifier, once per
+        dictation. It does not read window titles, browser URLs, or track time
+        spent in other apps. Turning it off affects new dictations; deleting
+        history removes its app statistics too.
       </div>
     </div>
   );
@@ -604,25 +728,34 @@ function AppearanceSection() {
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader title="Appearance" />
+      <div className="appearance-specimen">
+        <BrandMark />
+        <p>
+          A little warmth.
+          <br />
+          <span>A place for your words.</span>
+        </p>
+        <span className="heading-rule" aria-hidden="true" />
+      </div>
 
       <SectionCard>
-        <SettingRow
-          label="Theme"
-          description="Choose light, dark, or follow system"
-          right={
-            <SegmentedControl
-              label="Appearance"
-              segments={THEME_SEGMENTS}
-              value={theme}
-              onChange={saveTheme}
-            />
-          }
-          className="border-b border-border-subtle"
+        <SectionHeading
+          title="Choose your appearance"
+          description="Light, dark, or follow your Mac."
+        />
+        <SegmentedControl
+          label="Appearance"
+          className="theme-picker"
+          segments={THEME_SEGMENTS}
+          value={theme}
+          onChange={saveTheme}
         />
         <SettingRow
           label="Accent color"
-          description="Coral, for interactions and recording"
-          right={<div className="h-5 w-5 rounded-full bg-accent border border-accent-soft" />}
+          description="Teal, for interactions and recording"
+          right={
+            <div className="h-5 w-5 rounded-full bg-accent border border-accent-soft" />
+          }
         />
       </SectionCard>
     </div>

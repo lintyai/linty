@@ -33,7 +33,7 @@ export function Toggle({
       )}
     >
       <div className="flex flex-col gap-0.5 min-w-0">
-        <span className="text-[13px] text-text-primary truncate">
+        <span className="field-label truncate">
           {label}
         </span>
         {description && (
@@ -50,9 +50,9 @@ export function Toggle({
       >
         <div
           className={cn(
-            "absolute top-[2px] h-[16px] w-[16px] rounded-full bg-white shadow-sm transition-all duration-200",
-            enabled ? "left-[16px]" : "left-[2px]",
+            "toggle-thumb absolute left-[2px] top-[2px] h-[16px] w-[16px] rounded-full bg-white shadow-sm",
           )}
+          style={{ transform: `translateX(${enabled ? 14 : 0}px)` }}
         />
       </div>
     </button>

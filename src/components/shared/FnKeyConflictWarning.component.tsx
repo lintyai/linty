@@ -78,8 +78,8 @@ export function FnKeyConflictWarning({ className }: { className?: string }) {
             className={cn(
               "mt-1 flex w-fit items-center gap-1.5 rounded-lg px-3 py-[5px] text-[12px] font-medium",
               "bg-bg-elevated border border-border text-text-secondary",
-              "hover:bg-bg-hover hover:text-text-primary active:scale-95",
-              "transition-all duration-150",
+              "hover:bg-bg-hover hover:text-text-primary active:scale-[0.97]",
+              "transition-interaction duration-150",
             )}
           >
             Open Keyboard Settings

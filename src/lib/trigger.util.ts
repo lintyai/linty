@@ -82,6 +82,11 @@ export function formatTriggerLabel(value: string): string {
     .join("");
 }
 
+/** Compact keycap text; prose can still say “fn key”. */
+export function formatTriggerKeycap(value: string): string {
+  return value === TRIGGER_KEY_FN ? "fn" : formatTriggerLabel(value);
+}
+
 /** kbd-style display: "fn (hold)", "⌘⇧Space (hold)". */
 export function formatTriggerDisplay(value: string): string {
   const preset = TRIGGER_KEY_OPTIONS.find((o) => o.value === value);

@@ -9,71 +9,53 @@ interface WaveformVisualizerProps {
   className?: string;
 }
 
-export function WaveformVisualizer({
-  amplitude,
-  isActive,
-  className,
-}: WaveformVisualizerProps) {
-  const barsRef = useRef<number[]>(Array(BAR_COUNT).fill(0));
-  const frameRef = useRef<number>(0);
+export function WaveformVisualizer({ amplitude, isActive, className }: WaveformVisualizerProps) {
+  const elements = useRef<(HTMLDivElement | null)[]>([]);
   const amplitudeRef = useRef(amplitude);
   amplitudeRef.current = amplitude;
 
   useEffect(() => {
     if (!isActive) {
-      barsRef.current = Array(BAR_COUNT).fill(0);
+      elements.current.forEach((bar) => {
+        if (bar) { bar.style.transform = "scaleY(0.08)"; bar.style.opacity = "0.2"; }
+      });
       return;
     }
-
-    const animate = () => {
-      const bars = barsRef.current;
-      const amp = amplitudeRef.current;
-      for (let i = 0; i < BAR_COUNT; i++) {
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const levels = Array<number>(BAR_COUNT).fill(0.08);
+    let frame = 0;
+    let previousTime = 0;
+    const draw = (time: number) => {
+      const elapsed = previousTime ? Math.min(time - previousTime, 64) : 16;
+      previousTime = time;
+      elements.current.forEach((bar, i) => {
+        if (!bar) return;
         const phase = (i / BAR_COUNT) * Math.PI * 2;
-        const noise = Math.sin(Date.now() * 0.003 + phase) * 0.3;
-        const center = Math.abs(i - BAR_COUNT / 2) / (BAR_COUNT / 2);
-        const centerBoost = 1 - center * 0.6;
-        const target = Math.max(
-          0.08,
-          amp * centerBoost * (0.7 + noise * 0.3) * 3,
-        );
-        bars[i] =
-          target > bars[i]
-            ? bars[i] + (target - bars[i]) * 0.4
-            : bars[i] + (target - bars[i]) * 0.12;
-      }
-      frameRef.current = requestAnimationFrame(animate);
+        const noise = motion.matches ? 0 : Math.sin(time * 0.003 + phase) * 0.3;
+        const centerBoost = 1 - Math.abs(i - BAR_COUNT / 2) / (BAR_COUNT / 2) * 0.6;
+        const target = Math.max(0.08, Math.min(1, amplitudeRef.current * centerBoost * (0.7 + noise * 0.3) * 3));
+        const smoothing = 1 - Math.exp(-elapsed / (target > levels[i] ? 35 : 120));
+        levels[i] = motion.matches ? target : levels[i] + (target - levels[i]) * smoothing;
+        // Paint at display cadence without React rerenders or changing bar layout.
+        bar.style.transform = `scaleY(${levels[i]})`;
+        bar.style.opacity = String(0.5 + levels[i] * 0.5);
+      });
+      frame = requestAnimationFrame(draw);
     };
-
-    frameRef.current = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frameRef.current);
+    frame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(frame);
   }, [isActive]);
 
   return (
-    <div
-      className={cn("flex items-center justify-center gap-[2.5px]", className)}
-    >
-      {Array.from({ length: BAR_COUNT }).map((_, i) => {
-        const height = isActive
-          ? Math.max(8, Math.min(100, (barsRef.current[i] || 0) * 100))
-          : 8;
-
-        return (
-          <div
-            key={i}
-            className="w-[2.5px] rounded-full transition-all"
-            style={{
-              height: `${height}%`,
-              background: isActive
-                ? "var(--color-accent)"
-                : "var(--color-border)",
-              opacity: isActive ? 0.5 + (height / 100) * 0.5 : 0.2,
-              transitionDuration: isActive ? "60ms" : "300ms",
-              transitionTimingFunction: "ease-out",
-            }}
-          />
-        );
-      })}
+    <div className={cn("flex items-center justify-center gap-[2.5px]", className)} aria-hidden="true">
+      {Array.from({ length: BAR_COUNT }, (_, i) => (
+        <div
+          key={i}
+          ref={(element) => { elements.current[i] = element; }}
+          className="waveform-bar w-[2.5px] h-full rounded-full"
+          style={{ background: isActive ? "var(--color-accent)" : "var(--color-border)" }}
+        />
+      ))}
     </div>
   );
 }

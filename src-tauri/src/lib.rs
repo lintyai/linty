@@ -10,6 +10,8 @@ mod clipboard;
 mod corrections;
 #[cfg(target_os = "macos")]
 mod fnkey;
+mod history;
+mod history_db;
 mod paste;
 #[cfg(target_os = "macos")]
 mod permissions;
@@ -724,7 +726,12 @@ async fn request_microphone() -> bool {
 
 // Deletes multi-GB model files — must not run on the main thread.
 #[tauri::command(async)]
-fn reset_all_data(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn reset_all_data(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    history: tauri::State<'_, history::HistoryState>,
+) -> Result<(), String> {
+    let _history_lock = history.0.lock().map_err(|e| e.to_string())?;
     let data_dir = app
         .path()
         .app_data_dir()
@@ -741,6 +748,8 @@ fn reset_all_data(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> R
     // Delete history, corrections and dictionary stores
     for (name, label) in [
         ("linty-history.json", "history"),
+        (history_db::DATABASE, "history database"),
+        ("linty-history.sqlite3-journal", "history journal"),
         ("linty-corrections.json", "corrections"),
         ("linty-dictionary.json", "dictionary"),
     ] {
@@ -1284,8 +1293,10 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_nspanel::init())
         .manage(AppState::new())
+        .manage(history::HistoryState::default())
         // macOS app menu bar (Linty + Edit)
         .menu(|app| {
             let about = PredefinedMenuItem::about(app, Some("About Linty"), None)?;
@@ -1371,6 +1382,21 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            history::history_snapshot,
+            history::history_query,
+            history::history_get,
+            history::history_save,
+            history::history_patch,
+            history::history_delete,
+            history::history_restore,
+            history::history_clear,
+            history::history_retention_preview,
+            history::history_set_retention,
+            history::history_usage,
+            history::history_usage_summary,
+            history::history_corrections,
+            history::history_add_correction,
+            history::history_export,
             start_recording,
             stop_recording,
             transcribe_buffer,

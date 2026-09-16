@@ -15,7 +15,6 @@ import { isSuggestionReady } from "@/lib/dictionary.util";
 export function useDictionary() {
   const entries = useAppStore((s) => s.dictionaryEntries);
   const suggestions = useAppStore((s) => s.dictionarySuggestions);
-  const corrections = useAppStore((s) => s.corrections);
   const loaded = useAppStore((s) => s.dictionaryLoaded);
 
   useEffect(() => {
@@ -29,7 +28,6 @@ export function useDictionary() {
     readySuggestions: suggestions.filter(isSuggestionReady),
     /** Everything seen once that is still waiting for a second sighting. */
     pendingSuggestions: suggestions.filter((s) => !isSuggestionReady(s)),
-    corrections,
     loaded,
     addEntry: addDictionaryEntry,
     setEntryEnabled: setDictionaryEntryEnabled,

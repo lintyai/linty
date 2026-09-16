@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { useAppStore } from "@/store/app.store";
 
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
@@ -12,7 +12,7 @@ function resolveTheme(preference: string, systemIsDark: boolean): "dark" | "ligh
 export function useTheme() {
   const theme = useAppStore((s) => s.theme);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const mq = window.matchMedia(MEDIA_QUERY);
     let firstFrame = 0;
     let secondFrame = 0;

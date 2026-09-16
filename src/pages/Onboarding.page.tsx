@@ -1,3 +1,4 @@
+import { BrandMark, SoundPattern } from "@/components/shared/BrandMark.component";
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -40,6 +41,8 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
       {/* Drag region */}
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-20 h-[52px]" />
 
+      <div className="setup-brand"><BrandMark /><span>Linty</span></div>
+      <SoundPattern />
       <div className="onboarding-content">
         {step === "welcome" && <WelcomeStep onNext={() => setStep("microphone")} />}
         {step === "microphone" && (
@@ -77,7 +80,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col items-center text-center animate-page-enter">
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/15 mb-5">
-        <Mic size={28} className="text-accent" />
+        <BrandMark />
       </div>
 
       <h1 className="text-[22px] font-bold text-text-primary mb-2">
@@ -95,7 +98,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
           "flex items-center gap-2 rounded-xl px-6 py-2.5 text-[14px] font-semibold",
           "bg-accent text-white",
           "hover:bg-accent-soft active:scale-[0.97]",
-          "transition-all duration-150",
+          "transition-interaction duration-150",
         )}
       >
         Get Started
@@ -192,7 +195,7 @@ function MicrophoneStep({ onNext }: { onNext: () => void }) {
               "flex items-center gap-1.5 rounded-xl px-5 py-2 text-[13px] font-medium",
               "bg-accent text-white",
               "hover:bg-accent-soft active:scale-[0.97]",
-              "transition-all duration-150",
+              "transition-interaction duration-150",
             )}
           >
             Open System Settings
@@ -319,7 +322,7 @@ function AccessibilityStep({ onNext }: { onNext: () => void }) {
               "flex items-center gap-1.5 rounded-xl px-5 py-2 text-[13px] font-medium",
               "bg-bg-elevated border border-border text-text-secondary",
               "hover:bg-bg-hover hover:text-text-primary active:scale-[0.97]",
-              "transition-all duration-150",
+              "transition-interaction duration-150",
             )}
           >
             Open System Settings
@@ -379,7 +382,7 @@ function TriggerStep({ onNext }: { onNext: () => void }) {
           "flex items-center gap-2 rounded-xl px-6 py-2.5 text-[14px] font-semibold",
           "bg-accent text-white",
           "hover:bg-accent-soft active:scale-[0.97]",
-          "transition-all duration-150",
+          "transition-interaction duration-150",
         )}
       >
         Continue
@@ -558,8 +561,8 @@ function ModelDownloadStep({
           <div className="flex items-center gap-3 mb-2">
             <div className="flex-1 h-2 rounded-full bg-bg-active overflow-hidden">
               <div
-                className="h-full rounded-full bg-accent transition-all duration-300"
-                style={{ width: `${progress}%` }}
+                className="progress-fill h-full rounded-full bg-accent"
+                style={{ transform: `scaleX(${progress / 100})` }}
               />
             </div>
             <span className="text-[13px] font-medium text-text-secondary tabular-nums w-10 text-right">
@@ -606,7 +609,7 @@ function ModelDownloadStep({
               "flex items-center gap-2 rounded-xl px-5 py-2 text-[13px] font-medium",
               "bg-accent text-white",
               "hover:bg-accent-soft active:scale-[0.97]",
-              "transition-all duration-150",
+              "transition-interaction duration-150",
             )}
           >
             <RefreshCw size={14} />
@@ -704,7 +707,7 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
               "w-full rounded-xl border border-border bg-bg-elevated pl-9 pr-10 py-2.5",
               "text-[13px] text-text-primary placeholder:text-text-muted",
               "focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent",
-              "transition-all duration-150",
+              "transition-interaction duration-150",
             )}
           />
           <button
@@ -727,7 +730,7 @@ function CloudSetupStep({ onNext }: { onNext: () => void }) {
           "flex items-center gap-2 rounded-xl px-6 py-2.5 text-[14px] font-semibold",
           "bg-accent text-white",
           "hover:bg-accent-soft active:scale-[0.97]",
-          "transition-all duration-150",
+          "transition-interaction duration-150",
           "disabled:opacity-50 disabled:cursor-not-allowed",
         )}
       >
@@ -779,7 +782,7 @@ function DoneStep({ onComplete }: { onComplete: () => void }) {
           "flex items-center gap-2 rounded-xl px-6 py-2.5 text-[14px] font-semibold",
           "bg-accent text-white",
           "hover:bg-accent-soft active:scale-[0.97]",
-          "transition-all duration-150",
+          "transition-interaction duration-150",
         )}
       >
         Start Using Linty

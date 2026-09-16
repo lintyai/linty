@@ -2,20 +2,21 @@ import { useMemo, useState } from "react";
 import {
   BookOpen,
   BookPlus,
-  Check,
   Lightbulb,
   Settings as SettingsIcon,
-  SpellCheck,
   Trash2,
   X,
 } from "lucide-react";
 import { useDictionary } from "@/hooks/useDictionary.hook";
-import { useHistory } from "@/hooks/useHistory.hook";
 import { useSettings } from "@/hooks/useSettings.hook";
 import { useToast } from "@/hooks/useToast.hook";
 import { useAppStore } from "@/store/app.store";
-import { StatCard } from "@/components/shared/StatCard.component";
-import { correctionsPer100Words, timesHelped } from "@/lib/dictionary.util";
+import { Metric } from "@/components/shared/Metric.component";
+import {
+  PageHeader,
+  PageLayout,
+} from "@/components/shared/PageLayout.component";
+import { timesHelped } from "@/lib/dictionary.util";
 import { formatDayLabel } from "@/lib/usage.util";
 import { cn } from "@/lib/utils";
 import type { DictionaryEntry } from "@/types/correction.types";
@@ -34,7 +35,6 @@ export function DictionaryPage() {
     entries,
     readySuggestions,
     pendingSuggestions,
-    corrections,
     loaded,
     addEntry,
     setEntryEnabled,
@@ -44,21 +44,22 @@ export function DictionaryPage() {
   } = useDictionary();
   const { dictionaryEnabled, autoLearnWords } = useSettings();
   const parakeetStatus = useAppStore((s) => s.parakeetVocabularyStatus);
-  const { allTranscripts } = useHistory();
+  const { correctionCount, correctionRate: rate } = useAppStore(s=>s.historySnapshot);
   const setSettingsSection = useAppStore((s) => s.setSettingsSection);
   const { success, error } = useToast();
   const [right, setRight] = useState("");
   const [wrong, setWrong] = useState("");
 
-  const totalWords = useMemo(
-    () => allTranscripts.reduce((sum, t) => sum + t.wordCount, 0),
-    [allTranscripts],
+  const recognized = entries.reduce(
+    (sum, e) => sum + (e.timesRecognized ?? 0),
+    0,
   );
-  const rate = correctionsPer100Words(corrections, totalWords);
-  const recognized = entries.reduce((sum, e) => sum + (e.timesRecognized ?? 0), 0);
   const corrected = entries.reduce((sum, e) => sum + e.timesApplied, 0);
   const sortedEntries = useMemo(
-    () => [...entries].sort((a, b) => timesHelped(b) - timesHelped(a) || b.createdAt - a.createdAt),
+    () =>
+      [...entries].sort(
+        (a, b) => timesHelped(b) - timesHelped(a) || b.createdAt - a.createdAt,
+      ),
     [entries],
   );
 
@@ -66,7 +67,10 @@ export function DictionaryPage() {
     event.preventDefault();
     const rightForm = right.trim();
     if (!rightForm) return;
-    const wrongForms = wrong.split(",").map((w) => w.trim()).filter(Boolean);
+    const wrongForms = wrong
+      .split(",")
+      .map((w) => w.trim())
+      .filter(Boolean);
     try {
       await addEntry(rightForm, wrongForms, "manual");
       setRight("");
@@ -78,55 +82,212 @@ export function DictionaryPage() {
   };
 
   const run = (work: Promise<void>, done: string) =>
-    work.then(() => success(done)).catch(() => error("Could not update the dictionary. Please try again."));
+    work
+      .then(() => success(done))
+      .catch(() => error("Could not update the dictionary. Please try again."));
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="dashboard-scroll">
-        <div className="dashboard-heading">
-          <div>
-            <h1>Dictionary</h1>
-            <p className="text-text-secondary">Words Linty should always get right, learned from what you fix.</p>
-          </div>
-          <button className="dictionary-status" onClick={() => setSettingsSection("privacy")} title="Change in Settings → Privacy & storage">
+    <PageLayout className="dictionary-page">
+      <PageHeader
+        page="dictionary"
+        actions={
+          <button
+            className="dictionary-status"
+            onClick={() => setSettingsSection("privacy")}
+            title="Change in Settings → Privacy & storage"
+          >
             <SettingsIcon size={13} />
             {dictionaryEnabled ? "Applying to new dictations" : "Paused"}
             {" · "}
-            {autoLearnWords ? "learning automatically" : "asking before learning"}
+            {autoLearnWords
+              ? "learning automatically"
+              : "asking before learning"}
           </button>
-        </div>
+        }
+      />
 
-        <div className="stat-grid">
-          <StatCard
-            icon={<BookOpen size={17} />}
-            value={number(entries.length)}
-            label="Words in dictionary"
-            detail={`${number(entries.filter((e) => e.enabled).length)} active`}
-          />
-          <StatCard
-            icon={<Lightbulb size={17} />}
-            value={number(readySuggestions.length)}
-            label="Suggested"
-            detail={pendingSuggestions.length ? `${number(pendingSuggestions.length)} more waiting for a second sighting` : "From your corrections"}
-          />
-          <StatCard
-            icon={<SpellCheck size={17} />}
-            value={rate === null ? "—" : rate.toFixed(1)}
-            label="Corrections per 100 words"
-            detail={corrections.length ? `${number(corrections.length)} correction${corrections.length === 1 ? "" : "s"} recorded` : "Edit a transcript in History to start"}
-          />
-          <StatCard
-            icon={<Check size={17} />}
-            value={number(recognized + corrected)}
-            label="Times helped"
-            detail={`${number(recognized)} recognised by the engine · ${number(corrected)} corrected after`}
-          />
-        </div>
+      <div className="stat-grid">
+        <Metric
+          value={number(entries.length)}
+          label="Words in dictionary"
+          detail={`${number(entries.filter((e) => e.enabled).length)} active`}
+        />
+        <Metric
+          value={number(readySuggestions.length)}
+          label="Suggested"
+          detail={
+            pendingSuggestions.length
+              ? `${number(pendingSuggestions.length)} more waiting for a second sighting`
+              : "From your corrections"
+          }
+        />
+        <Metric
+          value={rate === null ? "—" : rate.toFixed(1)}
+          label="Corrections per 100 words"
+          detail={
+            correctionCount
+              ? `${number(correctionCount)} correction${correctionCount === 1 ? "" : "s"} recorded`
+              : "Edit a transcript in History to start"
+          }
+        />
+        <Metric
+          value={number(recognized + corrected)}
+          label="Times helped"
+          detail={`${number(recognized)} recognised by the engine · ${number(corrected)} corrected after`}
+        />
+      </div>
 
-        <section className="insight-card applications-card">
+      <div className="dictionary-layout">
+        <section className="dictionary-entries">
           <div className="section-heading">
             <div>
-              <h2><Lightbulb size={16} className="text-text-muted" /> Suggested</h2>
+              <h2>
+                <BookOpen size={16} className="text-text-muted" /> Your
+                dictionary
+              </h2>
+              <p>
+                Applied to every dictation and sent to the speech engine as
+                hints
+              </p>
+            </div>
+            <span className="metric-pill">
+              {number(entries.length)} word{entries.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {sortedEntries.length ? (
+            <div className="app-table-scroll">
+              <table className="app-usage-table is-dense dictionary-table">
+                <thead>
+                  <tr>
+                    <th>Word</th>
+                    <th>Heard as</th>
+                    <th title="The speech engine got the word right because your dictionary was handed to it">
+                      Recognised
+                    </th>
+                    <th title="Linty replaced a misheard spelling with this word after transcription">
+                      Corrected
+                    </th>
+                    <th>Origin</th>
+                    <th>On</th>
+                    <th>
+                      <span className="sr-only">Remove</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedEntries.map((e) => (
+                    <tr
+                      key={e.entryId}
+                      className={cn(!e.enabled && "is-disabled")}
+                    >
+                      <td>
+                        <strong>{e.right}</strong>
+                      </td>
+                      <td className="dictionary-wrong">
+                        {e.wrong.length ? (
+                          e.wrong.join(", ")
+                        ) : (
+                          <span className="text-text-muted">hint only</span>
+                        )}
+                      </td>
+                      <td>{number(e.timesRecognized ?? 0)}</td>
+                      <td>{number(e.timesApplied)}</td>
+                      <td className="text-text-muted">
+                        {ORIGIN_LABEL[e.origin]}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={e.enabled}
+                          aria-label={`${e.enabled ? "Disable" : "Enable"} ${e.right}`}
+                          className={cn("mini-switch", e.enabled && "is-on")}
+                          onClick={() =>
+                            run(
+                              setEntryEnabled(e.entryId, !e.enabled),
+                              e.enabled
+                                ? `“${e.right}” paused`
+                                : `“${e.right}” enabled`,
+                            )
+                          }
+                        >
+                          <i />
+                        </button>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`Remove ${e.right}`}
+                          onClick={() =>
+                            run(removeEntry(e.entryId), `“${e.right}” removed`)
+                          }
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : loaded ? (
+            <div className="app-empty">
+              <h3>Your dictionary is empty</h3>
+              <p>
+                Add a word below, or accept a suggestion once Linty has seen you
+                correct one.
+              </p>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="dictionary-add">
+          <div className="section-heading">
+            <div>
+              <h2>
+                <BookPlus size={16} className="text-text-muted" /> Add a word
+              </h2>
+              <p>The spelling you want, and the ways it has come out wrong</p>
+            </div>
+          </div>
+          <form className="dictionary-form" onSubmit={submitNewWord}>
+            <label>
+              <span className="field-label">Correct spelling</span>
+              <input
+                id="dictionary-right"
+                value={right}
+                onChange={(e) => setRight(e.target.value)}
+                placeholder="Tauri"
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              <span className="field-label">Heard as (comma-separated, optional)</span>
+              <input
+                id="dictionary-wrong"
+                value={wrong}
+                onChange={(e) => setWrong(e.target.value)}
+                placeholder="Tari, Tory"
+                spellCheck={false}
+              />
+            </label>
+            <button
+              type="submit"
+              className="standard-button primary-button"
+              disabled={!right.trim()}
+            >
+              <BookPlus size={12} /> Add to dictionary
+            </button>
+          </form>
+        </section>
+
+        <section className="dictionary-suggestions">
+          <div className="section-heading">
+            <div>
+              <h2>
+                <Lightbulb size={16} className="text-text-muted" /> Suggested
+              </h2>
               <p>Corrections you made that look like words worth remembering</p>
             </div>
           </div>
@@ -139,14 +300,32 @@ export function DictionaryPage() {
                     <span aria-hidden="true">→</span>
                     <strong>{s.right}</strong>
                     <span className="dictionary-note">
-                      seen {s.seenCount}×, last {formatDayLabel(s.lastSeenAt).toLowerCase()}
+                      seen {s.seenCount}×, last{" "}
+                      {formatDayLabel(s.lastSeenAt).toLowerCase()}
                     </span>
                   </div>
                   <div className="dictionary-actions">
-                    <button className="standard-button primary-button" onClick={() => run(acceptSuggestion(s.suggestionId), `“${s.right}” added to your dictionary`)}>
+                    <button
+                      className="standard-button primary-button"
+                      onClick={() =>
+                        run(
+                          acceptSuggestion(s.suggestionId),
+                          `“${s.right}” added to your dictionary`,
+                        )
+                      }
+                    >
                       <BookPlus size={12} /> Add
                     </button>
-                    <button className="standard-button" aria-label={`Dismiss suggestion ${s.right}`} onClick={() => run(dismissSuggestion(s.suggestionId), "Suggestion dismissed")}>
+                    <button
+                      className="standard-button"
+                      aria-label={`Dismiss suggestion ${s.right}`}
+                      onClick={() =>
+                        run(
+                          dismissSuggestion(s.suggestionId),
+                          "Suggestion dismissed",
+                        )
+                      }
+                    >
                       <X size={12} /> Dismiss
                     </button>
                   </div>
@@ -157,104 +336,24 @@ export function DictionaryPage() {
             <div className="app-empty">
               <h3>Nothing to review</h3>
               <p>
-                {corrections.length
+                {correctionCount
                   ? "New suggestions appear after a word is corrected twice, or once for names."
                   : "Open a transcript in History, choose Edit, and fix a word. Or turn on “Learn from corrections in other apps” in Settings and fix words where you dictate."}
               </p>
             </div>
           ) : null}
         </section>
-
-        <section className="insight-card applications-card">
-          <div className="section-heading">
-            <div>
-              <h2><BookPlus size={16} className="text-text-muted" /> Add a word</h2>
-              <p>The spelling you want, and the ways it has come out wrong</p>
-            </div>
-          </div>
-          <form className="dictionary-form" onSubmit={submitNewWord}>
-            <label>
-              <span>Correct spelling</span>
-              <input id="dictionary-right" value={right} onChange={(e) => setRight(e.target.value)} placeholder="Tauri" spellCheck={false} />
-            </label>
-            <label>
-              <span>Heard as (comma-separated, optional)</span>
-              <input id="dictionary-wrong" value={wrong} onChange={(e) => setWrong(e.target.value)} placeholder="Tari, Tory" spellCheck={false} />
-            </label>
-            <button type="submit" className="standard-button primary-button" disabled={!right.trim()}>
-              <BookPlus size={12} /> Add to dictionary
-            </button>
-          </form>
-        </section>
-
-        <section className="insight-card applications-card">
-          <div className="section-heading">
-            <div>
-              <h2><BookOpen size={16} className="text-text-muted" /> Your dictionary</h2>
-              <p>Applied to every dictation and sent to the speech engine as hints</p>
-            </div>
-            <span className="metric-pill">{number(entries.length)} word{entries.length === 1 ? "" : "s"}</span>
-          </div>
-          {sortedEntries.length ? (
-            <div className="app-table-scroll">
-              <table className="app-usage-table is-dense dictionary-table">
-                <thead>
-                  <tr>
-                    <th>Word</th>
-                    <th>Heard as</th>
-                    <th title="The speech engine got the word right because your dictionary was handed to it">Recognised</th>
-                    <th title="Linty replaced a misheard spelling with this word after transcription">Corrected</th>
-                    <th>Origin</th>
-                    <th>On</th>
-                    <th><span className="sr-only">Remove</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedEntries.map((e) => (
-                    <tr key={e.entryId} className={cn(!e.enabled && "is-disabled")}>
-                      <td><strong>{e.right}</strong></td>
-                      <td className="dictionary-wrong">{e.wrong.length ? e.wrong.join(", ") : <span className="text-text-muted">hint only</span>}</td>
-                      <td>{number(e.timesRecognized ?? 0)}</td>
-                      <td>{number(e.timesApplied)}</td>
-                      <td className="text-text-muted">{ORIGIN_LABEL[e.origin]}</td>
-                      <td>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={e.enabled}
-                          aria-label={`${e.enabled ? "Disable" : "Enable"} ${e.right}`}
-                          className={cn("mini-switch", e.enabled && "is-on")}
-                          onClick={() => run(setEntryEnabled(e.entryId, !e.enabled), e.enabled ? `“${e.right}” paused` : `“${e.right}” enabled`)}
-                        >
-                          <i />
-                        </button>
-                      </td>
-                      <td>
-                        <button type="button" className="icon-button" aria-label={`Remove ${e.right}`} onClick={() => run(removeEntry(e.entryId), `“${e.right}” removed`)}>
-                          <Trash2 size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : loaded ? (
-            <div className="app-empty">
-              <h3>Your dictionary is empty</h3>
-              <p>Add a word above, or accept a suggestion once Linty has seen you correct one.</p>
-            </div>
-          ) : null}
-        </section>
-
-        <p className="dashboard-footnote">
-          Your dictionary stays on this Mac. Whole words are replaced before pasting, and the most-used
-          entries are sent to the speech engine as spelling hints. Reset all data clears it.
-          {parakeetStatus === "ready" && " Parakeet’s vocabulary model is ready."}
-          {parakeetStatus === "preparing" && " Preparing Parakeet’s vocabulary model (about 100 MB, once)…"}
-          {parakeetStatus === "error" && " Parakeet’s vocabulary model could not be prepared; words are still fixed after transcription."}
-        </p>
       </div>
-    </div>
+      <p className="dashboard-footnote">
+        Your dictionary stays on this Mac. Whole words are replaced before
+        pasting, and the most-used entries are sent to the speech engine as
+        spelling hints. Reset all data clears it.
+        {parakeetStatus === "ready" && " Parakeet’s vocabulary model is ready."}
+        {parakeetStatus === "preparing" &&
+          " Preparing Parakeet’s vocabulary model (about 100 MB, once)…"}
+        {parakeetStatus === "error" &&
+          " Parakeet’s vocabulary model could not be prepared; words are still fixed after transcription."}
+      </p>
+    </PageLayout>
   );
 }

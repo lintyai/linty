@@ -1,71 +1,133 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { useAppStore } from "@/store/app.store";
 import {
   initializeHistory,
   saveTranscript,
-  updateHistory,
+  removeTranscript,
+  restoreTranscript,
+  clearHistory,
+  queryHistory,
+  HISTORY_PAGE_SIZE,
 } from "@/services/history.service";
-import type { TranscriptRecord } from "@/types/transcript.types";
+import type { HistoryPageResult } from "@/types/history.types";
 
-export function useHistory() {
-  const transcripts = useAppStore((s) => s.transcripts);
+export function useHistory(paginated = false) {
+  const snapshot = useAppStore((s) => s.historySnapshot);
+  const recent = useAppStore((s) => s.transcripts);
+  const loaded = useAppStore((s) => s.historyLoaded);
+  const loadError = useAppStore((s) => s.historyError);
   const searchQuery = useAppStore((s) => s.searchQuery);
   const selectedTranscriptId = useAppStore((s) => s.selectedTranscriptId);
   const setSearchQuery = useAppStore((s) => s.setSearchQuery);
   const setSelectedTranscriptId = useAppStore((s) => s.setSelectedTranscriptId);
+  const [page, setPage] = useState(0);
+  const [result, setResult] = useState<HistoryPageResult>({
+    records: [],
+    total: 0,
+  });
+  const [loading, setLoading] = useState(paginated);
+  const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  // A changed query starts at page one, including before the effect resets page state.
+  const [pageQuery, setPageQuery] = useState(searchQuery);
+  const currentPage = pageQuery === searchQuery ? page : 0;
   useEffect(() => {
-    initializeHistory().catch((error) =>
-      console.error("Failed to load history:", error),
-    );
+    setPage(0);
+    setPageQuery(searchQuery);
+    setSelectedTranscriptId(null);
+  }, [searchQuery, setSelectedTranscriptId]);
+  useEffect(() => {
+    void initializeHistory().catch(() => {});
   }, []);
-
-  const persistTranscripts = useCallback(
-    (records: TranscriptRecord[]) => updateHistory(() => records),
-    [],
-  );
+  useEffect(() => {
+    if (!paginated) return;
+    let stale = false;
+    setLoading(true);
+    setError(null);
+    const timer = setTimeout(
+      () => {
+        queryHistory(searchQuery, currentPage * HISTORY_PAGE_SIZE)
+          .then((data) => {
+            if (stale) return;
+            const lastPage = Math.max(
+              0,
+              Math.ceil(data.total / HISTORY_PAGE_SIZE) - 1,
+            );
+            if (currentPage > lastPage) {
+              setPage(lastPage);
+              return;
+            }
+            setResult(data);
+            setLoading(false);
+          })
+          .catch((e) => {
+            if (!stale) {
+              setError(String(e));
+              setLoading(false);
+            }
+          });
+      },
+      searchQuery ? 150 : 0,
+    );
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [paginated, searchQuery, currentPage, snapshot.revision, retry]);
   const deleteTranscript = useCallback(async (id: string) => {
-    const record = useAppStore.getState().transcripts.find((item) => item.transcriptId === id);
-    await updateHistory((records) => records.filter((t) => t.transcriptId !== id));
-    if (!record) return;
+    const deleted = await removeTranscript(id);
+    if (!deleted) return;
     let restored = false;
     useAppStore.getState().addToast({
-      type: "success", message: "Transcript deleted", action: {
-        label: "Undo", onClick: async function undoTranscript() {
+      type: "success",
+      message: "Transcript deleted",
+      action: {
+        label: "Undo",
+        onClick: async function undoTranscript() {
           if (restored) return;
           restored = true;
           try {
-            await updateHistory((records) => records.some((item) => item.transcriptId === id) ? records : [...records, record].sort((a, b) => b.timestamp - a.timestamp));
+            await restoreTranscript(deleted);
             const state = useAppStore.getState();
-            state.toasts.filter((toast) => toast.action?.onClick === undoTranscript).forEach((toast) => state.removeToast(toast.toastId));
+            state.toasts
+              .filter((t) => t.action?.onClick === undoTranscript)
+              .forEach((t) => state.removeToast(t.toastId));
             state.addToast({ type: "success", message: "Transcript restored" });
           } catch {
             restored = false;
-            useAppStore.getState().addToast({ type: "error", message: "Could not restore transcript. Try Undo again." });
+            useAppStore
+              .getState()
+              .addToast({
+                type: "error",
+                message: "Could not restore transcript. Try Undo again.",
+              });
           }
         },
       },
     });
   }, []);
-  const clearAll = useCallback(() => updateHistory(() => []), []);
-  const query = searchQuery.trim().toLowerCase();
-  const filteredTranscripts = query
-    ? transcripts.filter((t) =>
-        `${t.finalText} ${t.application?.name ?? ""} ${t.application?.bundleId ?? ""}`
-          .toLowerCase()
-          .includes(query),
-      )
-    : transcripts;
-
   return {
-    transcripts: filteredTranscripts,
-    allTranscripts: transcripts,
+    transcripts: paginated ? result.records : recent,
+    total: snapshot.total,
+    totalMatches: paginated ? result.total : snapshot.total,
+    page: currentPage,
+    pageSize: HISTORY_PAGE_SIZE,
+    setPage: (next: number) => {
+      setSelectedTranscriptId(null);
+      setPage(next);
+    },
+    loading: paginated ? loading : !loaded,
+    error: error || loadError,
+    retry: () => {
+      void initializeHistory().catch(() => {});
+      setRetry((n) => n + 1);
+    },
     searchQuery,
     selectedTranscriptId,
     setSearchQuery,
     setSelectedTranscriptId,
     saveTranscript,
     deleteTranscript,
-    clearAll,
-    persistTranscripts,
+    clearAll: clearHistory,
   };
 }

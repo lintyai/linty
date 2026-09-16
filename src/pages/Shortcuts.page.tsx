@@ -3,9 +3,16 @@ import {
   TRIGGER_KEY_OPTIONS,
   FALLBACK_TRIGGER_ACCELERATOR,
 } from "@/store/slices/settings.slice";
-import { isModifierHoldTrigger, formatTriggerDisplay } from "@/lib/trigger.util";
+import {
+  isModifierHoldTrigger,
+  formatTriggerDisplay,
+} from "@/lib/trigger.util";
 import { TriggerKeyPicker } from "@/components/shared/TriggerKeyPicker.component";
-import { cn } from "@/lib/utils";
+import {
+  PageLayout,
+  PageHeader,
+} from "@/components/shared/PageLayout.component";
+import { formatTriggerKeycap } from "@/lib/trigger.util";
 
 const STATIC_SHORTCUTS = [
   { action: "Search Linty", mac: "⌘K" },
@@ -28,8 +35,9 @@ export function ShortcutsPage() {
           {
             action: "Push-to-talk (alt)",
             mac:
-              TRIGGER_KEY_OPTIONS.find((o) => o.value === FALLBACK_TRIGGER_ACCELERATOR)
-                ?.display ?? "⌘⇧Space (hold)",
+              TRIGGER_KEY_OPTIONS.find(
+                (o) => o.value === FALLBACK_TRIGGER_ACCELERATOR,
+              )?.display ?? "⌘⇧Space (hold)",
           },
         ]
       : []),
@@ -37,47 +45,39 @@ export function ShortcutsPage() {
   ];
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Content */}
-      <div className="preferences-scroll">
-        <div className="preferences-content">
-          <div className="page-intro"><h2>A shortcut to your words</h2><p>Choose a dictation trigger and navigate Linty from your keyboard.</p></div>
-          <div className="mb-2.5">
-            <span className="text-[13px] font-semibold text-text-primary">
-              Trigger Key
-            </span>
-          </div>
-          <TriggerKeyPicker
-            value={triggerKey}
-            onChange={saveTriggerKey}
-            className="mb-6"
-          />
-
-          <div className="mb-2.5">
-            <span className="text-[13px] font-semibold text-text-primary">
-              Shortcuts
-            </span>
-          </div>
-          <div className="rounded-[10px] bg-bg-elevated border border-border-subtle overflow-hidden">
-            <div className="flex flex-col">
-              {shortcuts.map((s, i) => (
-                <div
-                  key={s.action}
-                  className={cn(
-                    "flex items-center justify-between px-4 py-[10px]",
-                    i < shortcuts.length - 1 && "border-b border-border-subtle",
-                  )}
-                >
-                  <span className="text-[13px] text-text-primary">{s.action}</span>
-                  <kbd className="rounded-md bg-bg-hover border border-border-subtle px-2.5 py-1 text-[12px] font-medium text-text-secondary tabular-nums">
-                    {s.mac}
-                  </kbd>
-                </div>
-              ))}
-            </div>
-          </div>
+    <PageLayout reading>
+      <PageHeader page="shortcuts" />
+      <div className="shortcuts-hero">
+        <kbd>{formatTriggerKeycap(triggerKey)}</kbd>
+        <div>
+          <h2>Hold, speak, release.</h2>
+          <p>Your words appear where your cursor is.</p>
         </div>
       </div>
-    </div>
+      <div className="mb-2.5">
+        <span className="text-[13px] font-semibold text-text-primary">
+          Trigger Key
+        </span>
+      </div>
+      <TriggerKeyPicker
+        value={triggerKey}
+        onChange={saveTriggerKey}
+        className="mb-6"
+      />
+
+      <div className="mb-2.5">
+        <span className="text-[13px] font-semibold text-text-primary">
+          Shortcuts
+        </span>
+      </div>
+      <div className="shortcut-list">
+        {shortcuts.map((shortcut) => (
+          <div key={shortcut.action}>
+            <span>{shortcut.action}</span>
+            <kbd>{shortcut.mac}</kbd>
+          </div>
+        ))}
+      </div>
+    </PageLayout>
   );
 }

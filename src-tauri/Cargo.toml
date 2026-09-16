@@ -33,6 +33,8 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2"
 # Local STT (behind feature flag — long compile with Metal)
 whisper-rs = { version = "0.15", features = ["metal"], optional = true }
 hound = { version = "3.5", optional = true }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+tauri-plugin-dialog = "2"
 
 # macOS-only dependencies
 [target.'cfg(target_os = "macos")'.dependencies]
