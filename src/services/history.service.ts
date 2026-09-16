@@ -1,59 +1,87 @@
-import { load } from "@tauri-apps/plugin-store";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store/app.store";
-import { HISTORY_LIMIT } from "@/lib/usage.util";
 import type { TranscriptRecord } from "@/types/transcript.types";
+import type { CorrectionRecord } from "@/types/correction.types";
+import type {
+  DeletedTranscript,
+  HistoryPageResult,
+  HistoryRetention,
+  HistorySnapshot,
+} from "@/types/history.types";
 
-let storePromise: ReturnType<typeof load> | undefined;
+export const HISTORY_PAGE_SIZE = 50;
 let hydration: Promise<void> | undefined;
-let writes: Promise<void> = Promise.resolve();
-const getStore = () =>
-  (storePromise ??= load("linty-history.json", {
-    defaults: { transcripts: [] },
-    autoSave: true,
-  }).catch((error) => {
-    storePromise = undefined;
-    throw error;
-  }));
-
-export function initializeHistory() {
-  return (hydration ??= (async () => {
-    const store = await getStore();
-    const saved = await store.get<TranscriptRecord[]>("transcripts");
+let queue: Promise<unknown> = Promise.resolve();
+function serialize<T>(work: () => Promise<T>): Promise<T> {
+  const next = queue.catch(() => {}).then(work);
+  queue = next;
+  return next;
+}
+async function readSnapshot() {
+  try {
     useAppStore
       .getState()
-      .setTranscripts((saved ?? []).slice(0, HISTORY_LIMIT));
-  })().catch((error) => {
+      .setHistorySnapshot(await invoke<HistorySnapshot>("history_snapshot"));
+  } catch (error) {
+    useAppStore.getState().setHistoryError(String(error));
+    throw error;
+  }
+}
+export function initializeHistory(): Promise<void> {
+  return (hydration ??= serialize(readSnapshot).catch((error) => {
     hydration = undefined;
     throw error;
   }));
 }
-
-/** Serialize mutations so fast saves/deletes cannot overwrite one another. */
-export function updateHistory(
-  update: (records: TranscriptRecord[]) => TranscriptRecord[],
-) {
-  const next = writes
-    .catch(() => {})
-    .then(async () => {
-      await initializeHistory();
-      const records = update(useAppStore.getState().transcripts).slice(
-        0,
-        HISTORY_LIMIT,
-      );
-      const store = await getStore();
-      await store.set("transcripts", records);
-      await store.save();
-      useAppStore.getState().setTranscripts(records);
-    });
-  writes = next;
-  return next;
+export async function refreshHistory() {
+  await initializeHistory();
+  return serialize(readSnapshot);
 }
-
+export async function mutateHistory<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  await initializeHistory();
+  return serialize(async () => {
+    const result = await invoke<T>(command, args);
+    // A refresh failure must not report a committed write as a failed save/deletion.
+    await readSnapshot().catch(() => {});
+    return result;
+  });
+}
+export async function queryHistory(query: string, offset = 0) {
+  await initializeHistory();
+  return invoke<HistoryPageResult>("history_query", {
+    query,
+    offset,
+    limit: HISTORY_PAGE_SIZE,
+  });
+}
+export async function getTranscript(id: string) {
+  await initializeHistory();
+  return invoke<TranscriptRecord | null>("history_get", { id });
+}
 export const saveTranscript = (record: TranscriptRecord) =>
-  updateHistory((records) => [record, ...records]);
-
-/** Patch one saved transcript in place (used when the person edits it in History). */
-export const updateTranscript = (transcriptId: string, patch: Partial<TranscriptRecord>) =>
-  updateHistory((records) =>
-    records.map((t) => (t.transcriptId === transcriptId ? { ...t, ...patch } : t)),
-  );
+  mutateHistory<void>("history_save", { record });
+export const updateTranscript = (
+  id: string,
+  patch: Partial<TranscriptRecord>,
+) => mutateHistory<void>("history_patch", { id, patch });
+export const removeTranscript = (id: string) =>
+  mutateHistory<DeletedTranscript | null>("history_delete", { id });
+export const restoreTranscript = (deleted: DeletedTranscript) =>
+  mutateHistory<void>("history_restore", { deleted });
+export async function clearHistory() {
+  await mutateHistory<void>("history_clear");
+  useAppStore.getState().setSelectedTranscriptId(null);
+}
+export const previewRetention = (days: HistoryRetention) =>
+  invoke<number>("history_retention_preview", { days });
+export const setHistoryRetention = (days: HistoryRetention) =>
+  mutateHistory<void>("history_set_retention", { days });
+export const exportHistory = () =>
+  invoke<{ count: number; path: string } | null>("history_export");
+export async function getCorrections(id: string) {
+  await initializeHistory();
+  return invoke<CorrectionRecord[]>("history_corrections", { id });
+}

@@ -15,8 +15,8 @@ export function ConfirmResetDialogue({ open, onConfirm, onCancel }: ConfirmReset
     if (!dialog || !open) return;
     const previous = document.activeElement as HTMLElement | null;
     dialog.showModal();
-    cancelRef.current?.focus();
-    return () => { dialog.close(); previous?.focus(); };
+    cancelRef.current?.focus({ preventScroll: true });
+    return () => { dialog.close(); previous?.focus({ preventScroll: true }); };
   }, [open]);
   return (
     <dialog ref={dialogRef} className="confirmation-dialog" aria-labelledby="reset-title" aria-describedby="reset-description" onCancel={(e) => { e.preventDefault(); onCancel(); }}

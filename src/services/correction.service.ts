@@ -36,5 +36,9 @@ export async function correctText(
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content?.trim() || rawText;
+  const choice = data.choices?.[0];
+  // Long dictations can exceed the correction model's output budget. Preserve
+  // the complete transcription instead of replacing it with a partial rewrite.
+  if (choice?.finish_reason === "length") return rawText;
+  return choice?.message?.content?.trim() || rawText;
 }

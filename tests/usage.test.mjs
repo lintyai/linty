@@ -5,6 +5,7 @@ import {
   periodStart,
   summarizeUsage,
   usageByApplication,
+  applicationShareSegments,
   usageTimeline,
   formatDuration,
 } from "../src/lib/usage.util.ts";
@@ -126,4 +127,19 @@ test("duration labels keep small values and hours honest", () => {
   assert.equal(formatDuration(59.9), "59s");
   assert.equal(formatDuration(3599), "59m 59s");
   assert.equal(formatDuration(3600), "1h 0m");
+});
+
+
+test("app share segments include unattributed words and group the long tail without changing totals", () => {
+  const entries = [60,20,10,4,1].map((words,index) => record({ wordCount: words, application: { name: `App ${index}`, bundleId: `app.${index}` } }));
+  entries.push(record({wordCount:5}));
+  const apps = usageByApplication(entries);
+  const segments = applicationShareSegments(apps,100);
+  assert.deepEqual(segments.map(s => [s.name,s.words,s.share]), [
+    ["App 0",60,60],["App 1",20,20],["App 2",10,10],["Other apps",5,5],["Unattributed",5,5],
+  ]);
+  assert.equal(segments.reduce((sum,s) => sum+s.share,0),100);
+  assert.deepEqual(applicationShareSegments([...apps].reverse(),100),segments,"Distribution ranking is independent of table sort order");
+  assert.deepEqual(applicationShareSegments([],0),[]);
+  assert.deepEqual(applicationShareSegments(usageByApplication([record({wordCount:5})]),5).map(s=>[s.name,s.share]),[["Unattributed",100]]);
 });

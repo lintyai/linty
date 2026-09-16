@@ -1,16 +1,8 @@
 import type { StateCreator } from "zustand";
 
-export type AppView = "history" | "apps" | "dictionary" | "settings" | "dashboard" | "system-check" | "shortcuts" | "about";
-export type SettingsSection = "general" | "audio" | "models" | "language" | "appearance" | "privacy";
-
-export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string }[] = [
-  { id: "general", label: "Dictation", description: "Choose how your words are refined and delivered." },
-  { id: "audio", label: "Audio", description: "Your microphone and recording quality." },
-  { id: "models", label: "Speech engine", description: "Choose where and how your speech is transcribed." },
-  { id: "language", label: "Language", description: "Set the language you dictate in." },
-  { id: "appearance", label: "Appearance", description: "Make Linty feel at home on your Mac." },
-  { id: "privacy", label: "Privacy & storage", description: "Understand and control what Linty saves." },
-];
+import type { AppView, SettingsSection } from "@/config/navigation.config";
+export type { AppView, SettingsSection } from "@/config/navigation.config";
+export { SETTINGS_SECTIONS } from "@/config/navigation.config";
 
 export interface NavigationSlice {
   currentView: AppView;

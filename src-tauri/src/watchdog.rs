@@ -7,8 +7,6 @@ const TICK_INTERVAL_SECS: u64 = 2;
 /// Callbacks/sec threshold — CoreAudio typically fires ~93/sec at 16kHz.
 /// 1000/sec sustained for 2 consecutive ticks indicates a runaway callback.
 const MAX_CALLBACKS_PER_SEC: u64 = 1000;
-/// Maximum recording duration before auto-stop (5 minutes).
-const MAX_RECORDING_DURATION_SECS: u64 = 5 * 60;
 /// Re-check fn-key monitor liveness every N ticks (15 × 2s = 30s).
 #[cfg(target_os = "macos")]
 const MONITOR_CHECK_EVERY_TICKS: u64 = 15;
@@ -48,9 +46,7 @@ pub fn start(app: tauri::AppHandle) {
             }
 
             // ── Check 1: Callback rate ──
-            let count = state
-                .audio_callback_count
-                .swap(0, Ordering::Relaxed);
+            let count = state.audio_callback_count.swap(0, Ordering::Relaxed);
             let rate = count / TICK_INTERVAL_SECS;
 
             if rate > MAX_CALLBACKS_PER_SEC {
@@ -70,26 +66,10 @@ pub fn start(app: tauri::AppHandle) {
                 continue;
             }
 
-            // ── Check 2: Recording duration ──
-            let started_at = state.recording_started_at.load(Ordering::Relaxed);
-            if started_at > 0 {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                let elapsed_secs = (now.saturating_sub(started_at)) / 1000;
+            // Recording duration is not an error: keep captured audio until the
+            // user stops. Recovery is reserved for abnormal audio callbacks.
 
-                if elapsed_secs > MAX_RECORDING_DURATION_SECS {
-                    eprintln!(
-                        "[watchdog] Recording exceeded {}s limit ({}s) — recovering",
-                        MAX_RECORDING_DURATION_SECS, elapsed_secs
-                    );
-                    recover(&app, &state, "Recording exceeded maximum duration").await;
-                    continue;
-                }
-            }
-
-            // ── Check 3: idle model unload (local STT) ──
+            // ── Check 2: idle model unload (local STT) ──
             // A local model keeps ~0.5 GB resident. Drop it after the
             // user-configured idle time (Settings; 0 = never); transcribe_buffer
             // reloads it transparently on the next dictation. An in-flight
@@ -104,7 +84,12 @@ pub fn start(app: tauri::AppHandle) {
                         .unwrap_or_default()
                         .as_millis() as u64;
                     let idle_secs = now.saturating_sub(last_used) / 1000;
-                    if idle_secs > unload_secs {
+                    let recording = state
+                        .recording
+                        .lock()
+                        .map(|recording| recording.is_recording)
+                        .unwrap_or(true);
+                    if should_unload_model(recording, unload_secs, last_used, now) {
                         let unloaded = state.unload_local_models();
                         state.local_model_last_used_at.store(0, Ordering::Relaxed);
                         if unloaded {
@@ -130,7 +115,6 @@ async fn recover(app: &tauri::AppHandle, state: &AppState, reason: &str) {
     }
 
     // 2. Clear state
-    state.recording_started_at.store(0, Ordering::Relaxed);
     state.audio_callback_count.store(0, Ordering::Relaxed);
 
     // Drop buffer contents and release memory (not just clear — avoids retaining
@@ -167,4 +151,55 @@ async fn recover(app: &tauri::AppHandle, state: &AppState, reason: &str) {
     });
 
     eprintln!("[watchdog] Recovery complete: {}", reason);
+}
+
+#[cfg(feature = "local-stt")]
+fn should_unload_model(recording: bool, unload_secs: u64, last_used: u64, now: u64) -> bool {
+    !recording
+        && unload_secs > 0
+        && last_used > 0
+        && now.saturating_sub(last_used) / 1000 > unload_secs
+}
+
+#[cfg(all(test, feature = "local-stt"))]
+mod tests {
+    use super::should_unload_model;
+
+    #[test]
+    fn a_long_recording_keeps_its_model_ready() {
+        let started = 1_000;
+        let thirty_minutes_later = started + 30 * 60 * 1000;
+        assert!(!should_unload_model(
+            true,
+            60,
+            started,
+            thirty_minutes_later
+        ));
+        assert!(should_unload_model(
+            false,
+            60,
+            started,
+            thirty_minutes_later
+        ));
+        // Stopping refreshes last use: the idle clock starts again afterward.
+        assert!(!should_unload_model(
+            false,
+            60,
+            thirty_minutes_later,
+            thirty_minutes_later
+        ));
+        assert!(should_unload_model(
+            false,
+            60,
+            thirty_minutes_later,
+            thirty_minutes_later + 61_000
+        ));
+    }
+
+    #[test]
+    fn disabled_unload_unused_models_and_clock_changes_do_not_unload() {
+        assert!(!should_unload_model(false, 0, 1_000, 9_000_000));
+        assert!(!should_unload_model(false, 60, 0, 9_000_000));
+        assert!(!should_unload_model(false, 60, 9_000_000, 1_000));
+    }
 }

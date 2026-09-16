@@ -6,6 +6,8 @@ import { AUTO_LANGUAGE, isSupportedLanguage } from "@/lib/languages.util";
 import { DEFAULT_MODEL_IDLE_UNLOAD_MINUTES, DEFAULT_TRIGGER_KEY } from "@/store/slices/settings.slice";
 import type { SttMode, ThemePreference } from "@/store/slices/settings.slice";
 
+import { DEFAULT_TYPING_SPEED, typingSpeed, validTypingSpeed } from "@/lib/payoff.util";
+
 const STORE_PATH = "linty-settings.json";
 
 let storeInstance: Awaited<ReturnType<typeof load>> | null = null;
@@ -24,6 +26,7 @@ async function getStore() {
         modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
         triggerKey: DEFAULT_TRIGGER_KEY,
         trackApplicationUsage: true,
+        typingWordsPerMinute: DEFAULT_TYPING_SPEED,
         dictionaryEnabled: true,
         autoLearnWords: false,
         observeCorrections: false,
@@ -32,6 +35,17 @@ async function getStore() {
     });
   }
   return storeInstance;
+}
+
+/** Persist first, so a failed save never changes the displayed assumption. */
+export async function saveTypingSpeed(speed: number) {
+  if (!validTypingSpeed(speed)) throw new Error("Enter a valid typing speed in words per minute.");
+  const store = await getStore();
+  const previous = useAppStore.getState().typingWordsPerMinute;
+  await store.set("typingWordsPerMinute", speed);
+  try { await store.save(); }
+  catch (error) { await store.set("typingWordsPerMinute", previous).catch(() => {}); throw error; }
+  useAppStore.getState().setTypingWordsPerMinute(speed);
 }
 
 export function useSettings() {
@@ -85,6 +99,7 @@ export function useSettings() {
         const savedSelectedModel = await store.get<string>("selectedModelFilename");
         const savedIdleUnload = await store.get<number>("modelIdleUnloadMinutes");
         const savedTriggerKey = await store.get<string>("triggerKey");
+        useAppStore.getState().setTypingWordsPerMinute(typingSpeed(await store.get<number>("typingWordsPerMinute")));
         const savedAppTracking = await store.get<boolean>("trackApplicationUsage");
         setTrackApplicationUsage(savedAppTracking ?? true);
         const savedDictionaryEnabled = await store.get<boolean>("dictionaryEnabled");

@@ -114,7 +114,7 @@ export function useGlobalHotkey() {
     };
   }, []);
 
-  // ── Watchdog recovery: auto-stop from CPU overload or runaway recording ──
+  // ── Watchdog recovery: auto-stop from abnormal audio callbacks ──
   const addToast = useAppStore((s) => s.addToast);
   const addToastRef = useRef(addToast);
   useEffect(() => {

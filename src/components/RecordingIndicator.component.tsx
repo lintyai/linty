@@ -59,7 +59,7 @@ export function RecordingIndicator({
 
         <div
           className={cn(
-            "relative z-10 flex items-center justify-center rounded-full transition-all duration-200",
+            "relative z-10 flex items-center justify-center rounded-full transition-interaction duration-200",
             isRecording
               ? "h-10 w-10 bg-accent shadow-[0_0_16px_var(--color-accent-glow-strong)]"
               : "h-10 w-10 bg-bg-elevated border border-border",

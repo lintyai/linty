@@ -50,7 +50,7 @@ export function SegmentedControl<T extends string>({
             }}
             onClick={(e) => { e.currentTarget.focus(); onChange(segment.value); }}
             className={cn(
-              "flex items-center justify-center gap-1.5 rounded-[6px] px-3 py-[5px] text-[12px] font-medium transition-all duration-200",
+              "flex items-center justify-center gap-1.5 rounded-[6px] px-3 py-[5px] text-[12px] font-medium transition-interaction duration-200",
               isActive
                 ? "bg-bg-elevated border border-border text-text-primary shadow-sm"
                 : "border border-transparent text-text-secondary hover:text-text-primary",

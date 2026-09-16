@@ -40,3 +40,6 @@ src-tauri/swift/.build/
 
 # Generated interface test screenshots
 artifacts/
+
+# Local benchmark Python bytecode
+__pycache__/

@@ -1,4 +1,6 @@
+import { refreshHistory } from "@/services/history.service";
 import { useEffect, useCallback, useState, useRef } from "react";
+import { flushSync } from "react-dom";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getStore } from "@tauri-apps/plugin-store";
@@ -67,6 +69,12 @@ export default function App() {
   useParakeetVocabulary();
   useModelAutoLoad();
   useHistory();
+  useEffect(() => {
+    const refresh = () => { void refreshHistory().catch(() => {}); };
+    const timer = setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    return () => { clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, []);
   useUpdaterAutoCheck();
   useTraySync(saveSttMode);
   const { checkForUpdate } = useUpdater();
@@ -108,15 +116,9 @@ export default function App() {
       // 1. Clear plugin-store in-memory caches — the Rust backend holds
       //    state that survives webview reload, so deleting files alone
       //    does nothing (autoSave re-writes them from memory).
-      const settingsStore = await getStore("linty-settings.json");
-      if (settingsStore) {
-        await settingsStore.clear();
-        await settingsStore.save();
-      }
-      const historyStore = await getStore("linty-history.json");
-      if (historyStore) {
-        await historyStore.clear();
-        await historyStore.save();
+      for (const name of ["linty-settings.json", "linty-history.json", "linty-corrections.json", "linty-dictionary.json"]) {
+        const store = await getStore(name);
+        if (store) { await store.clear(); await store.save(); }
       }
 
       // 2. Delete model files from disk + unload whisper from memory
@@ -139,8 +141,8 @@ export default function App() {
         setCurrentView("settings");
       } else if (e.metaKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
-        setCurrentView("history");
-        requestAnimationFrame(() => document.getElementById("history-search")?.focus());
+        flushSync(() => setCurrentView("history"));
+        document.getElementById("history-search")?.focus();
       } else if (e.metaKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
         if (!useAppStore.getState().sidebarVisible) useAppStore.getState().toggleSidebar();
@@ -159,7 +161,7 @@ export default function App() {
         else if (currentView === "history" && state.selectedTranscriptId) {
           const id = state.selectedTranscriptId;
           state.setSelectedTranscriptId(null);
-          requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-transcript-id="${CSS.escape(id)}"]`)?.focus());
+          requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-transcript-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true }));
         }
         else setCurrentView("dashboard");
       }
@@ -202,7 +204,7 @@ export default function App() {
         <WindowToolbar />
 
         {/* Page content */}
-        <main key={currentView} id="page-content" className="flex-1 min-h-0 animate-page-enter" aria-label={currentView}>
+        <main id="page-content" className="flex-1 min-h-0" aria-label={currentView}>
           {currentView === "history" && <HistoryPage />}
           {currentView === "settings" && <SettingsPage />}
           {currentView === "dashboard" && <DashboardPage />}

@@ -1,6 +1,5 @@
 import type { StateCreator } from "zustand";
 import type {
-  CorrectionRecord,
   DictionaryEntry,
   DictionarySuggestion,
 } from "@/types/correction.types";
@@ -9,25 +8,20 @@ import type {
 export type ParakeetVocabularyStatus = "idle" | "preparing" | "ready" | "error";
 
 export interface DictionarySlice {
-  /** Corrections the person made to dictations, newest first. */
-  corrections: CorrectionRecord[];
   dictionaryEntries: DictionaryEntry[];
   dictionarySuggestions: DictionarySuggestion[];
   dictionaryLoaded: boolean;
   parakeetVocabularyStatus: ParakeetVocabularyStatus;
   setParakeetVocabularyStatus: (status: ParakeetVocabularyStatus) => void;
-  setCorrections: (corrections: CorrectionRecord[]) => void;
   setDictionary: (entries: DictionaryEntry[], suggestions: DictionarySuggestion[]) => void;
 }
 
 export const createDictionarySlice: StateCreator<DictionarySlice> = (set) => ({
-  corrections: [],
   dictionaryEntries: [],
   dictionarySuggestions: [],
   dictionaryLoaded: false,
   parakeetVocabularyStatus: "idle",
   setParakeetVocabularyStatus: (parakeetVocabularyStatus) => set({ parakeetVocabularyStatus }),
-  setCorrections: (corrections) => set({ corrections }),
   setDictionary: (dictionaryEntries, dictionarySuggestions) =>
     set({ dictionaryEntries, dictionarySuggestions, dictionaryLoaded: true }),
 });

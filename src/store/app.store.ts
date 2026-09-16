@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { createWorkspaceSlice, type WorkspaceSlice } from "./slices/workspace.slice";
 import {
   createRecordingSlice,
   type RecordingSlice,
@@ -39,7 +40,8 @@ export type AppStore = RecordingSlice &
   HistorySlice &
   ToastSlice &
   UpdaterSlice &
-  DictionarySlice;
+  DictionarySlice &
+  WorkspaceSlice;
 
 export const useAppStore = create<AppStore>()((...a) => ({
   ...createRecordingSlice(...a),
@@ -50,4 +52,5 @@ export const useAppStore = create<AppStore>()((...a) => ({
   ...createToastSlice(...a),
   ...createUpdaterSlice(...a),
   ...createDictionarySlice(...a),
+  ...createWorkspaceSlice(...a),
 }));

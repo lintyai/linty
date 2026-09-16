@@ -1,5 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
-import { Mic, Accessibility, CheckCircle2, AlertCircle, ExternalLink, Square, Loader2, Check } from "lucide-react";
+import {
+  Mic,
+  Accessibility,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
+  Square,
+  Loader2,
+  Check,
+} from "lucide-react";
 import {
   checkMicrophonePermission,
   requestMicrophonePermission,
@@ -12,8 +21,13 @@ import { useTranscription } from "@/hooks/useTranscription.hook";
 import { WaveformVisualizer } from "@/components/WaveformVisualizer.component";
 import { FnKeyConflictWarning } from "@/components/shared/FnKeyConflictWarning.component";
 import { cn } from "@/lib/utils";
+import {
+  PageLayout,
+  PageHeader,
+} from "@/components/shared/PageLayout.component";
 
-type PermissionStatus = "authorized" | "denied" | "not_determined" | "restricted";
+type PermissionStatus =
+  "authorized" | "denied" | "not_determined" | "restricted";
 
 interface PermissionState {
   microphone: PermissionStatus;
@@ -127,7 +141,9 @@ function PermissionRow({
       </div>
 
       <div className="flex flex-1 flex-col gap-0.5 min-w-0">
-        <span className="text-[13px] font-medium text-text-primary">{label}</span>
+        <span className="text-[13px] font-medium text-text-primary">
+          {label}
+        </span>
         <span className="text-[11px] text-text-muted">{description}</span>
       </div>
 
@@ -140,8 +156,8 @@ function PermissionRow({
             className={cn(
               "rounded-lg px-3 py-[5px] text-[12px] font-medium",
               "bg-accent text-white",
-              "hover:bg-accent-soft active:scale-95",
-              "transition-all duration-150",
+              "hover:bg-accent-soft active:scale-[0.97]",
+              "transition-interaction duration-150",
             )}
           >
             Grant
@@ -154,8 +170,8 @@ function PermissionRow({
             className={cn(
               "flex items-center gap-1 rounded-lg px-3 py-[5px] text-[12px] font-medium",
               "bg-bg-elevated border border-border text-text-secondary",
-              "hover:bg-bg-hover hover:text-text-primary active:scale-95",
-              "transition-all duration-150",
+              "hover:bg-bg-hover hover:text-text-primary active:scale-[0.97]",
+              "transition-interaction duration-150",
             )}
           >
             Open Settings
@@ -173,64 +189,76 @@ export function SystemCheckPage() {
   const micStatus: "granted" | "denied" | "not_asked" =
     permissions.microphone === "authorized"
       ? "granted"
-      : permissions.microphone === "denied" || permissions.microphone === "restricted"
+      : permissions.microphone === "denied" ||
+          permissions.microphone === "restricted"
         ? "denied"
         : "not_asked";
 
   const axStatus: "granted" | "denied" | "not_asked" = permissions.accessibility
     ? "granted"
     : "denied";
+  const permissionsReady = micStatus === "granted" && axStatus === "granted";
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Content */}
-      <div className="preferences-scroll">
-        <div className="preferences-content">
-        <div className="page-intro"><h2>Ready when you are</h2><p>Check permissions and make sure your microphone is working.</p></div>
-        {/* Section label */}
-        <div className="mb-2.5">
-          <span className="text-[13px] font-semibold text-text-primary">
-            Permissions
-          </span>
-        </div>
-
-        {/* Permission cards */}
-        <div className="settings-group">
-          <PermissionRow
-            icon={<Mic size={15} className="text-text-secondary" />}
-            label="Microphone Access"
-            description="Required for voice recording"
-            status={micStatus}
-            onGrant={requestMic}
-            onOpenSettings={() => openSystemSettings("microphone")}
-          />
-          <PermissionRow
-            icon={<Accessibility size={15} className="text-text-secondary" />}
-            label="Accessibility"
-            description="Required for auto-paste & fn key monitoring"
-            status={axStatus}
-            onOpenSettings={() => openSystemSettings("accessibility")}
-            isLast
-          />
-        </div>
-
-        <FnKeyConflictWarning className="mt-3" />
-
-        {/* Footer note */}
-        <p className="mt-3 text-[11px] text-text-muted">
-          Permission status updates automatically when you return from System Settings.
-        </p>
-
-        {/* Microphone Test */}
-        <div className="mt-6 mb-2.5">
-          <span className="text-[13px] font-semibold text-text-primary">
-            Microphone Test
-          </span>
-        </div>
-        <RecordingTestWidget />
+    <PageLayout reading>
+      <PageHeader page="system-check" />
+      <div className={cn("system-readiness", permissionsReady && "is-ready")}>
+        {permissionsReady ? <CheckCircle2 /> : <AlertCircle />}
+        <div>
+          <h2>
+            {permissionsReady ? "All set to listen." : "Let’s get you ready."}
+          </h2>
+          <p>
+            {permissionsReady
+              ? "Required permissions are granted. Try your microphone below."
+              : "Review the permissions below to start dictating."}
+          </p>
         </div>
       </div>
-    </div>
+
+      {/* Section label */}
+      <div className="mb-2.5">
+        <span className="text-[13px] font-semibold text-text-primary">
+          Permissions
+        </span>
+      </div>
+
+      {/* Permission cards */}
+      <div className="settings-group">
+        <PermissionRow
+          icon={<Mic size={15} className="text-text-secondary" />}
+          label="Microphone Access"
+          description="Required for voice recording"
+          status={micStatus}
+          onGrant={requestMic}
+          onOpenSettings={() => openSystemSettings("microphone")}
+        />
+        <PermissionRow
+          icon={<Accessibility size={15} className="text-text-secondary" />}
+          label="Accessibility"
+          description="Required for auto-paste & fn key monitoring"
+          status={axStatus}
+          onOpenSettings={() => openSystemSettings("accessibility")}
+          isLast
+        />
+      </div>
+
+      <FnKeyConflictWarning className="mt-3" />
+
+      {/* Footer note */}
+      <p className="mt-3 text-[11px] text-text-muted">
+        Permission status updates automatically when you return from System
+        Settings.
+      </p>
+
+      {/* Microphone Test */}
+      <div className="mt-6 mb-2.5">
+        <span className="text-[13px] font-semibold text-text-primary">
+          Microphone Test
+        </span>
+      </div>
+      <RecordingTestWidget />
+    </PageLayout>
   );
 }
 
@@ -268,7 +296,15 @@ function RecordingTestWidget() {
       resetTranscription();
       await startRecording();
     }
-  }, [isRecording, isIdle, isDone, isError, resetTranscription, startRecording, handleStopAndProcess]);
+  }, [
+    isRecording,
+    isIdle,
+    isDone,
+    isError,
+    resetTranscription,
+    startRecording,
+    handleStopAndProcess,
+  ]);
 
   // Auto-reset after done/error
   useEffect(() => {
@@ -285,21 +321,24 @@ function RecordingTestWidget() {
   };
 
   return (
-    <div className="settings-group">
+    <div className="settings-group microphone-test">
       <div className="px-4 py-3.5">
         <div className="flex items-center gap-3">
           <button
             onClick={handleToggle}
-            aria-label={isRecording ? "Stop microphone test" : "Start microphone test"}
+            data-tooltip={isRecording ? "Stop microphone test" : "Start microphone test"}
+            aria-label={
+              isRecording ? "Stop microphone test" : "Start microphone test"
+            }
             disabled={isProcessing}
             className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-200",
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-interaction duration-200",
               isRecording
                 ? "bg-accent text-white shadow-[0_0_12px_var(--color-accent-glow-strong)]"
                 : isProcessing
                   ? "bg-bg-hover text-text-muted cursor-not-allowed"
                   : "bg-bg-hover border border-border text-text-secondary hover:bg-bg-active hover:text-text-primary",
-              !isRecording && !isProcessing && "active:scale-95",
+              !isRecording && !isProcessing && "active:scale-[0.97]",
             )}
           >
             {isRecording ? (
@@ -346,9 +385,7 @@ function RecordingTestWidget() {
             )}
           </div>
 
-          {isDone && (
-            <Check size={15} className="text-success shrink-0" />
-          )}
+          {isDone && <Check size={15} className="text-success shrink-0" />}
         </div>
       </div>
     </div>

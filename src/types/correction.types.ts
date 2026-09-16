@@ -14,7 +14,7 @@ export interface CorrectionPair {
   to: string;
 }
 
-/** A correction the person made to one dictation. Stored in linty-corrections.json. */
+/** A correction the person made to one dictation. Stored in the local history database. */
 export interface CorrectionRecord {
   correctionId: string;
   transcriptId: string;

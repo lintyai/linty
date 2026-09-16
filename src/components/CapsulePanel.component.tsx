@@ -89,15 +89,19 @@ function WaveformBars({ amplitude }: { amplitude: number }) {
     ctx.scale(2, 2);
 
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let frame = 0;
-    const draw = () => {
-      frame++;
+    let smoothedAmplitude = 0;
+    let previousTime = 0;
+    const draw = (time: number) => {
+      const elapsed = previousTime ? Math.min(time - previousTime, 64) : 16;
+      previousTime = time;
       ctx.clearRect(0, 0, totalWidth, height);
 
-      const amp = ampRef.current;
-      const t = motionQuery.matches ? 0 : frame / 60; // ~1 second per unit at 60fps
+      smoothedAmplitude += (ampRef.current - smoothedAmplitude) * (1 - Math.exp(-elapsed / 70));
+      const amp = motionQuery.matches ? ampRef.current : smoothedAmplitude;
+      const t = motionQuery.matches ? 0 : time / 1000;
 
-      const accent = getComputedStyle(canvas).getPropertyValue("--color-accent").trim() || "#f0947f";
+      const colors = getComputedStyle(canvas);
+      const accent = colors.getPropertyValue("--color-accent").trim() || colors.color;
       for (let i = 0; i < barCount; i++) {
         const center = barCount / 2;
         const distFromCenter = Math.abs(i - center) / center;
@@ -149,6 +153,7 @@ export function CapsulePanel() {
   const [sttProgress, setSttProgress] = useState(0);
   const [doneText, setDoneText] = useState("");
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ampFrameRef = useRef(0);
   const durationStartRef = useRef(0);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -160,8 +165,11 @@ export function CapsulePanel() {
   }, []);
 
   const dismiss = useCallback(() => {
+    if (exitTimerRef.current !== null) return;
     setDismissing(true);
-    setTimeout(() => {
+    if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
+    exitTimerRef.current = setTimeout(() => {
+      exitTimerRef.current = null;
       setMode("idle");
       setDismissing(false);
       setErrorMsg("");
@@ -169,7 +177,7 @@ export function CapsulePanel() {
       setDuration(0);
       resetStreamingState();
       invoke("hide_capsule").catch(() => {});
-    }, 300);
+    }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 300);
   }, [resetStreamingState]);
 
   // Listen for capsule state from main window
@@ -188,11 +196,18 @@ export function CapsulePanel() {
         return;
       }
 
+      // A new dictation owns the capsule, including during the previous exit.
+      if (exitTimerRef.current !== null) {
+        clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
       setDismissing(false);
       setMode(state);
 
       if (state === "recording") {
         resetStreamingState();
+        setDuration(0);
+        setAmplitude(0);
         durationStartRef.current = Date.now();
         if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
         durationIntervalRef.current = setInterval(() => {
@@ -221,6 +236,7 @@ export function CapsulePanel() {
     return () => {
       unlisten.then((fn) => fn());
       if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      if (exitTimerRef.current !== null) clearTimeout(exitTimerRef.current);
       if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
     };
   }, [dismiss, resetStreamingState]);
@@ -262,21 +278,21 @@ export function CapsulePanel() {
     };
   }, []);
 
-  if (mode === "idle") return null;
-
   const isRecording = mode === "recording";
   const isProcessing = mode === "transcribing" || mode === "correcting" || mode === "pasting";
   const isDone = mode === "done";
   const isError = mode === "error";
+  const announcement = mode === "idle" ? "" : isRecording ? "Recording" : isError ? errorMsg : isDone ? "Transcription complete" : PROCESSING_LABELS[mode] || "Processing";
 
   return (
     <div className="flex items-center justify-center h-full w-full">
-      <div
-        role="status"
-        aria-label={isRecording ? "Recording" : isError ? errorMsg : isDone ? "Transcription complete" : PROCESSING_LABELS[mode] || "Processing"}
+      <span className="sr-only" role="status" aria-atomic="true">{announcement}</span>
+      {mode !== "idle" && <div
+        aria-hidden="true"
         className={[
           "capsule-pill",
-          dismissing ? "animate-capsule-out" : "animate-capsule-in",
+          "animate-capsule-in",
+          dismissing ? "is-dismissing" : "",
           isRecording ? "capsule-recording" : "",
           isProcessing ? "capsule-processing" : "",
           isDone ? "capsule-done" : "",
@@ -340,7 +356,7 @@ export function CapsulePanel() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

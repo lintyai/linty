@@ -1,7 +1,6 @@
 import type { TranscriptRecord } from "../types/transcript.types";
 
 export type UsagePeriod = "7d" | "30d" | "all";
-export const HISTORY_LIMIT = 500;
 
 export function periodStart(period: UsagePeriod, now: number): number {
   if (period === "all") return -Infinity;
@@ -57,7 +56,9 @@ export interface ApplicationUsage {
   local: number;
 }
 
-export function usageByApplication(records: TranscriptRecord[]): ApplicationUsage[] {
+export function usageByApplication(
+  records: TranscriptRecord[],
+): ApplicationUsage[] {
   const apps = new Map<string, ApplicationUsage>();
   for (const t of records) {
     const id = t.application
@@ -88,6 +89,56 @@ export function usageByApplication(records: TranscriptRecord[]): ApplicationUsag
   return [...apps.values()];
 }
 
+export interface ApplicationShareSegment {
+  id: string;
+  name: string;
+  words: number;
+  share: number;
+  tone: "accent" | "chart" | "secondary" | "other" | "unattributed";
+}
+
+/** The leading three apps, remaining apps, and unattributed words share one denominator. */
+export function applicationShareSegments(
+  applications: ApplicationUsage[],
+  totalWords: number,
+): ApplicationShareSegment[] {
+  if (totalWords <= 0) return [];
+  const ranked = applications
+    .filter((app) => app.attributed && app.words > 0)
+    .sort((a, b) => b.words - a.words || a.name.localeCompare(b.name));
+  const tones = ["accent", "chart", "secondary"] as const;
+  const segments: ApplicationShareSegment[] = ranked
+    .slice(0, 3)
+    .map((app, index) => ({
+      id: app.id,
+      name: app.name,
+      words: app.words,
+      share: (app.words / totalWords) * 100,
+      tone: tones[index],
+    }));
+  const otherWords = ranked.slice(3).reduce((sum, app) => sum + app.words, 0);
+  const unattributedWords = applications
+    .filter((app) => !app.attributed)
+    .reduce((sum, app) => sum + app.words, 0);
+  if (otherWords > 0)
+    segments.push({
+      id: "other",
+      name: "Other apps",
+      words: otherWords,
+      share: (otherWords / totalWords) * 100,
+      tone: "other",
+    });
+  if (unattributedWords > 0)
+    segments.push({
+      id: "unattributed",
+      name: "Unattributed",
+      words: unattributedWords,
+      share: (unattributedWords / totalWords) * 100,
+      tone: "unattributed",
+    });
+  return segments;
+}
+
 /** "Today", "Yesterday", or a short calendar date in local time. */
 export function formatDayLabel(timestamp: number, now = Date.now()) {
   const date = new Date(timestamp);
@@ -103,9 +154,9 @@ export function formatDayLabel(timestamp: number, now = Date.now()) {
   });
 }
 
-/** Calendar buckets honor local time and daylight-saving boundaries. */
-export function usageTimeline(
-  records: TranscriptRecord[],
+/** Calendar boundaries are generated in the user's time zone, including DST. */
+export function usageBuckets(
+  oldestTimestamp: number | null,
   period: UsagePeriod,
   now: number,
 ) {
@@ -113,7 +164,7 @@ export function usageTimeline(
   end.setHours(0, 0, 0, 0);
   const start = new Date(
     period === "all"
-      ? Math.min(now, ...records.map((t) => t.timestamp))
+      ? Math.min(now, oldestTimestamp ?? now)
       : periodStart(period, now),
   );
   start.setHours(0, 0, 0, 0);
@@ -125,11 +176,9 @@ export function usageTimeline(
     const next = new Date(cursor);
     if (monthly) next.setMonth(next.getMonth() + 1);
     else next.setDate(next.getDate() + 1);
-    const entries = records.filter(
-      (t) => t.timestamp >= cursor.getTime() && t.timestamp < next.getTime(),
-    );
     buckets.push({
       timestamp: cursor.getTime(),
+      end: next.getTime(),
       label: cursor.toLocaleDateString(
         [],
         monthly
@@ -144,12 +193,31 @@ export function usageTimeline(
           ? { month: "long", year: "numeric" }
           : { month: "short", day: "numeric", year: "numeric" },
       ),
-      words: entries.reduce((sum, t) => sum + t.wordCount, 0),
-      sessions: entries.length,
     });
     cursor.setTime(next.getTime());
   }
   return buckets;
+}
+
+export function usageTimeline(
+  records: TranscriptRecord[],
+  period: UsagePeriod,
+  now: number,
+) {
+  const oldest = records.reduce(
+    (oldest, record) => Math.min(oldest, record.timestamp),
+    now,
+  );
+  return usageBuckets(oldest, period, now).map(({ end, ...bucket }) => {
+    const entries = records.filter(
+      (t) => t.timestamp >= bucket.timestamp && t.timestamp < end,
+    );
+    return {
+      ...bucket,
+      words: entries.reduce((sum, t) => sum + t.wordCount, 0),
+      sessions: entries.length,
+    };
+  });
 }
 
 export function formatDuration(seconds: number) {

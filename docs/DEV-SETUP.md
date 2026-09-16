@@ -127,7 +127,7 @@ Frontend (React 19 + Zustand)  <-- IPC -->  Backend (Rust + Tauri 2)
   src/store/slices/   (Zustand)              src-tauri/src/fnkey.rs       (NSEvent monitor)
   src/components/                            src-tauri/src/permissions.rs (AVFoundation FFI)
                                              src-tauri/src/paste.rs       (CGEvent Cmd+V)
-                                             src-tauri/src/watchdog.rs    (5-min max guard)
+                                             src-tauri/src/watchdog.rs    (audio health and idle unload)
 ```
 
 ## Key Gotchas
@@ -137,4 +137,4 @@ Frontend (React 19 + Zustand)  <-- IPC -->  Backend (Rust + Tauri 2)
 - **Entitlements**: Use `device.audio-input` not `device.microphone` (Hardened Runtime, not App Sandbox)
 - **Tauri bundles**: `--bundles dmg,app` (comma-separated, not space-separated)
 - **DMG notarization**: `.app` is auto-notarized by Tauri; `.dmg` needs separate `xcrun notarytool submit`
-- **Watchdog**: Max recording is 5 minutes — auto-stops and clears buffer beyond that
+- **Watchdog**: No fixed recording-duration cutoff. Abnormal audio callbacks still trigger recovery; the local model stays loaded during recording. Audio accumulates in memory until stopped, so duration alone is not a guarantee of capacity on every Mac.
