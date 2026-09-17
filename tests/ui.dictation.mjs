@@ -175,6 +175,7 @@ try {
     const ring=pill.locator('.capsule-countdown-ring');
     const sweep=await ring.evaluateHandle(el=>el.getAnimations()[0]);
     await pill.evaluate(()=>window.__QA__.emit('recording-quiet',{generation:12,quiet_seconds:25}));
+    await pill.waitForFunction(()=>document.querySelector('.capsule-countdown-label')?.textContent==='5s');
     assert.equal(await stopButton.innerText(),'5s');
     if(reducedMotion==='no-preference') {
       assert.equal(await ring.evaluate((el,sweep)=>el.getAnimations()[0]===sweep,sweep),true,'Updating the numeral must not restart the sweep');
@@ -184,8 +185,10 @@ try {
       assert.equal(await ring.getAttribute('stroke-dashoffset'),'50');
     }
     await pill.evaluate(()=>window.__QA__.emit('recording-quiet',{generation:12,quiet_seconds:0}));
+    await pill.locator('.capsule-stop-countdown').waitFor({state:'detached'});
     assert.equal(await pill.locator('.capsule-stop-countdown').count(),0,'Input clears the countdown');
     await pill.evaluate(()=>window.__QA__.emit('recording-quiet',{generation:12,quiet_seconds:20}));
+    await pill.waitForFunction(()=>document.querySelector('.capsule-countdown-label')?.textContent==='10s');
     assert.equal(await stopButton.innerText(),'10s','A fresh warning starts a fresh countdown');
     await assertCircle();
     if(reducedMotion==='no-preference') assert.equal(await ring.evaluate(el=>el.getAnimations()[0].effect.getTiming().duration),10000);
