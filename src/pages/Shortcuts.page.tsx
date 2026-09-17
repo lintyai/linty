@@ -29,7 +29,8 @@ export function ShortcutsPage() {
 
   const shortcuts = [
     { action: "Push-to-talk", mac: formatTriggerDisplay(triggerKey) },
-    { action: "Hands-free listening on / off", mac: `${formatTriggerKeycap(triggerKey)} × 2` },
+    { action: "Start hands-free listening", mac: `${formatTriggerKeycap(triggerKey)} × 2` },
+    { action: "Finish hands-free listening", mac: `${formatTriggerKeycap(triggerKey)} × 1` },
     // modifier-hold users keep the always-registered alternate combo
     ...(isModifierHoldTrigger(triggerKey)
       ? [
@@ -52,7 +53,7 @@ export function ShortcutsPage() {
         <kbd>{formatTriggerKeycap(triggerKey)}</kbd>
         <div>
           <h2>Hold, speak, release.</h2>
-          <p>Or double-press your trigger to keep listening. Double-press again to finish.</p>
+          <p>Or double-press your trigger to keep listening. Press once to finish.</p>
         </div>
       </div>
       <div className="mb-2.5">

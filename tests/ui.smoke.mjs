@@ -747,6 +747,8 @@ try {
   await setup.getByRole('button',{name:'Get Started'}).waitFor();
   await setup.screenshot({path:`${output}/onboarding-small.png`,animations:'disabled'});
   await setup.getByRole('button',{name:'Get Started'}).click();
+  await setup.getByRole('combobox',{name:'Dictation language',exact:true}).waitFor();
+  await setup.getByRole('button',{name:'Continue',exact:true}).click();
   await setup.getByRole('heading',{name:'Choose Your Trigger Key'}).waitFor();
   await setup.getByRole('button',{name:'Continue',exact:true}).click();
   await setup.getByRole('heading',{name:'Speech Engine Ready'}).waitFor();

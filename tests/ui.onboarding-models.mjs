@@ -1,19 +1,22 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { chromium } from 'playwright';
+import { mkdir } from 'node:fs/promises';
+import { chromium, webkit } from 'playwright';
 import { fixture } from './ui.fixture.mjs';
 
 const PARAKEET = 'parakeet-tdt-0.6b-v3';
 const WHISPER = 'ggml-large-v3-turbo-q5_0.bin';
+const engine = process.env.UI_BROWSER === 'webkit' ? webkit : chromium;
 const port = process.env.UI_PORT ?? '1456';
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', port, '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
 let browser;
 const errors = [];
 
-function setupBridge({ existing = [], parakeet = true, local = true, restoreMic = false, holdLoad = false, mode = 'local', holdAvailability = false, failPreparationOnce = false } = {}) {
+function setupBridge({ existing = [], parakeet = true, local = true, restoreMic = false, holdLoad = false, mode = 'local', holdAvailability = false, failPreparationOnce = false, language } = {}) {
   const qa = window.__QA__;
   if (!restoreMic) delete qa.stores[1].selectedModelFilename;
   qa.stores[1].sttMode = mode;
+  if (language !== undefined) qa.stores[1].transcriptionLanguage = language;
   qa.installed = new Set(existing);
   qa.downloads = [];
   qa.loads = [];
@@ -63,11 +66,11 @@ try {
     server.stdout.on('data', chunk => { if (String(chunk).includes(port)) { clearTimeout(timer); resolve(); } });
     server.once('exit', code => { clearTimeout(timer); reject(new Error(`Preview exited: ${code}`)); });
   });
-  browser = await chromium.launch({ headless: true });
+  browser = await engine.launch({ headless: true });
   const open = async (options = {}) => {
     const page = await browser.newPage({ viewport: { width: 900, height: 680 }, reducedMotion: 'reduce' });
     page.on('pageerror', error => errors.push(error.message));
-    await page.addInitScript({ content: `(${fixture.toString()})(${JSON.stringify({ onboarding: !options.returning && !options.restoreMic, empty: true })});(${setupBridge.toString()})(${JSON.stringify(options)});` });
+    await page.addInitScript({ content: `(${fixture.toString()})(${JSON.stringify({ onboarding: !options.returning && !options.restoreMic, empty: true, theme: options.theme ?? 'light' })});(${setupBridge.toString()})(${JSON.stringify(options)});` });
     await page.goto(`http://127.0.0.1:${port}`);
     return page;
   };
@@ -81,26 +84,67 @@ try {
     assert.equal(await progress.locator('li[aria-current="step"]').innerText(), label, 'Active dot matches the current screen');
     assert.equal(await progress.locator('li').nth(current - 1).getAttribute('aria-current'), 'step');
   };
-  const reachTrigger = async page => {
-    await assertProgress(page, 1, 6, 'Welcome');
+  const reachLanguage = async page => {
+    await assertProgress(page, 1, 7, 'Welcome');
     await page.getByRole('button', { name: 'Get Started', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Dictation language', exact: true }).waitFor();
+    await assertProgress(page, 2, 7, 'Dictation language');
+  };
+  const reachTrigger = async page => {
+    await reachLanguage(page);
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await page.getByRole('heading', { name: 'Microphone Access', exact: true }).waitFor();
-    await assertProgress(page, 2, 6, 'Microphone');
+    await assertProgress(page, 3, 7, 'Microphone');
     await page.getByRole('heading', { name: 'Accessibility Permission', exact: true }).waitFor();
-    await assertProgress(page, 3, 6, 'Accessibility');
+    await assertProgress(page, 4, 7, 'Accessibility');
     await page.getByRole('heading', { name: 'Choose Your Trigger Key', exact: true }).waitFor();
-    await assertProgress(page, 4, 6, 'Trigger key');
+    await assertProgress(page, 5, 7, 'Trigger key');
   };
   const reachModels = async page => {
     await reachTrigger(page);
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await page.getByRole('combobox', { name: 'Speech model', exact: true }).waitFor();
-    await assertProgress(page, 5, 6, 'Speech engine');
+    await assertProgress(page, 6, 7, 'Speech engine');
   };
   const chooseWhisper = async page => {
     await page.getByRole('combobox', { name: 'Speech model', exact: true }).click();
     await page.getByRole('option', { name: 'Whisper Large Turbo Q5 (574 MB)', exact: true }).click();
   };
+
+  await mkdir('artifacts/onboarding-language', { recursive: true });
+  // A new install starts with English. The selected spoken language is saved
+  // before permission setup, and a failed write leaves the choice retryable.
+  for (const theme of ['dark', 'light']) {
+    const languagePage = await open({ theme });
+    await reachLanguage(languagePage);
+    const picker = languagePage.getByRole('combobox', { name: 'Dictation language', exact: true });
+    assert.equal(await picker.innerText(), 'English');
+    await languagePage.screenshot({ path: `artifacts/onboarding-language/${engine.name()}-${theme}.png`, animations: 'disabled' });
+    await picker.click();
+    await languagePage.getByRole('option', { name: 'French', exact: true }).click();
+    await languagePage.evaluate(() => { window.__QA__.failures['plugin:store|save'] = 'Disk full'; });
+    await languagePage.getByRole('button', { name: 'Continue', exact: true }).click();
+    await languagePage.getByRole('alert').filter({ hasText: 'Could not save your dictation language' }).waitFor();
+    assert.equal(await picker.innerText(), 'French', 'A failed write keeps the draft choice');
+    assert.equal(await languagePage.getByRole('heading', { name: 'Microphone Access', exact: true }).count(), 0);
+    assert.equal(await languagePage.evaluate(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().transcriptionLanguage), 'en');
+    await languagePage.evaluate(() => { delete window.__QA__.failures['plugin:store|save']; });
+    await languagePage.getByRole('button', { name: 'Continue', exact: true }).click();
+    await languagePage.getByRole('heading', { name: 'Microphone Access', exact: true }).waitFor();
+    assert.equal(await languagePage.evaluate(() => window.__QA__.stores[1].transcriptionLanguage), 'fr');
+    assert.equal(await languagePage.evaluate(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().transcriptionLanguage), 'fr');
+    await languagePage.close();
+  }
+  // A previously saved choice, including auto-detect, survives resumed setup.
+  for (const [language, label] of [['fr', 'French'], ['auto', 'Auto-detect']]) {
+    const languagePage = await open({ language });
+    await reachLanguage(languagePage);
+    assert.equal(await languagePage.getByRole('combobox', { name: 'Dictation language', exact: true }).innerText(), label);
+    await languagePage.getByRole('button', { name: 'Continue', exact: true }).click();
+    await languagePage.getByRole('heading', { name: 'Microphone Access', exact: true }).waitFor();
+    assert.equal(await languagePage.evaluate(() => window.__QA__.stores[1].transcriptionLanguage), language);
+    await languagePage.close();
+  }
 
   // Downloads begin before permissions; StrictMode starts only one transfer.
   let page = await open();
@@ -111,6 +155,7 @@ try {
   await page.waitForFunction(name => window.__QA__.stores[1].selectedModelFilename === name, PARAKEET);
   await page.getByRole('heading', { name: 'Welcome to Linty', exact: true }).waitFor();
   await reachModels(page);
+  assert.equal(await page.evaluate(() => window.__QA__.stores[1].transcriptionLanguage), 'en', 'Continuing without a change persists English');
   assert.match(await page.getByRole('combobox', { name: 'Speech model' }).innerText(), /Parakeet/);
   await page.getByRole('heading', { name: 'Speech Engine Ready' }).waitFor();
   await page.screenshot({ path: '/tmp/linty-onboarding-default-model.png' });
@@ -121,9 +166,10 @@ try {
   await page.getByRole('heading', { name: 'Speech Engine Ready' }).waitFor();
   assert.equal(await selected(page), WHISPER);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await assertProgress(page, 6, 6, 'Ready');
+  await assertProgress(page, 7, 7, 'Ready');
   await page.getByRole('button', { name: 'Start Using Linty', exact: true }).click();
   await page.getByRole('heading', { name: 'Your dictation', exact: true }).waitFor();
+  assert.equal(await page.evaluate(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().transcriptionLanguage), 'en');
   assert.deepEqual(await page.evaluate(() => window.__QA__.loads), [PARAKEET, WHISPER]);
   assert.equal(await page.evaluate(() => window.__QA__.calls.includes('download_s1_model')), false);
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Settings', exact: true }).click();
@@ -206,11 +252,11 @@ try {
   await waitDownload(page, PARAKEET);
   await reachModels(page);
   await page.getByRole('button', { name: 'Skip — use cloud instead', exact: true }).click();
-  await assertProgress(page, 6, 7, 'Cloud setup');
+  await assertProgress(page, 7, 8, 'Cloud setup');
   await page.getByRole('textbox', { name: 'Groq API key' }).fill('synthetic-test-key');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Start Using Linty', exact: true }).waitFor();
-  await assertProgress(page, 7, 7, 'Ready');
+  await assertProgress(page, 8, 8, 'Ready');
   await finishDownload(page, PARAKEET);
   assert.equal(await page.evaluate(() => window.__QA__.stores[1].sttMode), 'cloud');
   assert.deepEqual(await page.evaluate(() => window.__QA__.loads), []);
@@ -240,10 +286,10 @@ try {
   await reachTrigger(page);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('heading', { name: 'Cloud Transcription', exact: true }).waitFor();
-  await assertProgress(page, 5, 6, 'Cloud setup');
+  await assertProgress(page, 6, 7, 'Cloud setup');
   await page.getByRole('textbox', { name: 'Groq API key' }).fill('synthetic-test-key');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await assertProgress(page, 6, 6, 'Ready');
+  await assertProgress(page, 7, 7, 'Ready');
   assert.deepEqual(await page.evaluate(() => window.__QA__.downloads), []);
   await page.close();
 
@@ -251,27 +297,31 @@ try {
   page = await open({ holdAvailability: true });
   await reachTrigger(page);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await assertProgress(page, 5, 6, 'Speech engine');
+  await assertProgress(page, 6, 7, 'Speech engine');
   await page.evaluate(() => window.__QA__.resolveAvailability(false));
   await page.getByRole('heading', { name: 'Cloud Transcription', exact: true }).waitFor();
-  await assertProgress(page, 6, 7, 'Cloud setup');
+  await assertProgress(page, 7, 8, 'Cloud setup');
   await page.close();
 
   // Existing users and permission recovery never initiate first-run downloads.
-  page = await open({ returning: true });
-  await page.getByRole('heading', { name: 'Your dictation', exact: true }).waitFor();
-  assert.deepEqual(await page.evaluate(() => window.__QA__.downloads), []);
-  await page.close();
-  page = await open({ restoreMic: true });
+  for (const language of [undefined, 'auto', 'fr']) {
+    page = await open({ returning: true, language });
+    await page.getByRole('heading', { name: 'Your dictation', exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.__QA__.downloads), []);
+    assert.equal(await page.evaluate(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().transcriptionLanguage), language ?? 'auto', 'An existing installation keeps its language and prior default');
+    await page.close();
+  }
+  page = await open({ restoreMic: true, language: 'fr' });
   await page.getByRole('heading', { name: 'Microphone Access', exact: true }).waitFor();
   assert.equal(await page.locator('.onboarding-progress').innerText(), 'Restore microphone access');
   assert.equal(await page.locator('.onboarding-progress li').count(), 0);
   assert.deepEqual(await page.evaluate(() => window.__QA__.downloads), []);
   assert.equal(await page.evaluate(() => window.__QA__.calls.includes('download_s1_model')), false);
+  assert.equal(await page.evaluate(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().transcriptionLanguage), 'fr');
   await page.close();
 
   assert.deepEqual(errors, []);
-  console.log('Onboarding checks passed: screen counts and labels for local/cloud/recovery paths, first-launch download, selection, switching, progress, races, retry, cached models, fallback, and S1-mini only on request.');
+  console.log(`Onboarding checks passed in ${engine.name()}: English default, language persistence/retry, preserved existing preferences, screen counts for local/cloud/recovery paths, downloads, model switching, races, retry, fallback, and S1-mini only on request.`);
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

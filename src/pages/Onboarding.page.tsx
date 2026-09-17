@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { load } from "@tauri-apps/plugin-store";
 import { open } from "@tauri-apps/plugin-shell";
-import { Mic, Shield, CheckCircle2, ArrowRight, Loader2, ExternalLink, Download, Cloud, AlertCircle, Eye, EyeOff, RefreshCw, Key, Keyboard } from "lucide-react";
+import { Mic, Shield, CheckCircle2, ArrowRight, Loader2, ExternalLink, Download, Cloud, AlertCircle, Eye, EyeOff, RefreshCw, Key, Keyboard, Languages } from "lucide-react";
 import {
   checkMicrophonePermission,
   requestMicrophonePermission,
@@ -21,11 +21,13 @@ import { TriggerKeyPicker } from "@/components/shared/TriggerKeyPicker.component
 import { cn } from "@/lib/utils";
 import { downloadSpeechModel } from "@/services/model-download.service";
 import { Select } from "@/components/shared/Select.component";
+import { TRANSCRIPTION_LANGUAGES } from "@/lib/languages.util";
 
-type Step = "welcome" | "microphone" | "accessibility" | "trigger" | "model" | "cloud-setup" | "done";
+type Step = "welcome" | "language" | "microphone" | "accessibility" | "trigger" | "model" | "cloud-setup" | "done";
 
 const STEP_LABELS: Record<Step, string> = {
   welcome: "Welcome",
+  language: "Dictation language",
   microphone: "Microphone",
   accessibility: "Accessibility",
   trigger: "Trigger key",
@@ -48,7 +50,7 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
 
   // Cloud adds a screen after local setup, or replaces it when local support
   // is unavailable before the user reaches the speech-engine step.
-  const progressSteps: Step[] = ["welcome", "microphone", "accessibility", "trigger"];
+  const progressSteps: Step[] = ["welcome", "language", "microphone", "accessibility", "trigger"];
   if (!localUnavailable || visitedModel) progressSteps.push("model");
   if (localUnavailable || cloudSelected) progressSteps.push("cloud-setup");
   progressSteps.push("done");
@@ -61,7 +63,8 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
       <div className="setup-brand"><BrandMark /><span>Linty</span></div>
       <SoundPattern />
       <div className="onboarding-content">
-        {step === "welcome" && <WelcomeStep onNext={() => setStep("microphone")} />}
+        {step === "welcome" && <WelcomeStep onNext={() => setStep("language")} />}
+        {step === "language" && <LanguageStep onNext={() => setStep("microphone")} />}
         {step === "microphone" && (
           <MicrophoneStep onNext={startAtMic ? onComplete : () => setStep("accessibility")} />
         )}
@@ -118,7 +121,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       <p className="text-[14px] text-text-secondary leading-relaxed mb-8">
         Voice-to-text that works anywhere on your Mac.
         <br />
-        We need a couple of permissions to get started.
+        Choose your dictation language, then grant a couple of permissions.
         <br />
         Your default speech model downloads in the background during setup.
       </p>
@@ -134,6 +137,71 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       >
         Get Started
         <ArrowRight size={16} />
+      </button>
+    </div>
+  );
+}
+
+/* ── Dictation Language Step ── */
+
+function LanguageStep({ onNext }: { onNext: () => void }) {
+  const { transcriptionLanguage, saveTranscriptionLanguage } = useSettings();
+  const [language, setLanguage] = useState(transcriptionLanguage);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const savingRef = useRef(false);
+
+  const continueSetup = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      await saveTranscriptionLanguage(language);
+      onNext();
+    } catch (error) {
+      setError(`Could not save your dictation language. ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center text-center animate-page-enter">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-info/15 mb-5">
+        <Languages size={28} className="text-info" />
+      </div>
+      <h1 className="text-[22px] font-bold text-text-primary mb-2">
+        Choose your dictation language
+      </h1>
+      <p className="text-[14px] text-text-secondary leading-relaxed mb-6">
+        Choose the language you usually speak, or use auto-detect.
+        <br />
+        You can change it anytime in Settings → Language.
+      </p>
+      <Select
+        label="Dictation language"
+        value={language}
+        options={TRANSCRIPTION_LANGUAGES.map(({ code, label }) => ({ value: code, label }))}
+        onChange={value => { setLanguage(value); setError(""); }}
+        disabled={saving}
+        className="w-full max-w-[340px]"
+      />
+      <p className="text-[12px] text-text-muted mt-3 mb-6">
+        This sets your spoken language. App menus stay in English.
+      </p>
+      {error && <p role="alert" className="text-[13px] text-error max-w-[380px] mb-4">{error}</p>}
+      <button
+        onClick={() => { void continueSetup(); }}
+        disabled={saving}
+        className={cn(
+          "flex items-center gap-2 rounded-xl px-6 py-2.5 text-[14px] font-semibold",
+          "bg-accent text-white hover:bg-accent-soft active:scale-[0.97]",
+          "transition-interaction duration-150 disabled:opacity-50 disabled:cursor-wait",
+        )}
+      >
+        {saving ? <>Saving…<Loader2 size={16} className="animate-spin" /></> : <>Continue<ArrowRight size={16} /></>}
       </button>
     </div>
   );
@@ -396,7 +464,7 @@ function TriggerStep({ onNext }: { onNext: () => void }) {
         Choose Your Trigger Key
       </h1>
       <p className="text-[14px] text-text-secondary leading-relaxed mb-6">
-        Hold to talk and release to paste. Or double-press to keep listening, then double-press again to finish.
+        Hold to talk and release to paste. Or double-press to keep listening, then press once to finish.
         <br />
         You can change it anytime from the Shortcuts page.
       </p>

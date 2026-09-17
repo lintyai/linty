@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { load } from "@tauri-apps/plugin-store";
 import { useAppStore } from "@/store/app.store";
 import { prepareInstalledCleanup } from "@/services/dictation-preparation.service";
-import { AUTO_LANGUAGE, isSupportedLanguage } from "@/lib/languages.util";
+import { AUTO_LANGUAGE, DEFAULT_TRANSCRIPTION_LANGUAGE, isSupportedLanguage } from "@/lib/languages.util";
 import { DEFAULT_MODEL_IDLE_UNLOAD_MINUTES, DEFAULT_TRIGGER_KEY } from "@/store/slices/settings.slice";
 import type { SettingsSlice, SttMode, ThemePreference } from "@/store/slices/settings.slice";
 import type { CleanupMode, ReformatContext, ReformatStyle } from "@/types/reformat.types";
@@ -28,7 +28,6 @@ async function getStore() {
         theme: "system",
         whisperPrompt: "",
         correctionPrompt: "",
-        transcriptionLanguage: "auto",
         modelIdleUnloadMinutes: DEFAULT_MODEL_IDLE_UNLOAD_MINUTES,
         triggerKey: DEFAULT_TRIGGER_KEY,
         trackApplicationUsage: true,
@@ -152,13 +151,13 @@ export function useSettings() {
         if (savedWhisperPrompt) setWhisperPrompt(savedWhisperPrompt);
         if (savedCorrectionPrompt) setCorrectionPrompt(savedCorrectionPrompt);
         if (savedOnboarding) setOnboardingComplete(savedOnboarding);
-        if (savedLanguage) {
-          // Languages dropped from the catalog (e.g. ones Parakeet can't
-          // transcribe) fall back to auto-detect instead of a blank select.
-          const language = isSupportedLanguage(savedLanguage) ? savedLanguage : AUTO_LANGUAGE;
-          setTranscriptionLanguage(language);
-          if (language !== savedLanguage) await store.set("transcriptionLanguage", language);
-        }
+        // Fresh setup defaults to English. Preserve a saved choice (including
+        // auto-detect) and the former default for existing users without a key.
+        const language = savedLanguage
+          ? isSupportedLanguage(savedLanguage) ? savedLanguage : AUTO_LANGUAGE
+          : savedOnboarding ? AUTO_LANGUAGE : DEFAULT_TRANSCRIPTION_LANGUAGE;
+        setTranscriptionLanguage(language);
+        if (savedLanguage && language !== savedLanguage) await store.set("transcriptionLanguage", language);
         if (savedSelectedModel) setSelectedModelFilename(savedSelectedModel);
         if (savedTriggerKey) setTriggerKey(savedTriggerKey);
 
