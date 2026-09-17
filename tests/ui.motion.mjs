@@ -198,7 +198,10 @@ try {
     for(const state of ['transcribing','correcting','pasting','done','error']) {
       await capsule.evaluate(state=>window.__QA__.emit('capsule-state',{state,text:'A completed dictation',error:'Please try again'}),state);
       await capsule.locator('.capsule-pill').waitFor();
-      assert.equal(await capsule.locator('.capsule-pill').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);
+      assert.equal(await capsule.locator('.capsule-pill').evaluate(el=>{
+        const bounds=el.getBoundingClientRect();
+        return bounds.left>=0 && bounds.right<=innerWidth && getComputedStyle(el).overflowX==='hidden';
+      }),true,'The morph stays in the panel and clips its outgoing content');
     }
     await capsule.screenshot({path:`${output}/capsule-${reducedMotion}.png`});
     await context.close();

@@ -277,13 +277,18 @@ export function useTranscription() {
         });
 
         setStatus("done");
-        emitCapsule("done");
-        invoke("play_capsule_sound", { sound: "success" }).catch(() => {});
+        if (deliveryStatus === "pasted") {
+          emitCapsule("done");
+          invoke("play_capsule_sound", { sound: "success" }).catch(() => {});
+        } else {
+          // The text remains available in Linty, but delivery did not succeed.
+          invoke("emit_capsule_state", { state: "error", error: "Paste failed · open Linty" }).catch(() => {});
+        }
         // Safety fallback — CapsulePanel handles primary hide via dismiss callback
         hideTimerRef.current = setTimeout(() => {
           if (!ownsDictation(session) || session.cancelled) return;
           invoke("hide_capsule").catch(() => {});
-        }, 5000);
+        }, deliveryStatus === "pasted" ? 5000 : 8000);
 
         // Reset after showing result
         resetTimerRef.current = setTimeout(() => {
