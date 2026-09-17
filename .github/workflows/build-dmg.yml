@@ -26,7 +26,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 — Node 24
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -80,9 +80,9 @@ jobs:
           cache-on-failure: true
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0 — Node 24
         with:
-          node-version: 20
+          node-version: 24
           cache: yarn
 
       - name: Install yarn dependencies
@@ -201,13 +201,15 @@ jobs:
           cat latest.json
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 — Node 24
         with:
           name: Linty-macOS-arm64
           path: src-tauri/target/release/bundle/dmg/*.dmg
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        id: release
+        continue-on-error: true
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3 — Node 24
         with:
           tag_name: v${{ steps.version.outputs.version }}
           target_commitish: main
@@ -218,3 +220,25 @@ jobs:
             src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
             latest.json
           generate_release_notes: true
+          fail_on_unmatched_files: true
+
+      # A transient release-asset upload error must not require rebuilding and
+      # signing the app. Retry the same files/tag; a second failure fails the job.
+      - name: Wait before retrying release upload
+        if: steps.release.outcome == 'failure'
+        run: sleep 10
+
+      - name: Retry GitHub Release
+        if: steps.release.outcome == 'failure'
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3 — Node 24
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          target_commitish: main
+          name: Linty v${{ steps.version.outputs.version }}
+          files: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+            latest.json
+          generate_release_notes: true
+          fail_on_unmatched_files: true
