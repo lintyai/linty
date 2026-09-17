@@ -153,7 +153,10 @@ button:not(:disabled):active { filter: none; }
   transform-origin: left center;
   transition: transform var(--motion-surface) linear;
 }
-.waveform-bar { transform: scaleY(0.08); opacity: 0.2; }
+.waveform-bar {
+  transform-origin: center;
+  transition: transform 70ms linear, opacity 70ms linear;
+}
 .button-label-stack { display: grid; }
 .button-label-stack > span { grid-area: 1 / 1; }
 .button-label-stack > [aria-hidden="true"] { visibility: hidden; }

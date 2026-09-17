@@ -34,6 +34,7 @@ try {
       }
       if(command==='stop_recording' && window.__QA__.hasAudio) {window.__QA__.calls.push(command);return Promise.resolve({sample_count:32000,duration_secs:2});}
       if(command==='transcribe_buffer') {window.__QA__.calls.push(command);return Promise.resolve({text:'Private words stay out of the pill.',vocabulary_applied:[]});}
+      if(command==='paste_text' && window.__QA__.failPaste) {window.__QA__.calls.push(command);return Promise.reject(new Error('Synthetic paste failure'));}
       return original(command,args);
     };
     document.hasFocus=()=>false;
@@ -104,8 +105,66 @@ try {
   await store.evaluate(s=>s.getState().setTriggerKey('Control+Option+Space'));
   await status('idle');
   assert.equal((await get()).handsFree,false,'Changing the configured trigger finishes the old capture');
+  await page.evaluate(()=>{window.__QA__.hasAudio=true;window.__QA__.failPaste=true;window.__QA__.capsule=[];});
+  await double('Control+Option+Space'); await status('recording');
+  await double('Control+Option+Space'); await status('done');
+  await page.waitForFunction(()=>window.__QA__.capsule.at(-1)?.state==='error');
+  assert.equal(await page.evaluate(()=>window.__QA__.capsule.some(s=>s.state==='done')),false,'A failed paste must never show a success checkmark');
+  assert.equal(await page.evaluate(()=>window.__QA__.capsule.at(-1).error),'Paste failed · open Linty');
 
   await mkdir('artifacts/dictation-pill',{recursive:true});
+  // The in-app microphone test uses native input history, just like the pill.
+  await page.evaluate(()=>{window.__QA__.hasAudio=false;window.__QA__.failPaste=false;});
+  await page.getByRole('button',{name:'System Check',exact:true}).click();
+  const microphoneTest=page.locator('.microphone-test');
+  const startTest=page.getByRole('button',{name:'Start microphone test',exact:true});
+  await startTest.scrollIntoViewIfNeeded();
+  await page.locator('main').evaluate(el=>Promise.allSettled(el.getAnimations({subtree:true}).filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished)));
+  const idleControl=await startTest.boundingBox();
+  await startTest.click(); await status('recording');
+  const stopTest=page.getByRole('button',{name:'Stop microphone test',exact:true});
+  await page.waitForFunction(()=>document.querySelectorAll('.microphone-test .waveform-bar').length===19);
+  await page.clock.runFor(100);
+  const liveControl=await stopTest.boundingBox();
+  assert.equal(liveControl.width,liveControl.height,'The microphone control remains a full circle');
+  assert.equal(liveControl.width,idleControl.width);
+  assert.equal(liveControl.x,idleControl.x); assert.equal(liveControl.y,idleControl.y,'Starting a test never moves its control');
+  const testLevels=()=>microphoneTest.locator('.waveform-bar').evaluateAll(bars=>bars.map(bar=>new DOMMatrix(bar.style.transform).d*bar.offsetHeight));
+  const feedTest=async levels=>{
+    await page.evaluate(levels=>{for(const rms of levels) window.__QA__.emit('audio-amplitude',rms);},levels);
+    await page.clock.runFor(70);
+  };
+  await feedTest(Array(30).fill(.003));
+  assert.ok((await testLevels()).every(height=>height<4),'The app test keeps background noise close to the baseline');
+  await feedTest(Array(30).fill(.05));
+  assert.ok((await testLevels()).every(height=>height>7 && height<12),'Normal input leaves room for emphasis in the app test');
+  await feedTest(Array(45).fill(0));
+  assert.ok((await testLevels()).every(height=>Math.abs(height-2)<.000001),'Repeated zero frames clear the complete history');
+  const phrase=[0,.001,.003,.008,.018,.06,.04,.009,.002,0,.001,.005,.025,.09,.04,.018,.004,.001,.0004];
+  await feedTest(phrase);
+  assert.ok(new Set(await testLevels()).size>10,'The app waveform displays the actual variation in input');
+  for(const theme of ['dark','light']) {
+    await store.evaluate((s,theme)=>s.getState().setTheme(theme),theme);
+    await microphoneTest.screenshot({path:`artifacts/dictation-pill/microphone-test-${engine.name()}-${theme}.png`});
+  }
+  const releases=await count('plugin:event|unlisten');
+  await stopTest.click(); await status('idle');
+  await startTest.waitFor();
+  assert.equal(await microphoneTest.locator('.waveform-bar').count(),0);
+  assert.ok(await count('plugin:event|unlisten')>releases,'Stopping removes the amplitude listener');
+  for(const theme of ['dark','light']) {
+    await store.evaluate((s,theme)=>s.getState().setTheme(theme),theme);
+    await microphoneTest.screenshot({path:`artifacts/dictation-pill/microphone-idle-${engine.name()}-${theme}.png`});
+  }
+  await startTest.click(); await status('recording');
+  await page.clock.runFor(100);
+  assert.ok((await testLevels()).every(height=>Math.abs(height-2)<.000001),'A new test starts with an empty waveform');
+  await page.getByRole('button',{name:'Overview',exact:true}).click();
+  await page.clock.runFor(100);
+  assert.equal((await get()).recording,true,'Leaving System Check only removes the visualization');
+  await page.getByRole('button',{name:'System Check',exact:true}).click();
+  await stopTest.click(); await status('idle');
+
   for(const theme of ['dark','light']) for(const reducedMotion of ['no-preference','reduce']) {
     const context=await browser.newContext({viewport:{width:380,height:52},reducedMotion});
     const pill=await context.newPage(); pill.on('pageerror',e=>errors.push(e.message));
@@ -121,18 +180,45 @@ try {
     await pill.clock.runFor(200);
     await pill.locator('.capsule-pill').evaluate(el=>Promise.allSettled(el.getAnimations().map(a=>a.finished)));
     const geometry=await pill.locator('.capsule-pill').boundingBox();
+    const dragCount=()=>pill.evaluate(()=>window.__QA__.calls.filter(c=>c==='plugin:window|start_dragging').length);
+    await brand.click();
+    assert.equal(await dragCount(),1,'The locked listening pill invokes native dragging');
+    await send({state:'recording',generation:12,hands_free:false});
+    await pill.waitForFunction(()=>!document.querySelector('.capsule-pill')?.classList.contains('is-draggable'));
+    await brand.click();
+    assert.equal(await dragCount(),1,'Hold-to-talk cannot reposition the pill');
+    await send({state:'recording',generation:12,hands_free:true});
+    await pill.locator('.is-draggable').waitFor();
+    await brand.click({button:'right'});
+    await pill.getByRole('button',{name:'Finish dictation'}).dispatchEvent('pointerdown',{button:0,isPrimary:true});
+    assert.equal(await dragCount(),1,'Right-click and the stop button never start a drag');
     await pill.clock.runFor(1100);
     await send({state:'recording',generation:12,hands_free:true});
     assert.equal(await pill.locator('.capsule-time').innerText(),'0:01','Latching does not restart the duration');
-    const feed=levels=>pill.evaluate(levels=>{for(const rms of levels) window.__QA__.emit('capsule-amplitude',rms);},levels);
+    const feed=async levels=>{
+      await pill.evaluate(levels=>{for(const rms of levels) window.__QA__.emit('capsule-amplitude',rms);},levels);
+      await pill.clock.runFor(70);
+    };
     const waveLevels=()=>pill.locator('.capsule-wave span').evaluateAll(bars=>bars.map(bar=>new DOMMatrix(bar.style.transform).d));
     await feed(Array(24).fill(.001));
     const quietVoice=(await waveLevels()).at(-1);
+    assert.ok(quietVoice*20<3,'Low room noise stays under 3 px in the 20 px display');
+    await feed(Array(24).fill(.003));
+    assert.ok((await waveLevels()).at(-1)*20<4,'Background noise leaves most vertical travel available for speech');
     await feed(Array(24).fill(.05));
     const ordinaryVoice=(await waveLevels()).at(-1);
     await feed(Array(24).fill(.2));
     const loudVoice=(await waveLevels()).at(-1);
     assert.ok(quietVoice>0.1 && ordinaryVoice>quietVoice && loudVoice>ordinaryVoice && loudVoice<1,'Quiet, ordinary and loud input have distinct heights without early saturation');
+    assert.ok(ordinaryVoice*20>7 && ordinaryVoice*20<12,'Ordinary input sits in the middle of the available height');
+    await feed(Array(24).fill(1));
+    assert.ok((await waveLevels()).at(-1)*20<=18.21,'Even full-scale input leaves space above and below the bars');
+    await feed(Array(45).fill(0));
+    await feed([.2]);
+    const attack=(await waveLevels()).at(-1);
+    assert.ok(attack>quietVoice && attack<loudVoice,'One loud transient is softened without suppressing its response');
+    await feed([0]);
+    assert.ok((await waveLevels()).at(-1)<attack && (await waveLevels()).at(-1)>0.1,'The release eases back instead of snapping to silence');
     await feed(Array(45).fill(0));
     assert.ok((await waveLevels()).every(height=>Math.abs(height-0.1)<0.000001),'Silence settles to the baseline without decorative motion');
     assert.equal(await pill.locator('.capsule-favicon.is-speaking').count(),0);
@@ -149,7 +235,8 @@ try {
     } else {
       assert.ok((await brand.locator('rect').evaluateAll(bars=>bars.map(el=>getComputedStyle(el).transform))).every(transform=>transform==='none'),'Reduced motion keeps the favicon still');
     }
-    await pill.screenshot({path:`artifacts/dictation-pill/listening-${theme}-${reducedMotion}.png`,animations:'disabled'});
+    await pill.locator('.capsule-wave').evaluate(el=>Promise.allSettled(el.getAnimations({subtree:true}).map(a=>a.finished)));
+    await pill.screenshot({path:`artifacts/dictation-pill/listening-${theme}-${reducedMotion}.png`});
     assert.equal(await pill.locator('.capsule-quiet').count(),0);
     await pill.evaluate(()=>window.__QA__.emit('recording-quiet',{generation:12,quiet_seconds:24}));
     await pill.getByText('Stopping…',{exact:true}).waitFor();
@@ -194,15 +281,51 @@ try {
     if(reducedMotion==='no-preference') assert.equal(await ring.evaluate(el=>el.getAnimations()[0].effect.getTiming().duration),10000);
     await stopButton.click();
     assert.equal(await pill.evaluate(()=>window.__QA__.emittedEvents.filter(e=>e.event==='capsule-stop').length),1);
+    const shell=await pill.locator('.capsule-pill').elementHandle();
+    const orbit=await pill.locator('.capsule-orbit').evaluateHandle(el=>el.getAnimations()[0]);
+    const settle=()=>pill.locator('.capsule-pill').evaluate(el=>Promise.allSettled(el.getAnimations({subtree:true})
+      .filter(a=>a.playState!=='paused' && a.effect.getTiming().iterations!==Infinity).map(a=>a.finished)));
     for(const state of ['transcribing','correcting','pasting','done']) {
       await send({state,text:'Private transcript must not render.'});
+      await pill.locator(`.capsule-${state}`).waitFor();
       await pill.evaluate(()=>window.__QA__.emit('capsule-partial-text','Private partial text must not render.'));
+      assert.equal(await pill.locator('.capsule-pill').evaluate((el,shell)=>el===shell,shell),true,'States share one shell instead of remounting and flickering');
+      if(state==='transcribing' && reducedMotion==='no-preference') {
+        const midway=await pill.locator('.capsule-pill').evaluate(el=>{
+          const transition=el.getAnimations().find(a=>a.transitionProperty==='width');
+          if(!transition) return null;
+          transition.pause(); transition.currentTime=180;
+          const bounds=el.getBoundingClientRect();
+          return {width:bounds.width,center:bounds.x+bounds.width/2};
+        });
+        assert.ok(midway && midway.width>40 && midway.width<geometry.width,'The shell contracts through intermediate widths');
+        assert.equal(midway.center,geometry.x+geometry.width/2,'Contraction stays anchored to the same center');
+        await pill.screenshot({path:`artifacts/dictation-pill/contracting-${theme}-${reducedMotion}.png`});
+        await pill.locator('.capsule-pill').evaluate(el=>el.getAnimations().find(a=>a.transitionProperty==='width')?.finish());
+      }
       await pill.clock.runFor(200);
+      await settle();
+      await pill.locator('.capsule-pill').click();
+      assert.equal(await dragCount(),1,'Processing and completion stay fixed even after hands-free listening');
       assert.equal(await pill.getByText(/Private/).count(),0);
       const bounds=await pill.locator('.capsule-pill').boundingBox();
-      assert.equal(bounds.width,geometry.width,'Normal states retain pill width');
-      assert.equal(bounds.height,geometry.height,'Normal states retain pill height');
+      assert.equal(bounds.width,40,'Processing and success contract to a circle');
+      assert.equal(bounds.height,40,'The circular shell retains the listening height');
+      const emblem=await pill.locator('.capsule-emblem').boundingBox();
+      assert.equal(emblem.x+emblem.width/2,bounds.x+bounds.width/2,'The state icon is horizontally centered');
+      assert.equal(emblem.y+emblem.height/2,bounds.y+bounds.height/2,'The state icon is vertically centered');
+      assert.equal(await pill.getByRole('button',{name:'Finish dictation'}).count(),0,'Fading recording controls leave the accessibility tree immediately');
       assert.ok(bounds.y>=0 && bounds.y+bounds.height<=52,'Pill fits the native panel');
+      if(state!=='done' && reducedMotion==='no-preference') {
+        assert.equal(await pill.locator('.capsule-orbit').evaluate((el,orbit)=>el.getAnimations()[0]===orbit,orbit),true,'Processing substates never restart the orbit');
+      }
+      if(state==='done') {
+        assert.equal(await pill.locator('.capsule-success').evaluate(el=>getComputedStyle(el).opacity),'1');
+        assert.equal(await pill.locator('.capsule-success path').evaluate(el=>getComputedStyle(el).strokeDashoffset),'0px','The checkmark finishes drawing');
+        const orbitState=await pill.locator('.capsule-orbit').evaluate(el=>({classes:el.closest('.capsule-pill').className,css:getComputedStyle(el).animationPlayState,animations:el.getAnimations().map(a=>({name:a.animationName,state:a.playState,iterations:a.effect.getTiming().iterations}))}));
+        assert.equal(orbitState.animations.some(a=>a.state==='running'),false,`Success stops continuous animation work (${theme}, ${reducedMotion}): ${JSON.stringify(orbitState)}`);
+      }
+      if(reducedMotion==='reduce') assert.equal(await pill.locator('.capsule-pill').evaluate(el=>el.getAnimations({subtree:true}).length),0,'Reduced motion has no active morph or spin');
       await pill.screenshot({path:`artifacts/dictation-pill/${state}-${theme}-${reducedMotion}.png`});
     }
     await pill.clock.runFor(1200);
@@ -211,11 +334,25 @@ try {
     await send({state:'idle'}); await pill.clock.runFor(80);
     await send({state:'recording',generation:14}); await pill.clock.runFor(300);
     assert.equal(await pill.locator('.capsule-recording').count(),1,'An old fade cannot hide a new recording');
+    await settle();
+    await send({state:'transcribing'}); await pill.locator('.capsule-transcribing').waitFor();
+    await pill.clock.runFor(30);
+    await send({state:'done'}); await pill.locator('.capsule-done').waitFor();
+    await settle();
+    assert.equal((await pill.locator('.capsule-pill').boundingBox()).width,40,'A fast result completes the same contraction');
+    await send({state:'recording',generation:15}); await pill.locator('.capsule-recording').waitFor();
+    await pill.clock.runFor(1200); await settle();
+    assert.equal((await pill.locator('.capsule-pill').boundingBox()).width,geometry.width,'A new recording expands and survives the old success deadline');
+    await send({state:'preparing'}); await pill.locator('.capsule-preparing').waitFor(); await settle();
+    assert.equal((await pill.locator('.capsule-pill').boundingBox()).width,40,'Preparation uses the same compact feedback');
     await send({state:'error',error:'Microphone disconnected. Choose another input.'});
-    await pill.locator('.capsule-pill').evaluate(el=>Promise.allSettled(el.getAnimations({subtree:true}).filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished)));
+    await pill.locator('.capsule-error').waitFor(); await settle();
+    assert.equal((await pill.locator('.capsule-pill').boundingBox()).width,352,'A processing error expands to a readable single line');
     assert.deepEqual((await new AxeBuilder({page:pill}).withTags(['wcag2a','wcag2aa']).analyze()).violations,[]);
+    await send({state:'preparing'}); await pill.locator('.capsule-preparing').waitFor();
+    assert.equal(await pill.locator('.capsule-error-message span').textContent(),'Microphone disconnected. Choose another input.','An outgoing error retains its text while fading into a retry');
     await context.close();
   }
   assert.deepEqual(errors,[]);
-  console.log(`Dictation checks passed in ${engine.name()}: configured triggers, slow-start latching, silence recovery, stale events, one paste, favicon, no transcript, fixed geometry, dismissal and accessibility.`);
+  console.log(`Dictation checks passed in ${engine.name()}: configured triggers, silence recovery, stale events, paste outcomes, microphone waveform and cleanup, locked-only dragging, favicon, no transcript, centered morph, continuous processing, fast completion, interruption, reduced motion and accessibility.`);
 } finally { await browser?.close(); server.kill(); }

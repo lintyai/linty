@@ -3,7 +3,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { CSSProperties } from "react";
 import { listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, LockKeyhole, Square, X, CircleAlert } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LockKeyhole, Square, X, CircleAlert } from "lucide-react";
+import { advanceWaveform, flatWaveform, WAVEFORM_BAR_COUNT } from "@/lib/dictation-waveform";
 import lintyFavicon from "../../src-tauri/icons/icon.svg?raw";
 
 type CapsuleMode = "idle" | "preparing" | "recording" | "transcribing" | "correcting" | "pasting" | "done" | "quiet-stop" | "error";
@@ -14,8 +16,6 @@ interface CapsuleStatePayload {
   generation?: number;
 }
 interface QuietInput { generation: number; quiet_seconds: number }
-const BAR_COUNT = 19;
-const flatWave = () => Array<number>(BAR_COUNT).fill(0);
 
 function formatDuration(seconds: number) {
   return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`;
@@ -44,8 +44,10 @@ function StopCountdown({ seconds }: { seconds: number }) {
 export function CapsulePanel() {
   useCapsuleTheme();
   const [mode, setMode] = useState<CapsuleMode>("idle");
+  // Keep the outgoing row mounted while it fades inside the contracting shell.
+  const [expandedMode, setExpandedMode] = useState<CapsuleMode>("recording");
   const [errorMsg, setErrorMsg] = useState("");
-  const [levels, setLevels] = useState(flatWave);
+  const [levels, setLevels] = useState(flatWaveform);
   const [duration, setDuration] = useState(0);
   const [handsFree, setHandsFree] = useState(false);
   const [quietSeconds, setQuietSeconds] = useState(0);
@@ -83,12 +85,13 @@ export function CapsulePanel() {
         const newRecording = state === "recording" && (modeRef.current !== "recording" || generationRef.current !== generation);
         modeRef.current = state;
         setMode(state);
+        if (state === "recording" || state === "error" || state === "quiet-stop") setExpandedMode(state);
         setDismissing(false);
-        setErrorMsg(error || "Something went wrong");
+        if (state === "error") setErrorMsg(error || "Something went wrong");
         if (newRecording) {
           generationRef.current = generation;
           setDuration(0);
-          setLevels(flatWave());
+          setLevels(flatWaveform());
           setQuietSeconds(0);
           setStopping(false);
           const started = Date.now();
@@ -105,16 +108,7 @@ export function CapsulePanel() {
       }),
       listen<number>("capsule-amplitude", ({ payload }) => {
         if (modeRef.current !== "recording") return;
-        // Map microphone RMS logarithmically (-90 to -6 dBFS). The previous
-        // linear gain saturated at 0.042 RMS, flattening ordinary louder speech.
-        const target = Number.isFinite(payload) && payload > 0
-          ? Math.max(0, Math.min(1, (20 * Math.log10(payload) + 90) / 84)) : 0;
-        setLevels(previous => {
-          const last = previous[previous.length - 1];
-          // A quick attack and softer release follow the voice without jitter.
-          const smoothed = last + (target - last) * (target > last ? 0.75 : 0.4);
-          return [...previous.slice(1), smoothed < 0.01 ? 0 : smoothed];
-        });
+        setLevels(previous => advanceWaveform(previous, payload));
       }),
       listen<QuietInput>("recording-quiet", ({ payload }) => {
         if (modeRef.current === "recording" && payload.generation === generationRef.current) setQuietSeconds(payload.quiet_seconds);
@@ -129,13 +123,16 @@ export function CapsulePanel() {
   }, [dismiss]);
 
   const isRecording = mode === "recording";
+  const isDraggable = isRecording && handsFree;
   const isProcessing = ["preparing", "transcribing", "correcting", "pasting"].includes(mode);
+  const isCompact = isProcessing || mode === "done";
   const isQuiet = isRecording && quietSeconds >= 20;
+  const expandedQuiet = expandedMode === "recording" && quietSeconds >= 20;
   const isSpeaking = isRecording && !isQuiet && levels.slice(-3).some(level => level > 0.02);
   // The three favicon strokes retain their staggered, centered movement, but
   // every height now comes from recent microphone input instead of a timed loop.
   const brandLevels = isRecording && !isQuiet
-    ? [levels[BAR_COUNT - 3], levels[BAR_COUNT - 1], levels[BAR_COUNT - 2]] : [0, 0, 0];
+    ? [levels[WAVEFORM_BAR_COUNT - 3], levels[WAVEFORM_BAR_COUNT - 1], levels[WAVEFORM_BAR_COUNT - 2]] : [0, 0, 0];
   const remainingSeconds = Math.max(0, Math.min(10, 30 - quietSeconds));
   const announcement = mode === "idle" ? "" : isQuiet ? "Stopping automatically. Speak to keep listening, or click the countdown to finish now."
     : isRecording ? handsFree ? "Hands-free listening. Double-press your trigger to finish." : "Listening. Release your trigger to finish."
@@ -145,44 +142,63 @@ export function CapsulePanel() {
   return (
     <div className="capsule-stage">
       <span className="sr-only" role="status" aria-atomic="true">{announcement}</span>
-      {mode !== "idle" && <div className={`capsule-pill capsule-${mode}${isQuiet ? " capsule-quiet" : ""}${dismissing ? " is-dismissing" : ""}`}>
-        <span
-          className={`capsule-favicon${isRecording ? " is-listening" : ""}${isSpeaking ? " is-speaking" : ""}`}
-          role="img" aria-label="Linty"
-          style={{
-            "--voice-left": isRecording ? 0.35 + brandLevels[0] * 0.65 : 1,
-            "--voice-center": isRecording ? 0.35 + brandLevels[1] * 0.65 : 1,
-            "--voice-right": isRecording ? 0.35 + brandLevels[2] * 0.65 : 1,
-          } as CSSProperties}
-          // Inline the same generated favicon artwork so its three strokes can move.
-          dangerouslySetInnerHTML={{ __html: lintyFavicon }}
-        />
-        <span className="capsule-divider" aria-hidden="true" />
-        <div className="capsule-content" key={isQuiet ? "quiet" : isRecording ? "recording" : isProcessing ? "processing" : mode}>
-          {isRecording && (isQuiet ? <span className="capsule-quiet-message" aria-hidden="true">Stopping…</span> : <>
-            <div className="capsule-wave" aria-hidden="true">
-              {levels.map((level, i) => <span key={i} style={{ transform: `scaleY(${0.1 + level * 0.9})`, opacity: 0.4 + level * 0.6 }} />)}
-            </div>
-            <span className="capsule-time" aria-hidden="true">{handsFree && <LockKeyhole size={10} strokeWidth={1.6} />}{formatDuration(duration)}</span>
-          </>)}
-          {isProcessing && <div className="capsule-feedback" aria-hidden="true"><span className="capsule-orbit" /><span>{mode === "preparing" ? "Getting ready" : "Processing"}</span></div>}
-          {mode === "done" && <div className="capsule-feedback capsule-success" aria-hidden="true"><Check size={16} strokeWidth={1.8} /><span>Done</span></div>}
-          {mode === "quiet-stop" && <span className="capsule-message" aria-hidden="true">No input · stopped</span>}
-          {mode === "error" && <div className="capsule-error-message"><CircleAlert size={15} aria-hidden="true" /><span title={errorMsg}>{errorMsg}</span></div>}
+      {mode !== "idle" && <div
+        className={`capsule-pill capsule-${mode}${isDraggable ? " is-draggable" : ""}${isCompact ? " is-compact" : ""}${isProcessing ? " is-processing" : ""}${isQuiet ? " capsule-quiet" : ""}${dismissing ? " is-dismissing" : ""}`}
+        title={isDraggable ? "Hands-free listening · drag to reposition" : isCompact ? mode === "done" ? "Dictation complete" : mode === "preparing" ? "Getting ready" : "Processing dictation" : undefined}
+        onPointerDown={event => {
+          if (!isDraggable || event.button !== 0 || !event.isPrimary || (event.target as Element).closest("button")) return;
+          event.preventDefault(); // Moving the nonactivating panel must not take text focus.
+          void getCurrentWindow().startDragging().catch(() => {});
+        }}
+      >
+        <div className="capsule-emblem">
+          <span
+            className={`capsule-favicon${isRecording ? " is-listening" : ""}${isSpeaking ? " is-speaking" : ""}`}
+            role="img" aria-label="Linty" aria-hidden={isCompact}
+            style={{
+              "--voice-left": isRecording ? 0.35 + brandLevels[0] * 0.65 : 1,
+              "--voice-center": isRecording ? 0.35 + brandLevels[1] * 0.65 : 1,
+              "--voice-right": isRecording ? 0.35 + brandLevels[2] * 0.65 : 1,
+            } as CSSProperties}
+            // Inline the same generated favicon artwork so its three strokes can move.
+            dangerouslySetInnerHTML={{ __html: lintyFavicon }}
+          />
+          <span className="capsule-spinner" aria-hidden="true">
+            <svg className="capsule-orbit" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+              <circle className="capsule-orbit-track" cx="12" cy="12" r="8" />
+              <path d="M12 4a8 8 0 1 1-8 8" />
+            </svg>
+          </span>
+          <svg className="capsule-success" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m6.5 12 3.7 3.7 7.3-7.4" pathLength="1" />
+          </svg>
         </div>
-        {isRecording && <button
-          className={`capsule-action${isQuiet ? " capsule-action-countdown" : ""}`}
-          aria-label="Finish dictation"
-          aria-describedby={isQuiet ? "capsule-stop-description" : undefined}
-          title={isQuiet ? `Finish now · stopping in ${remainingSeconds}s` : "Finish dictation"}
-          disabled={stopping} onClick={() => {
-          setStopping(true);
-          void emit("capsule-stop", { generation: generationRef.current }).catch(() => setStopping(false));
-        }}>
-          {isQuiet ? <StopCountdown seconds={remainingSeconds} /> : <Square size={10} fill="currentColor" strokeWidth={0} />}
-        </button>}
-        {isQuiet && <span id="capsule-stop-description" className="sr-only">Automatically stops in {remainingSeconds} seconds. Click to finish now.</span>}
-        {(mode === "error" || mode === "quiet-stop") && <button className="capsule-action" aria-label="Dismiss" onClick={dismiss}><X size={12} /></button>}
+        <div className="capsule-details" aria-hidden={isCompact} inert={isCompact}>
+          <span className="capsule-divider" aria-hidden="true" />
+          <div className="capsule-content" key={expandedQuiet ? "quiet" : expandedMode}>
+            {expandedMode === "recording" && (expandedQuiet ? <span className="capsule-quiet-message" aria-hidden="true">Stopping…</span> : <>
+              <div className="capsule-wave" aria-hidden="true">
+                {levels.map((level, i) => <span key={i} style={{ transform: `scaleY(${0.1 + level * 0.9})`, opacity: 0.4 + level * 0.6 }} />)}
+              </div>
+              <span className="capsule-time" aria-hidden="true">{handsFree && <LockKeyhole size={10} strokeWidth={1.6} />}{formatDuration(duration)}</span>
+            </>)}
+            {expandedMode === "quiet-stop" && <span className="capsule-message" aria-hidden="true">No input · stopped</span>}
+            {expandedMode === "error" && <div className="capsule-error-message"><CircleAlert size={15} aria-hidden="true" /><span title={errorMsg}>{errorMsg}</span></div>}
+          </div>
+          {expandedMode === "recording" && <button
+            className={`capsule-action${expandedQuiet ? " capsule-action-countdown" : ""}`}
+            aria-label="Finish dictation"
+            aria-describedby={expandedQuiet ? "capsule-stop-description" : undefined}
+            title={expandedQuiet ? `Finish now · stopping in ${remainingSeconds}s` : "Finish dictation"}
+            disabled={stopping || !isRecording} onClick={() => {
+              setStopping(true);
+              void emit("capsule-stop", { generation: generationRef.current }).catch(() => setStopping(false));
+            }}>
+            {expandedQuiet ? <StopCountdown seconds={remainingSeconds} /> : <Square size={10} fill="currentColor" strokeWidth={0} />}
+          </button>}
+          {expandedQuiet && <span id="capsule-stop-description" className="sr-only">Automatically stops in {remainingSeconds} seconds. Click to finish now.</span>}
+          {(expandedMode === "error" || expandedMode === "quiet-stop") && <button className="capsule-action" aria-label="Dismiss" onClick={dismiss}><X size={12} /></button>}
+        </div>
       </div>}
     </div>
   );

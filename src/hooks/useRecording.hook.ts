@@ -1,5 +1,4 @@
 import { useEffect, useCallback } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store/app.store";
 import type { ApplicationIdentity } from "@/types/transcript.types";
@@ -20,7 +19,6 @@ let startedAt = 0;
 export function useRecording() {
   const isRecording = useAppStore((s) => s.isRecording);
   const recordingDuration = useAppStore((s) => s.recordingDuration);
-  const amplitude = useAppStore((s) => s.amplitude);
 
   const startRecording = useCallback(() => {
     if (starting && ownsDictation(starting.session) && !starting.session.cancelled) return starting.promise;
@@ -87,12 +85,5 @@ export function useRecording() {
     return () => clearInterval(timer);
   }, [isRecording]);
 
-  useEffect(() => {
-    const unlisten = listen<number>("audio-amplitude", ({ payload }) => {
-      if (useAppStore.getState().isRecording) useAppStore.getState().setAmplitude(payload);
-    });
-    return () => { void unlisten.then((off) => off()); };
-  }, []);
-
-  return { isRecording, recordingDuration, amplitude, startRecording, stopRecording, getRecordingStartTime: () => startedAt };
+  return { isRecording, recordingDuration, startRecording, stopRecording, getRecordingStartTime: () => startedAt };
 }

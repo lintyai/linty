@@ -269,7 +269,6 @@ function RecordingTestWidget() {
   const {
     isRecording,
     recordingDuration,
-    amplitude,
     startRecording,
     stopRecording,
   } = useRecording();
@@ -326,7 +325,7 @@ function RecordingTestWidget() {
   return (
     <div className="settings-group microphone-test">
       <div className="px-4 py-3.5">
-        <div className="flex items-center gap-3">
+        <div className="flex min-h-9 items-center gap-3">
           <button
             onClick={handleToggle}
             data-tooltip={isRecording ? "Stop microphone test" : "Start microphone test"}
@@ -361,11 +360,10 @@ function RecordingTestWidget() {
             ) : isRecording ? (
               <div className="flex items-center gap-3">
                 <WaveformVisualizer
-                  amplitude={amplitude}
                   isActive
-                  className="h-6 flex-1"
+                  className="h-[20px] flex-1 min-w-0"
                 />
-                <span className="text-[13px] font-medium text-text-secondary tabular-nums shrink-0">
+                <span className="w-[6ch] text-right text-[13px] font-medium text-text-secondary tabular-nums shrink-0">
                   {formatDuration(recordingDuration)}
                 </span>
               </div>

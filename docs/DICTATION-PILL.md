@@ -4,17 +4,72 @@ The capsule uses the generated Linty favicon artwork as inline SVG (the same
 `src-tauri/icons/icon.svg` that produces `public/brand/favicon.png`). Its three
 strokes keep the landing page's staggered, centered movement, with their heights
 driven by recent microphone levels rather than a repeating animation. Reduced
-motion keeps the favicon still. Its 234 × 40 px normal footprint stays fixed
-across listening, preparation,
-processing and success. Input levels form a small scrolling waveform; silence
-settles to dots. RMS is mapped over -90 to -6 dBFS with a quick attack and softer
-release, so louder speech does not immediately flatten every bar. There is no
-continuous canvas draw loop. Processing uses a slow ring, followed by a check
-and a short fade after 1.1 seconds. The favicon stays
-in place. Content changes fade in over 160 ms; entry and exit take 180 ms.
-Reduced motion disables these animations. Every pill state stays on one line;
+motion keeps the favicon still. Listening uses a 234 × 40 px pill.
+Input levels form a small scrolling waveform; silence
+settles to dots. The visual response maps RMS over -72 to -6 dBFS, then squares
+that level so low room noise stays close to the 2 px baseline. Ordinary input
+uses the middle of the 20 px display; loud input has room to move. The maximum
+bar height is 18.2 px, leaving space at both edges. An eased attack and longer
+release soften small fluctuations. This display curve also drives the favicon;
+it does not change recorded audio, speech detection, or the inactivity deadline.
+There is no continuous canvas draw loop.
+
+The in-app Microphone Test shares this response curve and the same 19-bar,
+20 px input history. Each native amplitude frame advances the history, including
+repeated silence; there is no generated center bulge or timed wave. The timer
+reserves its width, and the circular start/stop control stays in place. Its level
+listener exists only while the waveform is visible. Microphone frames no longer
+rerender the global shortcut controller or the rest of the test widget.
+
+When listening finishes, the row fades over 140 ms as the same shell contracts
+around its center to a **40 × 40 px circle** over 360 ms. The favicon moves with
+the shell and transitions into a rotating arc; its artwork is never stretched
+by the contraction. Preparation uses this same compact state. Transcription,
+correction and pasting keep one continuous orbit, without restarting the motion
+or flashing intermediate labels. On successful delivery, the arc settles away as a
+checkmark draws in the same position. Success remains for 1.1 seconds before a
+180 ms fade. Fast results can transition directly to the check during contraction;
+there is no artificial processing delay. A new recording reverses the contraction
+and cancels any old dismissal. Errors expand into a readable row. A failed paste
+shows “Paste failed · open Linty” instead of a checkmark or success sound; the
+transcribed text remains available in the app.
+
+The outgoing row stays mounted for its fade but immediately becomes inert and
+leaves the accessibility tree. Screen readers still receive listening, processing,
+success and error announcements. Continuous animation stops on completion; there
+is no JavaScript drawing loop or added animation dependency. Reduced motion shows
+the circle and check immediately, with no contraction, orbit, or stroke animation.
+Every pill state stays on one line;
 errors can expand in width, with the full message available on hover, to screen
 readers, and in the main window.
+
+The motion follows continuity, clear feedback and restrained timing while retaining
+Linty's own palette and brand. References: [Apple's progress-indicator guidance](https://developer.apple.com/design/human-interface-guidelines/progress-indicators),
+[Chrome's expand/collapse discussion](https://developer.chrome.com/blog/performant-expand-and-collapse),
+and [web.dev's animation guide](https://web.dev/articles/animations-guide).
+Only the small shell animates width to preserve circular corners; its fixed-size
+contents use transforms and opacity. Continuous processing uses only rotation.
+
+With Vite running, open `/tests/previews/pill-motion-preview.html` to compare
+quiet-room, background-noise, soft-speech, conversation and emphasis presets.
+The preview renders the actual capsule, supports input-strength adjustment and
+optional local microphone metering, and includes the complete state sequence.
+Its drag surface and Reset position control let you try placement as well.
+
+## Placement
+
+Drag the pill background or icon to move it **only during hands-free listening**,
+entered by double-pressing a configured trigger. Hold-to-talk, processing and
+completion stay fixed. The stop and dismiss buttons retain their click actions. Dragging uses
+Tauri's native window move and leaves the typing application focused. The panel
+keeps its position between dictations and saves it when hidden for restoration
+after relaunch. Placement uses Cocoa screen points across Retina scales; on show,
+it is kept inside a connected display's work area, with a bottom-center fallback
+if its previous display is no longer connected. No position polling is used.
+
+The surface uses 84% of Linty's own background color with a restrained 18 px blur.
+Text and icons stay opaque. Reduced-transparency preferences restore an opaque
+surface and remove the blur. The preview's textured background makes this visible.
 
 Neither partial nor final transcript text is sent to or displayed in the pill.
 Text still goes to its target application and History as before. The stop button
@@ -79,7 +134,13 @@ watchdog subsequently discards the abandoned buffer.
   repeats, mismatched triggers, alternate stopping and recovery.
 - `yarn test:dictation` (also `UI_BROWSER=webkit`): configured shortcuts, delayed
   startup, warning/resume, empty stop without ASR, stale events, a single paste,
-  no transcript payload, favicon, stable layout, fading and accessibility.
+  no transcript payload, favicon, centered contraction, fast results, interrupted
+  transitions, continuous processing, countdown geometry, fading, accessibility,
+  locked-only dragging, and the in-app microphone waveform and listener cleanup.
+- `node tests/ui.pill-preview.mjs` (also `UI_BROWSER=webkit`): input presets,
+  constrained dragging, microphone release and delayed permission cancellation.
+- `cargo test --no-default-features --lib capsule::placement_tests`: native
+  restoration, invalid coordinates, display removal, and work-area bounds.
 - `yarn test:recovery`: microphone errors, cancelled startup, deadlines and late
   inference suppression remain covered.
 - `cargo test --features local-stt,parakeet --lib`: native silence, quiet input,
