@@ -135,7 +135,7 @@ export function CapsulePanel() {
     ? [levels[WAVEFORM_BAR_COUNT - 3], levels[WAVEFORM_BAR_COUNT - 1], levels[WAVEFORM_BAR_COUNT - 2]] : [0, 0, 0];
   const remainingSeconds = Math.max(0, Math.min(10, 30 - quietSeconds));
   const announcement = mode === "idle" ? "" : isQuiet ? "Stopping automatically. Speak to keep listening, or click the countdown to finish now."
-    : isRecording ? handsFree ? "Hands-free listening. Double-press your trigger to finish." : "Listening. Release your trigger to finish."
+    : isRecording ? handsFree ? "Hands-free listening. Press your trigger once to finish." : "Listening. Release your trigger to finish."
     : mode === "error" ? errorMsg : mode === "done" ? "Dictation complete" : mode === "quiet-stop" ? "No input. Listening stopped."
     : mode === "preparing" ? "Preparing dictation" : "Processing dictation";
 

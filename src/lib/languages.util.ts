@@ -8,6 +8,7 @@
  * Codes are ISO 639-1 and are passed to both engines as-is.
  */
 export const AUTO_LANGUAGE = "auto";
+export const DEFAULT_TRANSCRIPTION_LANGUAGE = "en";
 
 export const TRANSCRIPTION_LANGUAGES: { code: string; label: string }[] = [
   { code: AUTO_LANGUAGE, label: "Auto-detect" },

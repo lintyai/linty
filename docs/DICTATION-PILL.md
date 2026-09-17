@@ -85,8 +85,11 @@ one gesture interpreter:
 - Hold to talk; release to finish.
 - Two presses within 400 ms latch hands-free listening. Releasing the second
   press leaves listening on. A small lock beside the elapsed time identifies it.
-- Double-press again to finish. Either registered trigger can turn it off, but
-  two different triggers cannot combine into one accidental double-press.
+- Once locked, press either registered trigger **once** to finish and transcribe.
+  Stopping happens on the press, without waiting for another press or release.
+  An extra tap within 400 ms is consumed so an old double-press habit cannot
+  reopen the microphone, even if the previous session finishes immediately.
+  Two different triggers cannot combine into an accidental double-press to start.
 - OS key repeat does not count as another press. A quick single tap waits only
   for the double-press window; a hold of at least 250 ms stops immediately on
   release. Changing the trigger finishes an active capture.
@@ -131,7 +134,8 @@ watchdog subsequently discards the abandoned buffer.
 ## Validation
 
 - `yarn test`: gesture tests cover modifier and accelerator holds, double presses,
-  repeats, mismatched triggers, alternate stopping and recovery.
+  single-press finishing, extra-tap suppression, repeats, mismatched triggers,
+  alternate stopping and recovery.
 - `yarn test:dictation` (also `UI_BROWSER=webkit`): configured shortcuts, delayed
   startup, warning/resume, empty stop without ASR, stale events, a single paste,
   no transcript payload, favicon, centered contraction, fast results, interrupted

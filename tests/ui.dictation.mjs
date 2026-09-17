@@ -45,6 +45,10 @@ try {
   const status=s=>page.waitForFunction(({store,s})=>store.getState().status===s,{store,s});
   const get=()=>store.evaluate(s=>({recording:s.getState().isRecording,handsFree:s.getState().handsFree,quiet:s.getState().quietSeconds,generation:s.getState().recordingGeneration}));
   const count=command=>page.evaluate(command=>window.__QA__.calls.filter(c=>c===command).length,command);
+  const single=source=>page.evaluate(source=>{
+    const fire=state=>source==='modifier'?window.__QA__.emit(state==='Pressed'?'fnkey-pressed':'fnkey-released'):window.__QA__.handlers[source]({state,shortcut:source});
+    fire('Pressed');fire('Released');
+  },source);
   const double=source=>page.evaluate(source=>{
     const fire=state=>source==='modifier'?window.__QA__.emit(state==='Pressed'?'fnkey-pressed':'fnkey-released'):window.__QA__.handlers[source]({state,shortcut:source});
     fire('Pressed');fire('Released');fire('Pressed');fire('Released');
@@ -60,13 +64,31 @@ try {
     assert.equal((await get()).handsFree,true,`${trigger} latches`);
     assert.equal(await count('start_recording'),starts+1);
     assert.equal(await count('stop_recording'),stops);
-    await double(source); await status('idle');
+    await single(source); await status('idle');
     assert.equal(await count('stop_recording'),stops+1);
+    await single(source);
+    await page.clock.runFor(100);
+    assert.equal(await count('start_recording'),starts+1,`${trigger}: an extra tap cannot reopen an empty recording`);
+    assert.equal(await count('stop_recording'),stops+1);
+    await page.clock.runFor(401);
   }
   // Alternate shortcut has the same gestures, and latching survives slow startup.
   await store.evaluate(s=>s.getState().setTriggerKey('fn')); await page.clock.runFor(10);
   const alternate='CommandOrControl+Shift+Space';
   await page.waitForFunction(key=>!!window.__QA__.handlers[key],alternate);
+  // Single-press finishing also works while the microphone is still opening.
+  let starts=await count('start_recording'), stops=await count('stop_recording');
+  await page.evaluate(()=>{window.__QA__.delayStart=true;});
+  await double('modifier');
+  await page.waitForFunction(()=>!!window.__QA__.resolveStart);
+  await single(alternate);
+  await page.evaluate(()=>{window.__QA__.resolveStart();window.__QA__.delayStart=false;delete window.__QA__.resolveStart;});
+  await status('idle');
+  await single('modifier');
+  await page.clock.runFor(100);
+  assert.equal(await count('start_recording'),starts+1,'Stopping during startup and tapping again cannot reopen the microphone');
+  assert.equal(await count('stop_recording'),stops+1,'The pending microphone closes once it opens');
+  await page.clock.runFor(401);
   await page.evaluate(()=>{window.__QA__.delayStart=true;});
   await double(alternate);
   await page.waitForFunction(()=>!!window.__QA__.resolveStart);
@@ -105,9 +127,20 @@ try {
   await store.evaluate(s=>s.getState().setTriggerKey('Control+Option+Space'));
   await status('idle');
   assert.equal((await get()).handsFree,false,'Changing the configured trigger finishes the old capture');
+  await page.evaluate(()=>{window.__QA__.hasAudio=true;});
+  starts=await count('start_recording');
+  const pastes=await count('paste_text');
+  await double('Control+Option+Space'); await status('recording');
+  await single('Control+Option+Space'); await status('done');
+  assert.equal(await count('paste_text'),pastes+1,'One press wraps up and delivers the recording');
+  await single('Control+Option+Space');
+  await page.clock.runFor(100);
+  assert.equal(await count('start_recording'),starts+1,'Even a fast successful result cannot turn an extra tap into a new recording');
+  assert.equal(await count('paste_text'),pastes+1);
+  await page.clock.runFor(401);
   await page.evaluate(()=>{window.__QA__.hasAudio=true;window.__QA__.failPaste=true;window.__QA__.capsule=[];});
   await double('Control+Option+Space'); await status('recording');
-  await double('Control+Option+Space'); await status('done');
+  await single('Control+Option+Space'); await status('done');
   await page.waitForFunction(()=>window.__QA__.capsule.at(-1)?.state==='error');
   assert.equal(await page.evaluate(()=>window.__QA__.capsule.some(s=>s.state==='done')),false,'A failed paste must never show a success checkmark');
   assert.equal(await page.evaluate(()=>window.__QA__.capsule.at(-1).error),'Paste failed · open Linty');
@@ -164,6 +197,14 @@ try {
   assert.equal((await get()).recording,true,'Leaving System Check only removes the visualization');
   await page.getByRole('button',{name:'System Check',exact:true}).click();
   await stopTest.click(); await status('idle');
+  await page.getByRole('button',{name:'Shortcuts',exact:true}).click();
+  await store.evaluate(s=>s.getState().toasts.forEach(toast=>s.getState().removeToast(toast.toastId)));
+  await page.clock.runFor(500);
+  await page.setViewportSize({width:1080,height:1280});
+  for(const theme of ['dark','light']) {
+    await store.evaluate((s,theme)=>s.getState().setTheme(theme),theme);
+    await page.screenshot({path:`artifacts/dictation-pill/shortcuts-single-finish-${engine.name()}-${theme}.png`,animations:'disabled'});
+  }
 
   for(const theme of ['dark','light']) for(const reducedMotion of ['no-preference','reduce']) {
     const context=await browser.newContext({viewport:{width:380,height:52},reducedMotion});

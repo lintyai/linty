@@ -10,6 +10,7 @@ export class DictationTrigger {
   private releaseTimer: ReturnType<typeof setTimeout> | undefined;
   private active = false;
   private latched = false;
+  private suppressPressesThrough = -Infinity;
 
   constructor(actions: { start: () => void; stop: () => void; latch: () => void }) {
     this.actions = actions;
@@ -18,21 +19,23 @@ export class DictationTrigger {
   press(source: string, now = performance.now()) {
     if (this.down.has(source)) return; // Ignore key repeat.
     this.down.add(source);
+    // Consume the extra tap if someone still double-presses to finish, even
+    // when an empty recording has already returned to idle.
+    if (now <= this.suppressPressesThrough) return;
+    if (this.latched) {
+      this.reset(true);
+      this.suppressPressesThrough = now + DOUBLE_PRESS_MS;
+      this.actions.stop();
+      return;
+    }
     if (this.first?.source === source && now - this.first.at <= DOUBLE_PRESS_MS) {
       clearTimeout(this.releaseTimer);
       this.first = null;
       this.held = null;
-      if (this.latched) {
-        this.reset(true);
-        this.actions.stop();
-      } else if (this.active) {
+      if (this.active) {
         this.latched = true;
         this.actions.latch();
       }
-      return;
-    }
-    if (this.latched) {
-      this.first = { source, at: now };
       return;
     }
     if (this.active) return;
@@ -51,6 +54,8 @@ export class DictationTrigger {
   }
 
   reset(keepPressed = false) {
+    // Keep the brief stop guard across async completion/recovery resets. It
+    // expires naturally and must not turn a trailing tap into a new recording.
     clearTimeout(this.releaseTimer);
     this.releaseTimer = undefined;
     if (!keepPressed) this.down.clear();
