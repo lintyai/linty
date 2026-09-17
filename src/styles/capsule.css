@@ -22,13 +22,19 @@ html, body, #root {
 }
 .capsule-pill.is-dismissing { opacity: 0; transform: translateY(3px) scale(.98); }
 .capsule-favicon { flex: none; width: 22px; height: 22px; border-radius: 6px; }
+.capsule-favicon > svg { display: block; width: 22px; height: 22px; }
+.capsule-favicon rect { transform-box: fill-box; transform-origin: center; transition: transform 100ms var(--ease-out); }
+.capsule-favicon rect:nth-child(1) { transform: scaleY(var(--voice-left, 1)); }
+.capsule-favicon rect:nth-child(2) { transform: scaleY(var(--voice-center, 1)); }
+.capsule-favicon rect:nth-child(3) { transform: scaleY(var(--voice-right, 1)); }
 .capsule-divider { width: 1px; height: 16px; background: var(--color-border-subtle); flex: none; }
 .capsule-content { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; animation: capsule-content-in 160ms var(--ease-out); }
 .capsule-wave { height: 20px; display: flex; align-items: center; justify-content: center; gap: 2px; flex: 1; }
-.capsule-wave span { width: 2px; height: 20px; border-radius: 2px; background: var(--color-accent); transition: transform 110ms linear, opacity 110ms linear; }
+.capsule-wave span { flex: 0 0 2px; height: 20px; border-radius: 2px; background: var(--color-accent); transform-origin: center; transition: transform 70ms linear, opacity 70ms linear; }
 .capsule-time { display: flex; align-items: center; gap: 4px; font-size: 10px; font-variant-numeric: tabular-nums; color: var(--color-text-muted); white-space: nowrap; }
 .capsule-action {
-  width: 24px; height: 24px; flex: none; display: grid; place-items: center;
+  position: relative; box-sizing: border-box; width: 24px; height: 24px; min-width: 24px; min-height: 24px; max-width: 24px; max-height: 24px; aspect-ratio: 1;
+  flex: 0 0 24px; display: grid; place-items: center; line-height: 1;
   border: 0; border-radius: 50%; padding: 0; background: var(--color-bg-hover); color: var(--color-text-secondary); cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
@@ -40,18 +46,29 @@ html, body, #root {
 .capsule-success { color: var(--color-success); animation: capsule-in 180ms var(--ease-out); }
 .capsule-done { border-color: color-mix(in srgb, var(--color-success) 28%, var(--color-border-subtle)); }
 .capsule-quiet { border-color: color-mix(in srgb, var(--color-warning) 40%, var(--color-border-subtle)); }
-.capsule-quiet-message { display: flex; flex-direction: column; line-height: 13px; font-size: 11px; }
-.capsule-countdown { font-size: 10px; font-variant-numeric: tabular-nums; color: var(--color-text-muted); }
+.capsule-quiet-message { line-height: 16px; font-size: 11px; white-space: nowrap; }
+.capsule-action-countdown { color: var(--color-warning); }
+.capsule-stop-countdown { position: absolute; inset: 0; border-radius: inherit; }
+.capsule-stop-countdown svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.capsule-countdown-track, .capsule-countdown-ring { stroke: currentColor; stroke-width: 1.5; }
+.capsule-countdown-track { stroke: var(--color-border); }
+.capsule-countdown-ring { animation: capsule-countdown linear forwards; }
+.capsule-countdown-number { position: absolute; inset: 0; display: grid; place-items: center; white-space: nowrap; font-size: 10px; line-height: 12px; font-weight: 500; font-variant-numeric: tabular-nums lining-nums; color: var(--color-text-primary); }
+.capsule-countdown-label { display: block; text-align: center; }
+.capsule-countdown-unit { font-size: 8px; line-height: 1; margin-left: .5px; }
 .capsule-message { font-size: 11px; color: var(--color-text-secondary); }
 .capsule-error { width: 352px; border-color: color-mix(in srgb, var(--color-error) 35%, var(--color-border-subtle)); }
-.capsule-error-message { display: flex; gap: 8px; align-items: center; font-size: 11px; line-height: 14px; color: var(--color-text-secondary); }
+.capsule-error-message { display: flex; min-width: 0; gap: 8px; align-items: center; font-size: 11px; line-height: 14px; color: var(--color-text-secondary); }
 .capsule-error-message svg { color: var(--color-error); flex: none; }
-.capsule-error-message span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.capsule-error-message span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @keyframes capsule-in { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes capsule-orbit { to { transform: rotate(360deg); } }
+/* With its start anchored at twelve, shortening the arc retreats counterclockwise. */
+@keyframes capsule-countdown { from { stroke-dashoffset: var(--countdown-start); } to { stroke-dashoffset: 100; } }
 @keyframes capsule-content-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+  .capsule-favicon rect { transform: none !important; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .capsule-pill { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--color-bg); }

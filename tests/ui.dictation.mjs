@@ -115,24 +115,84 @@ try {
     const send=payload=>pill.evaluate(payload=>window.__QA__.emit('capsule-state',payload),payload);
     await send({state:'recording',generation:12,hands_free:true});
     await pill.locator('.capsule-recording').waitFor();
-    assert.equal(await pill.getByAltText('Linty').getAttribute('src'),'/brand/favicon.png');
+    const brand=pill.getByRole('img',{name:'Linty',exact:true});
+    assert.equal(await brand.locator('rect').count(),3,'The existing favicon has three independently animated strokes');
+    assert.equal(await brand.locator('rect').first().evaluate(el=>getComputedStyle(el).animationName),'none','The mark has no synthetic looping animation');
     await pill.clock.runFor(200);
     await pill.locator('.capsule-pill').evaluate(el=>Promise.allSettled(el.getAnimations().map(a=>a.finished)));
     const geometry=await pill.locator('.capsule-pill').boundingBox();
     await pill.clock.runFor(1100);
     await send({state:'recording',generation:12,hands_free:true});
     assert.equal(await pill.locator('.capsule-time').innerText(),'0:01','Latching does not restart the duration');
+    const feed=levels=>pill.evaluate(levels=>{for(const rms of levels) window.__QA__.emit('capsule-amplitude',rms);},levels);
+    const waveLevels=()=>pill.locator('.capsule-wave span').evaluateAll(bars=>bars.map(bar=>new DOMMatrix(bar.style.transform).d));
+    await feed(Array(24).fill(.001));
+    const quietVoice=(await waveLevels()).at(-1);
+    await feed(Array(24).fill(.05));
+    const ordinaryVoice=(await waveLevels()).at(-1);
+    await feed(Array(24).fill(.2));
+    const loudVoice=(await waveLevels()).at(-1);
+    assert.ok(quietVoice>0.1 && ordinaryVoice>quietVoice && loudVoice>ordinaryVoice && loudVoice<1,'Quiet, ordinary and loud input have distinct heights without early saturation');
+    await feed(Array(45).fill(0));
+    assert.ok((await waveLevels()).every(height=>Math.abs(height-0.1)<0.000001),'Silence settles to the baseline without decorative motion');
+    assert.equal(await pill.locator('.capsule-favicon.is-speaking').count(),0);
     await pill.evaluate(()=>{
-      for(let i=0;i<19;i++) window.__QA__.emit('capsule-amplitude',.03);
+      for(const rms of [0,.001,.003,.008,.018,.06,.04,.009,.002,0,.001,.005,.025,.09,.04,.018,.004,.001,.0004]) window.__QA__.emit('capsule-amplitude',rms);
       window.__QA__.emit('recording-quiet',{generation:11,quiet_seconds:25});
     });
+    await pill.locator('.capsule-favicon.is-speaking').waitFor();
+    assert.ok(new Set(await waveLevels()).size>10,'The waveform retains modulation in actual input history');
+    await brand.evaluate(el=>Promise.allSettled(el.getAnimations({subtree:true}).map(a=>a.finished)));
+    if(reducedMotion==='no-preference') {
+      const heights=await brand.locator('rect').evaluateAll(bars=>bars.map(el=>new DOMMatrix(getComputedStyle(el).transform).d));
+      assert.equal(new Set(heights).size,3,'Each favicon stroke follows a staggered input sample');
+    } else {
+      assert.ok((await brand.locator('rect').evaluateAll(bars=>bars.map(el=>getComputedStyle(el).transform))).every(transform=>transform==='none'),'Reduced motion keeps the favicon still');
+    }
+    await pill.screenshot({path:`artifacts/dictation-pill/listening-${theme}-${reducedMotion}.png`,animations:'disabled'});
     assert.equal(await pill.locator('.capsule-quiet').count(),0);
     await pill.evaluate(()=>window.__QA__.emit('recording-quiet',{generation:12,quiet_seconds:24}));
-    await pill.getByText('Still talking?',{exact:true}).waitFor();
+    await pill.getByText('Stopping…',{exact:true}).waitFor();
+    const stopButton=pill.getByRole('button',{name:'Finish dictation'});
+    assert.equal(await stopButton.innerText(),'6s','Remaining seconds sit inside the stop button');
+    assert.equal(await pill.locator('.capsule-quiet-message').innerText(),'Stopping…','The single-line warning explicitly explains the countdown');
+    assert.equal(await pill.locator('.capsule-favicon.is-speaking').count(),0,'The quiet warning never looks like active talking');
+    assert.equal(await pill.locator('.capsule-pill').evaluate(el=>el.offsetHeight),geometry.height,'The warning does not grow the pill');
     await pill.clock.runFor(200);
+    await pill.locator('.capsule-content').evaluate(el=>Promise.allSettled(el.getAnimations().map(a=>a.finished)));
     await pill.screenshot({path:`artifacts/dictation-pill/quiet-${theme}-${reducedMotion}.png`});
+    const assertCircle=async()=>{
+      const button=await stopButton.boundingBox();
+      const number=await pill.locator('.capsule-countdown-label').boundingBox();
+      const svg=await pill.locator('.capsule-stop-countdown svg').boundingBox();
+      assert.equal(button.width,24); assert.equal(button.height,24,'The stop control is a full circle, never an oval');
+      assert.deepEqual(svg,button,'The circular track shares the button bounds');
+      assert.ok(Math.abs(number.x+number.width/2-button.x-button.width/2)<.05,`Countdown is horizontally centered: ${JSON.stringify({button,number})}`);
+      assert.ok(Math.abs(number.y+number.height/2-button.y-button.height/2)<.05,'Countdown is vertically centered');
+      assert.equal(await pill.locator('.capsule-countdown-track').evaluate(el=>getComputedStyle(el).strokeDasharray),'none','A complete track remains behind the retreating arc');
+    };
+    await assertCircle();
+    const ring=pill.locator('.capsule-countdown-ring');
+    const sweep=await ring.evaluateHandle(el=>el.getAnimations()[0]);
+    await pill.evaluate(()=>window.__QA__.emit('recording-quiet',{generation:12,quiet_seconds:25}));
+    await pill.waitForFunction(()=>document.querySelector('.capsule-countdown-label')?.textContent==='5s');
+    assert.equal(await stopButton.innerText(),'5s');
+    if(reducedMotion==='no-preference') {
+      assert.equal(await ring.evaluate((el,sweep)=>el.getAnimations()[0]===sweep,sweep),true,'Updating the numeral must not restart the sweep');
+      assert.equal(await ring.evaluate(el=>el.getAnimations()[0].effect.getTiming().duration),6000);
+    } else {
+      assert.equal(await ring.evaluate(el=>el.getAnimations().length),0,'Reduced motion uses a static arc');
+      assert.equal(await ring.getAttribute('stroke-dashoffset'),'50');
+    }
     await pill.evaluate(()=>window.__QA__.emit('recording-quiet',{generation:12,quiet_seconds:0}));
-    await pill.getByRole('button',{name:'Finish dictation'}).click();
+    await pill.locator('.capsule-stop-countdown').waitFor({state:'detached'});
+    assert.equal(await pill.locator('.capsule-stop-countdown').count(),0,'Input clears the countdown');
+    await pill.evaluate(()=>window.__QA__.emit('recording-quiet',{generation:12,quiet_seconds:20}));
+    await pill.waitForFunction(()=>document.querySelector('.capsule-countdown-label')?.textContent==='10s');
+    assert.equal(await stopButton.innerText(),'10s','A fresh warning starts a fresh countdown');
+    await assertCircle();
+    if(reducedMotion==='no-preference') assert.equal(await ring.evaluate(el=>el.getAnimations()[0].effect.getTiming().duration),10000);
+    await stopButton.click();
     assert.equal(await pill.evaluate(()=>window.__QA__.emittedEvents.filter(e=>e.event==='capsule-stop').length),1);
     for(const state of ['transcribing','correcting','pasting','done']) {
       await send({state,text:'Private transcript must not render.'});
