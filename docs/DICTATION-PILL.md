@@ -1,12 +1,20 @@
 # Dictation pill and hands-free listening
 
-The capsule uses the generated Linty favicon (`public/brand/favicon.png`). Its
-234 × 40 px normal footprint stays fixed across listening, preparation,
+The capsule uses the generated Linty favicon artwork as inline SVG (the same
+`src-tauri/icons/icon.svg` that produces `public/brand/favicon.png`). Its three
+strokes keep the landing page's staggered, centered movement, with their heights
+driven by recent microphone levels rather than a repeating animation. Reduced
+motion keeps the favicon still. Its 234 × 40 px normal footprint stays fixed
+across listening, preparation,
 processing and success. Input levels form a small scrolling waveform; silence
-settles to dots. There is no continuous canvas draw loop. Processing uses a slow
-ring, followed by a check and a short fade after 1.1 seconds. The favicon stays
+settles to dots. RMS is mapped over -90 to -6 dBFS with a quick attack and softer
+release, so louder speech does not immediately flatten every bar. There is no
+continuous canvas draw loop. Processing uses a slow ring, followed by a check
+and a short fade after 1.1 seconds. The favicon stays
 in place. Content changes fade in over 160 ms; entry and exit take 180 ms.
-Reduced motion disables these animations. Errors can expand for readability.
+Reduced motion disables these animations. Every pill state stays on one line;
+errors can expand in width, with the full message available on hover, to screen
+readers, and in the main window.
 
 Neither partial nor final transcript text is sent to or displayed in the pill.
 Text still goes to its target application and History as before. The stop button
@@ -33,8 +41,13 @@ Recovery, sleep, and a capture timeout clear the gesture state.
 
 ## Quiet-input rescue
 
-After **20 seconds without detected input activity**, the pill says “Still
-talking?” and shows seconds remaining. Input clears the warning. At **30
+After **20 seconds without detected input activity**, the pill says “Stopping…”
+on one line. A ring around the stop button drains counterclockwise,
+with the seconds remaining (for example, “6s”) inside the button; clicking still
+finishes dictation. The fixed 24 × 24 px control has a complete circular track behind the shrinking
+arc. The number is absolutely centered independently of its one- or two-digit width.
+The ring runs continuously without restarting on each second, and reduced motion
+shows a static arc updated with the numeral. Input clears the warning. At **30
 seconds**, the native audio worker drops the microphone stream before notifying
 the frontend. Both held and hands-free recording use this safeguard. Continuous
 input has no fixed recording-length limit.
