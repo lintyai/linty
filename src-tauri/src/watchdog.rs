@@ -86,7 +86,9 @@ pub fn start(app: tauri::AppHandle) {
                     let idle_ms = state.model_idle_unload_secs.load(Ordering::Relaxed) * 1000;
                     #[cfg(not(feature = "local-stt"))]
                     let idle_ms = 15 * 60 * 1000;
-                    reformatter.unload_if_idle(crate::now_epoch_ms(), idle_ms);
+                    if reformatter.unload_if_idle(crate::now_epoch_ms(), idle_ms) {
+                        let _ = app.emit("model-idle-unloaded", ());
+                    }
                 }
             }
             // A local model keeps ~0.5 GB resident. Drop it after the
@@ -109,6 +111,11 @@ pub fn start(app: tauri::AppHandle) {
                         .map(|recording| recording.is_recording)
                         .unwrap_or(true);
                     if should_unload_model(recording, unload_secs, last_used, now) {
+                        // Preparation owns this lock until every linked model
+                        // is warm. Never evict an instance while publishing it.
+                        let Ok(_load_guard) = state.local_model_load_lock.try_lock() else { continue; };
+                        let last_used = state.local_model_last_used_at.load(Ordering::Relaxed);
+                        if !should_unload_model(recording, unload_secs, last_used, now) { continue; }
                         let unloaded = state.unload_local_models();
                         state.local_model_last_used_at.store(0, Ordering::Relaxed);
                         if unloaded {

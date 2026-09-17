@@ -1,170 +1,58 @@
 @import "tailwindcss" source("../");
-
 @import "./tokens.css";
 
-html,
-body,
-#root {
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
-    system-ui, sans-serif;
-  background: transparent;
-  color: var(--color-text-primary);
-  -webkit-font-smoothing: antialiased;
-  user-select: none;
-  -webkit-user-select: none;
-  font-size: 13px;
-  line-height: 1.53846;
-  letter-spacing: -0.003em;
-  margin: 0;
-  padding: 0;
+html, body, #root {
+  height: 100%; width: 100%; overflow: hidden; margin: 0; padding: 0;
+  background: transparent; color: var(--color-text-primary);
+  font-family: var(--font-ui); -webkit-font-smoothing: antialiased;
+  user-select: none; -webkit-user-select: none; font-size: 12px;
 }
-
-::-webkit-scrollbar {
-  display: none;
-}
-
-/* ── Capsule pill ── */
-
+::-webkit-scrollbar { display: none; }
+.capsule-stage { height: 100%; display: flex; align-items: center; justify-content: center; }
 .capsule-pill {
-  display: flex;
-  max-width: calc(100vw - 24px);
-  min-height: 36px;
-  transition: opacity 300ms var(--ease-out), transform 300ms var(--ease-out),
-    border-color var(--motion-control) var(--ease-out);
-  align-items: center;
-  padding: 7px 14px;
-  border-radius: 26px;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  display: flex; align-items: center; gap: 10px;
+  width: 234px; min-height: 40px; max-width: calc(100vw - 24px);
+  padding: 7px 10px; border-radius: 24px;
   background: color-mix(in srgb, var(--color-bg) 96%, transparent);
-  border: 1px solid var(--color-border-subtle);
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.35),
-    0 0 0 0.5px rgba(255, 255, 255, 0.06) inset;
+  border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--color-shadow) 35%, transparent), 0 1px 0 color-mix(in srgb, var(--color-text-primary) 4%, transparent) inset;
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  animation: capsule-in 180ms var(--ease-out) backwards;
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out), border-color 220ms var(--ease-out);
 }
-.capsule-pill > div { min-width: 0; }
-.capsule-pill.is-dismissing { opacity: 0; transform: translateY(4px) scale(0.98); }
-
-.capsule-recording { border-color: color-mix(in srgb, var(--color-accent) 50%, transparent); }
-.capsule-processing { border-color: rgba(255,255,255,.15); }
-.capsule-done { border-color: color-mix(in srgb, var(--color-success) 50%, transparent); }
-.capsule-error { border-color: color-mix(in srgb, var(--color-error) 50%, transparent); }
-
-/* ── Recording dot ── */
-
-.capsule-rec-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  flex-shrink: 0;
-  animation: rec-pulse 1.6s ease-in-out infinite;
+.capsule-pill.is-dismissing { opacity: 0; transform: translateY(3px) scale(.98); }
+.capsule-favicon { flex: none; width: 22px; height: 22px; border-radius: 6px; }
+.capsule-divider { width: 1px; height: 16px; background: var(--color-border-subtle); flex: none; }
+.capsule-content { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; animation: capsule-content-in 160ms var(--ease-out); }
+.capsule-wave { height: 20px; display: flex; align-items: center; justify-content: center; gap: 2px; flex: 1; }
+.capsule-wave span { width: 2px; height: 20px; border-radius: 2px; background: var(--color-accent); transition: transform 110ms linear, opacity 110ms linear; }
+.capsule-time { display: flex; align-items: center; gap: 4px; font-size: 10px; font-variant-numeric: tabular-nums; color: var(--color-text-muted); white-space: nowrap; }
+.capsule-action {
+  width: 24px; height: 24px; flex: none; display: grid; place-items: center;
+  border: 0; border-radius: 50%; padding: 0; background: var(--color-bg-hover); color: var(--color-text-secondary); cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
 }
-
-/* ── Animations ── */
-
-@keyframes capsule-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes capsule-out {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(4px) scale(0.96);
-  }
-}
-
-@keyframes rec-pulse {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.4;
-    transform: scale(0.85);
-  }
-}
-
-@keyframes checkmark-draw {
-  0% {
-    stroke-dashoffset: 24;
-  }
-  100% {
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes capsule-text-appear {
-  from {
-    opacity: 0;
-    transform: translateX(3px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.animate-capsule-in {
-  animation: capsule-in 220ms var(--ease-out) backwards;
-}
-.animate-capsule-out {
-  animation: capsule-out 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-.animate-checkmark {
-  stroke-dasharray: 24;
-  stroke-dashoffset: 24;
-  animation: checkmark-draw 350ms ease-out 80ms forwards;
-}
-.animate-spin {
-  animation: spin 1s linear infinite;
-}
-.capsule-text-appear {
-  animation: capsule-text-appear 160ms var(--ease-out) backwards;
-}
-
+.capsule-action:hover { background: var(--color-bg-active); color: var(--color-text-primary); }
+.capsule-action:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.capsule-action:disabled { opacity: .5; cursor: wait; }
+.capsule-feedback { display: flex; width: 100%; align-items: center; justify-content: center; gap: 9px; color: var(--color-text-secondary); font-size: 11px; }
+.capsule-orbit { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--color-border-subtle); border-top-color: var(--color-accent); animation: capsule-orbit 1.4s linear infinite; }
+.capsule-success { color: var(--color-success); animation: capsule-in 180ms var(--ease-out); }
+.capsule-done { border-color: color-mix(in srgb, var(--color-success) 28%, var(--color-border-subtle)); }
+.capsule-quiet { border-color: color-mix(in srgb, var(--color-warning) 40%, var(--color-border-subtle)); }
+.capsule-quiet-message { display: flex; flex-direction: column; line-height: 13px; font-size: 11px; }
+.capsule-countdown { font-size: 10px; font-variant-numeric: tabular-nums; color: var(--color-text-muted); }
+.capsule-message { font-size: 11px; color: var(--color-text-secondary); }
+.capsule-error { width: 352px; border-color: color-mix(in srgb, var(--color-error) 35%, var(--color-border-subtle)); }
+.capsule-error-message { display: flex; gap: 8px; align-items: center; font-size: 11px; line-height: 14px; color: var(--color-text-secondary); }
+.capsule-error-message svg { color: var(--color-error); flex: none; }
+.capsule-error-message span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+@keyframes capsule-in { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes capsule-orbit { to { transform: rotate(360deg); } }
+@keyframes capsule-content-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) {
-  .capsule-rec-dot,
-  .animate-spin {
-    animation: none;
-  }
-  .animate-capsule-in,
-  .animate-capsule-out {
-    animation-duration: 0ms;
-  }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: .01ms !important;
-    animation-delay: 0ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
-  }
-}
-
 @media (prefers-reduced-transparency: reduce) {
   .capsule-pill { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--color-bg); }
-  }
+}

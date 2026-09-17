@@ -26,6 +26,7 @@ let package = Package(
                 .product(name: "FluidAudio", package: "FluidAudio")
             ],
             path: "Sources/LintyParakeet"
-        )
+        ),
+        .testTarget(name: "LintyParakeetTests", dependencies: ["LintyParakeet"])
     ]
 )

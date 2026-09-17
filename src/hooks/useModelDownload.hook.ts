@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { saveSetting } from "@/hooks/useSettings.hook";
 import { useAppStore } from "@/store/app.store";
+import { downloadSpeechModel } from "@/services/model-download.service";
 
 interface ModelInfo {
   name: string;
@@ -15,6 +16,7 @@ interface ModelInfo {
 }
 
 interface DownloadProgress {
+  filename: string;
   downloaded: number;
   total: number;
   progress: number;
@@ -114,11 +116,12 @@ export function useModelDownload() {
     const unlistenProgress = listen<DownloadProgress>(
       "model-download-progress",
       (event) => {
-        setDownloadProgress(event.payload.progress);
+        if (event.payload.filename === downloadingFilename) setDownloadProgress(event.payload.progress);
       },
     );
 
-    const unlistenComplete = listen("model-download-complete", () => {
+    const unlistenComplete = listen<{ filename: string }>("model-download-complete", (event) => {
+      if (event.payload.filename !== downloadingFilename) return;
       setIsDownloading(false);
       setDownloadProgress(100);
       if (downloadingFilename) {
@@ -140,11 +143,8 @@ export function useModelDownload() {
       setDownloadingFilename(model.filename);
 
       try {
-        const path = await invoke<string>("download_model_file", {
-          url: model.url,
-          filename: model.filename,
-        });
-        setLocalModelPath(path);
+        const path = await downloadSpeechModel(model);
+        if (path) setLocalModelPath(path);
         setDownloadedModels((prev) => new Set([...prev, model.filename]));
         setIsLocalModelDownloaded(true);
 

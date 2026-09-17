@@ -25,6 +25,12 @@ extern "C" {
         out_error: *mut *mut c_char,
     ) -> i32;
     fn linty_parakeet_load(dir: *const c_char, out_error: *mut *mut c_char) -> *mut c_void;
+    fn linty_parakeet_has_speech(
+        handle: *mut c_void,
+        samples: *const f32,
+        count: u32,
+        out_error: *mut *mut c_char,
+    ) -> i32;
     fn linty_parakeet_transcribe(
         handle: *mut c_void,
         samples: *const f32,
@@ -138,8 +144,7 @@ pub struct ParakeetEngine {
     handle: *mut c_void,
     /// Set once the CTC keyword-spotter models are loaded alongside the TDT model.
     vocabulary_ready: AtomicBool,
-    /// Serializes CTC loads: the engine load starts one in the background while
-    /// prepare_parakeet_vocabulary may ask for one at the same time.
+    /// Serializes CTC preparation across startup and dictionary changes.
     vocabulary_load: Mutex<()>,
 }
 
@@ -149,6 +154,28 @@ unsafe impl Send for ParakeetEngine {}
 unsafe impl Sync for ParakeetEngine {}
 
 impl ParakeetEngine {
+    /// A detector error must not discard a user's dictation. A missing detector
+    /// also permits speech if a detector is unavailable at runtime.
+    pub fn has_speech(&self, samples: &[f32]) -> bool {
+        let Ok(count) = u32::try_from(samples.len()) else {
+            return true;
+        };
+        let mut error = std::ptr::null_mut();
+        // SAFETY: the engine, sample buffer, and out pointer outlive this
+        // synchronous call. The Swift actor owns the detector's state.
+        let result = unsafe {
+            linty_parakeet_has_speech(self.handle, samples.as_ptr(), count, &mut error)
+        };
+        if result < 0 {
+            log::warn!(
+                "[speech-presence] Detection failed; retaining audio: {}",
+                take_string(error, "unknown error")
+            );
+            return true;
+        }
+        result != 0
+    }
+
     /// Load the bundle in `dir`. First load after download compiles the CoreML
     /// models for the Neural Engine and can take 20–30 s; later loads take ~1 s.
     pub fn load(dir: &Path) -> Result<Self, String> {
@@ -159,11 +186,17 @@ impl ParakeetEngine {
         if handle.is_null() {
             return Err(take_string(err, "Parakeet load failed"));
         }
-        Ok(Self {
+        let engine = Self {
             handle,
             vocabulary_ready: AtomicBool::new(false),
             vocabulary_load: Mutex::new(()),
-        })
+        };
+        // Loading must finish inference setup before this instance is published.
+        // Bypass the speech gate so synthetic silence actually runs the decoder.
+        let started = std::time::Instant::now();
+        engine.transcribe(&vec![0.0; 16000], None)?;
+        log::info!("[stt] Parakeet inference prepared in {}ms", started.elapsed().as_millis());
+        Ok(engine)
     }
 
     /// Transcribe 16 kHz mono samples. `language` is an ISO 639-1 hint or

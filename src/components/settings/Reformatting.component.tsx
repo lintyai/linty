@@ -32,9 +32,10 @@ export function Reformatting() {
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [instructions, setInstructions] = useState(correctionPrompt || DEFAULT_CORRECTION_PROMPT);
-  const busy = useAppStore((s) => s.isRecording || ["transcribing", "correcting", "pasting"].includes(s.status));
+  const busy = useAppStore((s) => s.isRecording || ["preparing", "transcribing", "correcting", "pasting"].includes(s.status));
   const cloudAvailable = sttMode === "cloud" && Boolean(groqApiKey.trim());
   const activeMode: CleanupMode = reformatEnabled ? "local" : cloudAvailable && correctionEnabled ? "cloud" : "off";
   const selectedMode = pendingLocal ? "local" : activeMode;
@@ -69,21 +70,24 @@ export function Reformatting() {
       if (mode === "local") {
         const status = await refresh();
         if (!status.downloaded) { setPendingLocal(true); return; }
+        setPendingLocal(true);
+        setPreparing(true);
       }
       await saveCleanupMode(mode);
       setPendingLocal(false);
     } catch (error) { setError(modelError(error)); }
-    finally { setSaving(false); }
+    finally { setSaving(false); setPreparing(false); }
   };
   const downloadAndEnable = async () => {
     setSaving(true); setDownloading(true); setProgress(0); setError(null);
     try {
       await invoke("download_s1_model");
       await refresh();
+      setPreparing(true);
       await saveCleanupMode("local");
       setPendingLocal(false);
     } catch (error) { setError(modelError(error)); }
-    finally { setSaving(false); setDownloading(false); }
+    finally { setSaving(false); setDownloading(false); setPreparing(false); }
   };
   const saveOption = async <K extends "reformatStyle" | "reformatLists" | "reformatContext",>(key: K, value: ReturnType<typeof useAppStore.getState>[K]) => {
     setSaving(true); setError(null);
@@ -116,7 +120,10 @@ export function Reformatting() {
             ]} />
         } />
         {activeMode === "local" && !pendingLocal && <p className="cleanup-caption">S1-mini by Superwhisper</p>}
-        {pendingLocal && <div className="cleanup-setup">
+        {preparing && <p className="cleanup-caption flex items-center gap-2" role="status">
+          <Loader2 size={14} className="animate-spin" /> Preparing on-device cleanup…
+        </p>}
+        {pendingLocal && !preparing && <div className="cleanup-setup">
           <p>Download S1-mini by Superwhisper to use on-device cleanup. About 496 MB, once.</p>
           <p className="cleanup-caption">{activeMode === "cloud" ? "Cloud cleanup stays on until setup is complete." : "Your current dictation stays unchanged until setup is complete."}</p>
           <div className="cleanup-setup-actions">

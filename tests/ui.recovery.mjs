@@ -40,7 +40,8 @@ try {
     const s = (await import('/src/store/app.store.ts')).useAppStore.getState();
     return {status:s.status,isRecording:s.isRecording,mode:s.sttMode,error:s.error,finalText:s.finalText};
   });
-  const waitStatus = status => page.waitForFunction(async status => (await import('/src/store/app.store.ts')).useAppStore.getState().status === status, status);
+  const store = await page.evaluateHandle(async () => (await import('/src/store/app.store.ts')).useAppStore);
+  const waitStatus = status => page.waitForFunction(({store,status}) => store.getState().status === status, {store,status});
   const press = () => page.evaluate(() => window.__QA__.emit('fnkey-pressed'));
   const release = () => page.evaluate(() => window.__QA__.emit('fnkey-released'));
   const waitRecovery = () => page.waitForFunction(async () => !(await import('/src/services/dictation-recovery.service.ts')).isRecoveringDictation());
@@ -257,6 +258,10 @@ try {
   await capsule.goto(`http://127.0.0.1:${port}/capsule.html`);
   await capsule.waitForFunction(() => window.__QA__.calls.includes('plugin:event|listen'));
   await capsule.clock.install();
+  await capsule.evaluate(() => window.__QA__.emit('capsule-state', { state: 'preparing' }));
+  await capsule.getByRole('status').getByText('Preparing dictation', { exact: true }).waitFor();
+  assert.equal(await capsule.locator('.capsule-recording').count(), 0, 'Preparation must not look like active microphone capture');
+  await capsule.screenshot({ path: '/tmp/linty-preparing-capsule.png', animations: 'disabled' });
   await capsule.evaluate(() => window.__QA__.emit('capsule-state',{state:'error',error:'Add a Groq API key in Settings → Speech engine.'}));
   await capsule.locator('.capsule-error').waitFor();
   assert.equal(await capsule.locator('.capsule-error').innerText(), 'Add a Groq API key in Settings → Speech engine.');

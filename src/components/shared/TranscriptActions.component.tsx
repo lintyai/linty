@@ -10,6 +10,7 @@ interface TranscriptActionsProps {
   onDelete: (transcriptId: string) => Promise<void>;
   stopPropagation?: boolean;
   menu?: boolean;
+  onShowDetails?: () => void;
 }
 
 export function TranscriptCopyButton({
@@ -162,7 +163,8 @@ export function TranscriptMoreActions(props: TranscriptActionsProps) {
             event.stopPropagation();
             popover.current?.hidePopover();
             trigger.current?.focus({ preventScroll: true });
-            setDetailsOpen(true);
+            if (props.onShowDetails) props.onShowDetails();
+            else setDetailsOpen(true);
           }}
         >
           <Info size={14} /> Details

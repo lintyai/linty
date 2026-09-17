@@ -17,9 +17,15 @@ export function useModelAutoLoad() {
   const selectedModelFilename = useAppStore((s) => s.selectedModelFilename);
   const settingsLoaded = useAppStore((s) => s.settingsLoaded);
   const sttMode = useAppStore((s) => s.sttMode);
+  const onboardingComplete = useAppStore((s) => s.onboardingComplete);
 
   useEffect(() => {
-    if (loadedRef.current || !settingsLoaded) return;
+    // First-run setup owns loading until it finishes.
+    if (loadedRef.current || !settingsLoaded || !onboardingComplete) return;
+    if (useAppStore.getState().loadedModelFilename) {
+      loadedRef.current = true;
+      return;
+    }
 
     const activateModel = async (filename: string) => {
       if (sttMode === "local") {
@@ -97,5 +103,5 @@ export function useModelAutoLoad() {
     };
 
     autoLoad();
-  }, [setLoadedModelFilename, selectedModelFilename, settingsLoaded, sttMode]);
+  }, [setLoadedModelFilename, selectedModelFilename, settingsLoaded, sttMode, onboardingComplete]);
 }

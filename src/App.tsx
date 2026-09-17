@@ -9,6 +9,7 @@ import { useGlobalHotkey } from "@/hooks/useGlobalHotkey.hook";
 import { useCorrectionObserver } from "@/hooks/useCorrectionObserver.hook";
 import { useParakeetVocabulary } from "@/hooks/useParakeetVocabulary.hook";
 import { useModelAutoLoad } from "@/hooks/useModelAutoLoad.hook";
+import { useDictationPreparation } from "@/hooks/useDictationPreparation.hook";
 import { useHistory } from "@/hooks/useHistory.hook";
 import { useTheme } from "@/hooks/useTheme.hook";
 import { useUpdater, useUpdaterAutoCheck } from "@/hooks/useUpdater.hook";
@@ -69,6 +70,7 @@ export default function App() {
   useCorrectionObserver();
   useParakeetVocabulary();
   useModelAutoLoad();
+  useDictationPreparation();
   useHistory();
   useEffect(() => {
     const refresh = () => { void refreshHistory().catch(() => {}); };

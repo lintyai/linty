@@ -14,8 +14,8 @@ import { initialReformatMetrics, reformatApplied, reformatOptions } from "@/lib/
 import type { ReformatResult } from "@/types/reformat.types";
 
 
-function emitCapsule(state: string, text?: string, error?: string) {
-  invoke("emit_capsule_state", { state, text: text ?? null, error: error ?? null }).catch(() => {});
+function emitCapsule(state: string) {
+  invoke("emit_capsule_state", { state }).catch(() => {});
 }
 
 export function useTranscription() {
@@ -277,7 +277,7 @@ export function useTranscription() {
         });
 
         setStatus("done");
-        emitCapsule("done", finalResult);
+        emitCapsule("done");
         invoke("play_capsule_sound", { sound: "success" }).catch(() => {});
         // Safety fallback — CapsulePanel handles primary hide via dismiss callback
         hideTimerRef.current = setTimeout(() => {

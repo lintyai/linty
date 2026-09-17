@@ -2,6 +2,7 @@ import type { StateCreator } from "zustand";
 
 export type TranscriptionStatus =
   | "idle"
+  | "preparing"
   | "recording"
   | "transcribing"
   | "correcting"

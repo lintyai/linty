@@ -457,6 +457,7 @@ export const fixture = ({
       if (command.startsWith("history_"))
         return structuredClone(historyCommand(command, structuredClone(args)));
       if (command === "get_audio_inputs") return structuredClone(window.__QA__.audioInputs);
+      if (command === "start_recording") return 1;
       if (command === "stop_recording") return { sample_count: 0, duration_secs: 0 };
       if (command === "set_audio_input") {
         window.__QA__.audioInputs.selected = args.name;

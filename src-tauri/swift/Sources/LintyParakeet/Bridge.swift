@@ -14,6 +14,7 @@ import Foundation
 final class ParakeetEngine {
     let manager: AsrManager
     let models: AsrModels
+    let speechPresence = SpeechPresenceSlot()
     /// CTC keyword-spotter models for custom-vocabulary rescoring (optional; see linty_parakeet_load_ctc).
     var ctcModels: CtcModels?
     var ctcDirectory: URL?
@@ -120,11 +121,16 @@ public func linty_parakeet_download(
     let sink = ProgressSink(fn: progress, ctx: ctx)
 
     let result = runBlocking { () -> URL in
-        try await AsrModels.download(
+        let downloaded = try await AsrModels.download(
             to: url,
             version: .v3,
-            progressHandler: { snapshot in sink.report(snapshot.fractionCompleted) }
+            progressHandler: { snapshot in sink.report(snapshot.fractionCompleted * 0.98) }
         )
+        _ = try await SpeechPresenceDetector.download(
+            in: url, progress: { snapshot in sink.report(0.98 + snapshot.fractionCompleted * 0.02) }
+        )
+        sink.report(1)
+        return downloaded
     }
 
     switch result {
@@ -153,7 +159,12 @@ public func linty_parakeet_load(
         let models = try await AsrModels.load(from: url, version: .v3)
         let manager = AsrManager()
         try await manager.loadModels(models)
-        return ParakeetEngine(manager: manager, models: models)
+        let engine = ParakeetEngine(manager: manager, models: models)
+        // Ready means the installed detector has completed real inference,
+        // including on fresh installs, subsequent launches and idle reloads.
+        let detector = try await SpeechPresenceDownloads.shared.prepare(in: url)
+        await engine.speechPresence.install(detector)
+        return engine
     }
 
     switch result {
@@ -162,6 +173,28 @@ public func linty_parakeet_load(
     case .failure(let error):
         setError(outError, describe(error))
         return nil
+    }
+}
+
+/// Separate from transcription so synthetic ASR warm-up still runs the decoder.
+@_cdecl("linty_parakeet_has_speech")
+public func linty_parakeet_has_speech(
+    _ handle: UnsafeMutableRawPointer?,
+    _ samples: UnsafePointer<Float>?,
+    _ count: UInt32,
+    _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+) -> Int32 {
+    guard let handle, let samples else {
+        setError(outError, "Missing engine or audio")
+        return -1
+    }
+    let engine = Unmanaged<ParakeetEngine>.fromOpaque(handle).takeUnretainedValue()
+    let audio = Array(UnsafeBufferPointer(start: samples, count: Int(count)))
+    switch runBlocking({ try await engine.speechPresence.hasSpeech(audio) }) {
+    case .success(let speech): return speech ? 1 : 0
+    case .failure(let error):
+        setError(outError, describe(error))
+        return -1
     }
 }
 
@@ -259,6 +292,12 @@ public func linty_parakeet_load_ctc(
     let result = runBlocking { () -> (CtcModels, CtcTokenizer) in
         let models = try await CtcModels.downloadAndLoad(to: url, variant: .ctc110m)
         let tokenizer = try await CtcTokenizer.load(from: url)
+        // Exercise CTC itself: silent TDT warm-up can return before reaching
+        // this optional vocabulary path. Discard all synthetic results.
+        let spotter = CtcKeywordSpotter(models: models, blankId: models.vocabulary.count)
+        _ = try await spotter.spotKeywordsWithLogProbs(
+            audioSamples: Array(repeating: 0, count: 16000),
+            customVocabulary: CustomVocabularyContext(terms: []), minScore: nil)
         return (models, tokenizer)
     }
     switch result {

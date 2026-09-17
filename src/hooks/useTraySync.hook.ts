@@ -1,15 +1,17 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store/app.store";
 import type { SttMode } from "@/store/slices/settings.slice";
 import { formatTriggerLabel } from "@/lib/trigger.util";
 import { TRANSCRIPTION_LANGUAGES } from "@/lib/languages.util";
+import { dictationPreparation } from "@/services/dictation-preparation.service";
 
 export function useTraySync(
   saveSttMode: (mode: SttMode) => Promise<void>,
   saveTranscriptionLanguage: (language: string) => Promise<void>,
 ) {
   const status = useAppStore((s) => s.status);
+  const preparation = useSyncExternalStore(dictationPreparation.subscribe, dictationPreparation.getSnapshot);
   const sttMode = useAppStore((s) => s.sttMode);
   const selectedModelFilename = useAppStore((s) => s.selectedModelFilename);
   const loadedModelFilename = useAppStore((s) => s.loadedModelFilename);
@@ -18,7 +20,7 @@ export function useTraySync(
   const transcriptionLanguage = useAppStore((s) => s.transcriptionLanguage);
   const setupComplete = useAppStore((s) => s.onboardingComplete);
   const cloudReady = useAppStore((s) => !!s.groqApiKey.trim());
-  const localReady = !!loadedModelFilename && (!selectedModelFilename || selectedModelFilename === loadedModelFilename);
+  const localReady = preparation === "ready" && !!loadedModelFilename && (!selectedModelFilename || selectedModelFilename === loadedModelFilename);
   useEffect(() => {
     const unlisten = listen<string>("audio-input-error", ({ payload }) => {
       useAppStore.getState().addToast({ type: "error", message: payload });
@@ -40,13 +42,14 @@ export function useTraySync(
   // Keep the menu in sync with new, restored, and deleted transcripts.
   useEffect(() => {
     if (!settingsLoaded) return;
-    const snapshot = { status, sttMode, localEngine, recentTranscripts, localReady, cloudReady,
+    const trayStatus = ["idle", "done"].includes(status) && preparation === "preparing" ? "preparing" : status;
+    const snapshot = { status: trayStatus, sttMode, localEngine, recentTranscripts, localReady, cloudReady,
       setupComplete, triggerLabel: formatTriggerLabel(triggerKey),
       transcriptionLanguage, languages: TRANSCRIPTION_LANGUAGES };
     emit("tray-state-changed", snapshot).catch((err) => {
       console.error("Failed to update tray menu:", err);
     });
-  }, [status, sttMode, localEngine, settingsLoaded, recentTranscripts, localReady, cloudReady, setupComplete, triggerKey, transcriptionLanguage]);
+  }, [status, preparation, sttMode, localEngine, settingsLoaded, recentTranscripts, localReady, cloudReady, setupComplete, triggerKey, transcriptionLanguage]);
 
   useEffect(() => {
     const unlisten = listen<string>("tray-language-changed", async ({ payload }) => {
@@ -89,7 +92,7 @@ export function useTraySync(
         let error: string | null = null;
         try {
           const state = useAppStore.getState();
-          if (state.isRecording || ["transcribing", "correcting", "pasting"].includes(state.status)) {
+          if (state.isRecording || ["preparing", "transcribing", "correcting", "pasting"].includes(state.status)) {
             throw new Error("Finish dictating before changing engines.");
           }
           await saveSttMode(mode);

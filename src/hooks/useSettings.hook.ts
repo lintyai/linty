@@ -2,6 +2,7 @@ import { useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { load } from "@tauri-apps/plugin-store";
 import { useAppStore } from "@/store/app.store";
+import { prepareInstalledCleanup } from "@/services/dictation-preparation.service";
 import { AUTO_LANGUAGE, isSupportedLanguage } from "@/lib/languages.util";
 import { DEFAULT_MODEL_IDLE_UNLOAD_MINUTES, DEFAULT_TRIGGER_KEY } from "@/store/slices/settings.slice";
 import type { SettingsSlice, SttMode, ThemePreference } from "@/store/slices/settings.slice";
@@ -124,7 +125,7 @@ export function useSettings() {
           reformatLists: lists !== false,
           reformatContext: context && ["auto", "general", "email"].includes(context) ? context : "auto",
         });
-        if (reformat) void invoke("prepare_s1_model").catch(() => {});
+        void prepareInstalledCleanup().catch((error) => console.warn("[s1] Startup preparation failed:", error));
         const savedTheme = await store.get<ThemePreference>("theme");
         const savedWhisperPrompt = await store.get<string>("whisperPrompt");
         const savedCorrectionPrompt = await store.get<string>("correctionPrompt");
@@ -183,7 +184,7 @@ export function useSettings() {
 
   const removeGroqApiKey = useCallback(() => saveSettingsChange("groqApiKey", async () => {
     const state = useAppStore.getState();
-    if (state.isRecording || ["recording", "transcribing", "correcting", "pasting"].includes(state.status)) {
+    if (state.isRecording || ["preparing", "recording", "transcribing", "correcting", "pasting"].includes(state.status)) {
       throw new Error("Finish dictating before removing your API key.");
     }
     await invoke("remove_groq_api_key");
@@ -206,7 +207,7 @@ export function useSettings() {
 
   const saveCleanupMode = useCallback((mode: CleanupMode) => saveSettingsChange("cleanupMode", async () => {
     const state = useAppStore.getState();
-    if (state.isRecording || ["transcribing", "correcting", "pasting"].includes(state.status)) {
+    if (state.isRecording || ["preparing", "transcribing", "correcting", "pasting"].includes(state.status)) {
       throw new Error("Finish dictating before changing text cleanup.");
     }
     if (mode === "cloud" && (state.sttMode !== "cloud" || !state.groqApiKey.trim())) {
@@ -215,6 +216,13 @@ export function useSettings() {
     if (mode === "local") {
       const model = await invoke<{ downloaded: boolean }>("s1_model_status");
       if (!model.downloaded) throw new Error("Download S1-mini before using on-device cleanup.");
+      // Do not enable correction until loading and the first inference passes
+      // finish; otherwise the user's first dictation pays for GPU initialization.
+      await invoke("prepare_s1_model");
+      const current = useAppStore.getState();
+      if (current.isRecording || ["preparing", "transcribing", "correcting", "pasting"].includes(current.status)) {
+        throw new Error("Finish dictating before changing text cleanup.");
+      }
     }
     const store = await getStore();
     const previous = { reformatEnabled: state.reformatEnabled, correctionEnabled: state.correctionEnabled };
@@ -229,9 +237,8 @@ export function useSettings() {
       throw error;
     }
     useAppStore.setState(next);
-    if (previous.reformatEnabled !== next.reformatEnabled) {
-      void invoke(next.reformatEnabled ? "prepare_s1_model" : "unload_s1_model").catch(() => {});
-    }
+    // Installed S1 stays prepared even when cleanup is off. The shared idle
+    // policy releases it later; switching modes must not make it cold again.
   }), []);
 
   const saveReformatSetting = useCallback(<K extends "reformatStyle" | "reformatLists" | "reformatContext",>(key: K, value: SettingsSlice[K]) => saveSetting(key, value), []);

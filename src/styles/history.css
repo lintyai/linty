@@ -239,6 +239,12 @@
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
+.reading-context > .app-avatar {
+  flex-shrink: 0;
+}
+.reading-context > time {
+  flex-shrink: 0;
+}
 .detail-toolbar > button {
   flex-shrink: 0;
 }
@@ -285,8 +291,22 @@
   outline-offset: -1px;
   border-radius: 4px;
 }
+.reading-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 28px;
+  font-size: 12px;
+}
+.reading-title h2 {
+  font-weight: 500;
+}
+.reading-title > span {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
 .reading-text {
-  margin-block: 28px 30px;
+  margin-block: 10px 26px;
   font-size: 18px;
   font-weight: 400;
   line-height: 1.8;
@@ -349,21 +369,36 @@
   margin-top: 8px;
   font-size: 11px;
 }
-.reading-corrections {
-  margin-top: 30px;
-}
-.reading-corrections h2 {
-  font-size: 12px;
-  font-weight: 550;
-}
 .reading-note {
   font-size: 12px;
   line-height: 1.75;
   margin-top: 15px;
   color: var(--color-text-muted);
 }
-.reading-corrections .correction-panel {
-  margin-top: 15px;
+.correction-panel.is-compact {
+  margin-top: 24px;
+  padding-top: 16px;
+}
+.correction-count {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.correction-history-link {
+  align-self: flex-start;
+  font-size: 12px;
+}
+.correction-panel.is-compact .correction-pair {
+  font-size: 12px;
+}
+.correction-panel.is-compact .correction-pair ins {
+  color: var(--color-accent);
+}
+.correction-panel.is-compact .correction-add,
+.correction-panel.is-compact .correction-known {
+  margin-left: 0;
+}
+.correction-panel.is-compact .correction-known {
+  color: var(--color-accent);
 }
 .original-transcript {
   margin-top: 30px;
@@ -376,6 +411,9 @@
   font-size: 12px;
   font-weight: 500;
 }
+.original-transcript summary > svg {
+  flex-shrink: 0;
+}
 .original-transcript p {
   margin-top: 16px;
   font-size: 13px;
@@ -386,7 +424,7 @@
   -webkit-user-select: text;
 }
 .history-page .transcript-editor {
-  margin-block: 24px 28px;
+  margin-block: 12px 28px;
 }
 .transcript-menu {
   position: fixed;
@@ -461,6 +499,25 @@
   margin-top: 22px;
   font-size: 12px;
   color: var(--color-text-muted);
+}
+.transcript-info-content {
+  overflow-wrap: anywhere;
+}
+.transcript-info-dialog .text-version-stages {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.transcript-edit-history .correction-panel {
+  border-top: 0;
+  padding-top: 0;
+}
+.transcript-edit-history .correction-record + .correction-record {
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: 14px;
+}
+.transcript-info-dialog .correction-meta {
+  font-size: 12px;
+  line-height: 1.6;
 }
 @media (max-width: 800px) {
   .history-page .page-header {

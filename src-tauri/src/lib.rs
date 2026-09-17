@@ -1,4 +1,5 @@
 mod audio;
+mod input_activity;
 mod audio_input;
 mod application;
 #[cfg(target_os = "macos")]
@@ -85,8 +86,10 @@ async fn load_whisper_ctx(
     tokio::task::spawn_blocking(move || {
         let mut ctx_params = WhisperContextParameters::default();
         ctx_params.use_gpu(true);
-        WhisperContext::new_with_params(&path_str, ctx_params)
-            .map_err(|e| format!("Failed to load model: {}", e))
+        let ctx = WhisperContext::new_with_params(&path_str, ctx_params)
+            .map_err(|e| format!("Failed to load model: {}", e))?;
+        warm_up_whisper(&ctx)?;
+        Ok(ctx)
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
@@ -137,7 +140,13 @@ async fn load_local_engine(
             let ctc_dir = models_dir(app)?.join(transcribe::PARAKEET_CTC_ID);
             log::info!("[stt] Loading Parakeet bundle from: {}", dir.display());
             let started = std::time::Instant::now();
-            let engine = tokio::task::spawn_blocking(move || parakeet::ParakeetEngine::load(&dir))
+            let engine = tokio::task::spawn_blocking(move || {
+                let engine = parakeet::ParakeetEngine::load(&dir)?;
+                // Installed vocabulary models belong to this instance too.
+                // Publish it only after their inference warm-up has completed.
+                if ctc_dir.is_dir() { engine.load_ctc(&ctc_dir)?; }
+                Ok::<_, String>(engine)
+            })
                 .await
                 .map_err(|e| format!("Task join error: {}", e))??;
             log::info!(
@@ -150,22 +159,6 @@ async fn load_local_engine(
             let previous = state.whisper_ctx.lock().map_err(|e| e.to_string())?.take();
             *state.parakeet_engine.lock().map_err(|e| e.to_string())? = Some(Arc::clone(&engine));
             drop(previous);
-            // Once downloaded (prepare_parakeet_vocabulary), the vocabulary models
-            // load in the background so an idle reload keeps them without holding
-            // up the first dictation for the CoreML compile.
-            if ctc_dir.is_dir() {
-                let vocab_engine = Arc::clone(&engine);
-                std::thread::spawn(move || {
-                    let started = std::time::Instant::now();
-                    match vocab_engine.load_ctc(&ctc_dir) {
-                        Ok(()) => log::info!(
-                            "[stt] Parakeet vocabulary models ready in {:.0}ms",
-                            started.elapsed().as_millis()
-                        ),
-                        Err(e) => log::warn!("[stt] Parakeet vocabulary models not loaded: {}", e),
-                    }
-                });
-            }
             return Ok(LocalEngine::Parakeet(engine));
         }
         #[cfg(not(feature = "parakeet"))]
@@ -215,41 +208,22 @@ async fn resolve_local_engine(
     load_local_engine(app, state, &filename).await
 }
 
-/// Prime the freshly loaded engine with a tiny silent inference on a background
-/// thread so the first real dictation doesn't pay the pipeline warm-up cost.
+/// Run actual inference before publishing the freshly loaded context. Called
+/// on the model-loading worker, never on the main/audio thread.
 #[cfg(feature = "local-stt")]
-fn warm_up_local_engine(engine: LocalEngine) {
-    std::thread::spawn(move || {
-        let warmup_start = std::time::Instant::now();
-        match engine {
-            LocalEngine::Whisper(ctx) => {
-                log::debug!("[cmd] Warming up Whisper GPU pipeline...");
-                if let Ok(mut state) = ctx.create_state() {
-                    let silence = vec![0.0f32; 1600]; // 0.1s at 16kHz
-                    let mut params = whisper_rs::FullParams::new(
-                        whisper_rs::SamplingStrategy::Greedy { best_of: 1 },
-                    );
-                    params.set_n_threads(1);
-                    params.set_single_segment(true);
-                    params.set_no_timestamps(true);
-                    params.set_print_special(false);
-                    params.set_print_progress(false);
-                    params.set_print_realtime(false);
-                    let _ = state.full(params, &silence);
-                }
-            }
-            #[cfg(feature = "parakeet")]
-            LocalEngine::Parakeet(engine) => {
-                log::debug!("[cmd] Warming up Parakeet Neural Engine pipeline...");
-                let silence = vec![0.0f32; 16000]; // 1s at 16kHz
-                let _ = engine.transcribe(&silence, None);
-            }
-        }
-        log::info!(
-            "[cmd] Warm-up done in {:.0}ms",
-            warmup_start.elapsed().as_millis()
-        );
-    });
+pub fn warm_up_whisper(ctx: &whisper_rs::WhisperContext) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    let mut state = ctx.create_state().map_err(|e| format!("Whisper preparation failed: {e}"))?;
+    let mut params = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
+    params.set_n_threads(1);
+    params.set_single_segment(true);
+    params.set_no_timestamps(true);
+    params.set_print_special(false);
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    state.full(params, &vec![0.0; 16000]).map_err(|e| format!("Whisper preparation failed: {e}"))?;
+    log::info!("[stt] Whisper inference prepared in {}ms", started.elapsed().as_millis());
+    Ok(())
 }
 
 #[tauri::command]
@@ -257,7 +231,7 @@ async fn start_recording(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     track_application: Option<bool>,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     let previous_generation = state.audio_generation.load(Ordering::SeqCst);
     let application = if track_application.unwrap_or(false) {
         let (reply, receive) = tokio::sync::oneshot::channel();
@@ -324,7 +298,7 @@ async fn start_recording(
             }
         }
     }
-    result
+    result.map(|()| generation)
 }
 
 /// Abandon the old capture worker. Generation checks prevent a late startup or
@@ -438,9 +412,7 @@ async fn transcribe_buffer(
 
         match engine {
             LocalEngine::Whisper(ctx) => {
-                let app_seg = app.clone();
                 let app_prog = app.clone();
-                let segment_generation = state.audio_generation.clone();
                 let progress_generation = state.audio_generation.clone();
                 tokio::task::spawn_blocking(move || {
                     transcribe::transcribe_local(
@@ -448,12 +420,8 @@ async fn transcribe_buffer(
                         &samples,
                         prompt.as_deref(),
                         language.as_deref(),
-                        // Stream partial text / progress to the capsule as whisper decodes.
-                        move |partial| {
-                            if segment_generation.load(Ordering::SeqCst) == generation {
-                                let _ = app_seg.emit_to("capsule", "capsule-partial-text", partial);
-                            }
-                        },
+                        // The capsule only communicates status, never transcript text.
+                        |_| {},
                         move |progress| {
                             if progress_generation.load(Ordering::SeqCst) == generation {
                                 let _ = app_prog.emit_to("capsule", "capsule-stt-progress", progress);
@@ -949,6 +917,7 @@ async fn download_model_file(
             // reports a 0–1 fraction covering download + Neural Engine compile.
             let _ = url;
             let app_progress = app.clone();
+            let progress_filename = filename.clone();
             let dir = dest.clone();
             tokio::task::spawn_blocking(move || {
                 let mut last_pct: i64 = -1;
@@ -959,6 +928,7 @@ async fn download_model_file(
                         let _ = app_progress.emit(
                             "model-download-progress",
                             serde_json::json!({
+                                "filename": progress_filename,
                                 "downloaded": pct,
                                 "total": 100,
                                 "progress": pct,
@@ -969,7 +939,7 @@ async fn download_model_file(
             })
             .await
             .map_err(|e| format!("Task join error: {}", e))??;
-            let _ = app.emit("model-download-complete", ());
+            let _ = app.emit("model-download-complete", serde_json::json!({ "filename": filename }));
             return Ok(dest.to_string_lossy().to_string());
         }
         #[cfg(not(feature = "parakeet"))]
@@ -1037,7 +1007,7 @@ async fn load_local_model(
     {
         // Serialize with transcribe_buffer's lazy reload — never two loads at once
         let _load_guard = state.local_model_load_lock.lock().await;
-        let engine = load_local_engine(&app, &state, &filename).await?;
+        let _engine = load_local_engine(&app, &state, &filename).await?;
         {
             let mut name_guard = state
                 .local_model_filename
@@ -1049,13 +1019,77 @@ async fn load_local_model(
             .local_model_last_used_at
             .store(now_epoch_ms(), Ordering::Relaxed);
 
-        warm_up_local_engine(engine);
+        prepare_installed_cleanup(&app, false).await?;
 
         log::info!("[cmd] Local model loaded successfully: {}", filename);
         Ok(())
     }
     #[cfg(not(feature = "local-stt"))]
     Err("Local STT not available — rebuild with `local-stt` feature".into())
+}
+
+/// A single readiness barrier used before capture and proactively on startup.
+/// Reuses warm instances; idle-unloaded instances follow the same load path.
+#[tauri::command]
+async fn prepare_dictation(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    local: bool,
+    filename: Option<String>,
+    vocabulary: bool,
+    cleanup_required: bool,
+) -> Result<(), String> {
+    #[cfg(feature = "local-stt")]
+    {
+        let _guard = state.local_model_load_lock.lock().await;
+        state.local_model_last_used_at.store(now_epoch_ms(), Ordering::Relaxed);
+        if local {
+            let selected = state.local_model_filename.lock().map_err(|e| e.to_string())?.clone();
+            let filename = filename.or(selected.clone())
+                .ok_or("Choose a speech model in Settings → Speech engine.")?;
+            let engine = if selected.as_ref() == Some(&filename) {
+                resident_local_engine(&state)?
+            } else { None };
+            let engine = match engine {
+                Some(engine) => engine,
+                None => {
+                    let engine = load_local_engine(&app, &state, &filename).await?;
+                    *state.local_model_filename.lock().map_err(|e| e.to_string())? = Some(filename);
+                    engine
+                }
+            };
+            #[cfg(feature = "parakeet")]
+            if vocabulary {
+                if let LocalEngine::Parakeet(engine) = engine {
+                    let dir = models_dir(&app)?.join(transcribe::PARAKEET_CTC_ID);
+                    tokio::task::spawn_blocking(move || engine.load_ctc(&dir))
+                        .await.map_err(|e| e.to_string())??;
+                }
+            }
+            #[cfg(not(feature = "parakeet"))]
+            let _ = (engine, vocabulary);
+        }
+        let result = prepare_installed_cleanup(&app, cleanup_required).await;
+        state.local_model_last_used_at.store(now_epoch_ms(), Ordering::Relaxed);
+        result
+    }
+    #[cfg(not(feature = "local-stt"))]
+    {
+        let _ = (state, filename, vocabulary);
+        if local { return Err("Local STT is not available in this build".into()); }
+        prepare_installed_cleanup(&app, cleanup_required).await
+    }
+}
+
+async fn prepare_installed_cleanup(app: &tauri::AppHandle, required: bool) -> Result<(), String> {
+    let status = reformat::s1_model_status(app.clone(), app.state())?;
+    if status.downloaded {
+        reformat::prepare_s1_model(app.clone(), app.state()).await
+    } else if required {
+        Err("Download S1-mini in Text cleanup settings before using AI autocorrection.".into())
+    } else {
+        Ok(())
+    }
 }
 
 /// Download (first time, ~100 MB) and load the CTC keyword-spotter models that
@@ -1507,6 +1541,7 @@ pub fn run() {
             set_model_idle_unload_minutes,
             register_local_model,
             load_local_model,
+            prepare_dictation,
             prepare_parakeet_vocabulary,
             reset_all_data,
             capsule::show_capsule,

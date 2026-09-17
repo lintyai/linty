@@ -1,0 +1,97 @@
+# Dictation preparation
+
+“Ready” means inference preparation has completed, rather than only the model
+file being loaded. The preparation path is shared by startup and capture and is
+rechecked before every recording to cover idle unloading.
+
+## Prepared components
+
+- Parakeet: loads its CoreML assets, warms the actual cached Silero detector,
+  and runs a one-second silent transcription directly through the decoder.
+  Synthetic output is discarded. Runtime detector failures still allow audio
+  through, but load/preparation failures prevent a false ready state.
+- Whisper: runs a one-second silent inference on the selected context before
+  publishing it. GPU initialization errors are reported rather than ignored.
+- Parakeet vocabulary: installed CTC models run keyword-spotter inference on
+  synthetic audio before becoming ready. Enabled dictionary words cause missing
+  CTC assets to prepare before capture. No user transcript is needed to warm CTC.
+- S1-mini: any installed copy is prepared, even when correction is disabled,
+  as requested. Prefill and two decode passes finish, GPU work synchronizes,
+  and the synthetic KV cache is cleared. This never downloads or enables S1.
+
+The speech engine is published only after its own preparation finishes. The
+`prepare_dictation` command then checks the linked vocabulary and installed S1
+before returning. Concurrent preparation shares existing engines and locks;
+later calls do not repeat inference on already prepared instances.
+
+## Lifecycle and interaction
+
+Fresh onboarding starts the selected speech download on the welcome screen.
+After download, the loading command awaits preparation before the screen says
+“Speech Engine Ready.” Installed S1 is included in that readiness check.
+
+Returning launches prepare proactively. The status bar shows preparation rather
+than ready until the linked components finish. At capture time, a final native
+check reuses warm instances or reloads idle-unloaded models. “Preparing dictation”
+is shown before the microphone opens and the start sound plays.
+
+Releasing a hold-to-talk key while preparation is pending abandons that recording
+attempt. A later preparation result cannot open the microphone or paste text.
+Failures are retryable; no recorded audio is consumed by preparation.
+
+Disabling correction keeps installed S1 warm. The existing idle setting still
+unloads models, including S1, and marks readiness stale. Reopening the app or
+starting a dictation prepares them again. Unload does not immediately trigger
+reload. Active preparation and refreshed use timestamps protect freshly warmed
+instances from the idle watchdog.
+
+## Costs and limits
+
+Preparation moves computation before capture; it does not remove that work.
+Startup and a first recording after idle can wait for loading/compilation. Keeping
+installed S1 ready uses memory even with correction disabled, until idle unload.
+No periodic inference loop keeps the processors busy.
+
+Core ML uses CPU and Neural Engine for the detector; Whisper and S1 can use Metal.
+This change does not alter speech thresholds, sample data, or correction prompts.
+It cannot guarantee identical first/second wall-clock latency after hardware
+sleep, under contention, or for different recording lengths. Cloud inference
+remains remote; preparation sends no warm-up API requests or microphone audio.
+
+Before this change, 40 fresh-process detector measurements on an M3 Pro found
+median first inference of about 3.2 ms versus 0.43 ms for the second inference.
+One silent inference on the same instance reduced the first real check to
+about 0.50 ms. These measurements used cached weights and short speech clips;
+they exclude first-install compilation and full transcription latency.
+
+## Validation
+
+`tests/ui.cleanup-warmup.mjs` holds preparation promises to verify installed and
+absent S1, disabled/enabled cleanup, readiness before recording, concurrent
+startup/capture, first/second dictation, early release, idle reload, failure and
+retry. `tests/ui.onboarding-models.mjs` covers first-run download/load readiness;
+`tests/ui.recovery.mjs` covers capture cancellation and stale-result suppression.
+These checks also cover model selection changing during preparation and a
+first-run warm-up failure retrying without downloading the speech model again.
+
+Swift tests load the actual cached detector, then check quiet speech followed by
+silence. The native `stt_guards` benchmark now records load/preparation time and
+can exercise installed CTC with `--vocabulary`. The installed S1 unit test checks
+warm-up cancellation, retry, idempotence, and unchanged real inference output.
+
+The [saved native measurements](benchmarks/dictation-prewarm-2026-09-18.json)
+record unchanged text/errors for all 651 speech/noise fixtures, plus repeated
+short-utterance checks through Parakeet, Parakeet with CTC, and Whisper. All 36
+repeated-utterance checks completed without errors. The real S1 warm-up test
+passed as well.
+
+In these cached-weight runs, load/preparation took 425 ms for Parakeet, 1.62 s
+for Whisper, and 15.02 s for Parakeet plus CTC at its new test location. The CTC
+number includes first preparation at that location, not a per-dictation cost.
+For the same short `no` clip, first/next transcription took 62/58 ms for
+Parakeet, 188/206 ms with CTC, and 1155/1095 ms for Whisper. These are individual
+runs demonstrating the prepared paths, not latency guarantees.
+
+Validation also passes the release frontend/native builds, the build check
+without local speech support, 39 frontend unit tests, 52 native tests including
+the installed S1 test, and three Swift tests using the actual detector.
