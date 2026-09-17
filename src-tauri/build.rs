@@ -23,6 +23,12 @@ fn build_parakeet_bridge() {
     let package_dir = manifest_dir.join("swift");
     let scratch_dir = PathBuf::from(env::var("OUT_DIR").unwrap()).join("swift-build");
 
+    // CI can supply an archive cached by Swift sources, dependency lockfile,
+    // target architecture, toolchain/SDK, and build recipe. Local builds keep
+    // using SwiftPM normally. An explicitly supplied but missing archive fails.
+    println!("cargo:rerun-if-env-changed=LINTY_PARAKEET_LIB_DIR");
+    let prebuilt_dir = env::var_os("LINTY_PARAKEET_LIB_DIR").map(PathBuf::from);
+
     println!("cargo:rerun-if-changed=swift/Package.swift");
     println!("cargo:rerun-if-changed=swift/Package.resolved");
     println!("cargo:rerun-if-changed=swift/Sources");
@@ -34,30 +40,47 @@ fn build_parakeet_bridge() {
         other => panic!("unsupported target arch for the parakeet bridge: {other}"),
     };
 
-    let mut cmd = Command::new("swift");
-    cmd.arg("build")
-        .args(["-c", "release"])
-        .arg("--package-path")
-        .arg(&package_dir)
-        .arg("--scratch-path")
-        .arg(&scratch_dir);
-    // Only ask SwiftPM to cross-build when the target differs from the host;
-    // a plain build keeps the default (and fastest) single-arch layout.
-    if swift_arch != host_swift_arch() {
-        cmd.args(["--arch", swift_arch]);
+    if prebuilt_dir.is_none() {
+        let mut cmd = Command::new("swift");
+        cmd.arg("build")
+            .args(["-c", "release"])
+            .arg("--package-path")
+            .arg(&package_dir)
+            .arg("--scratch-path")
+            .arg(&scratch_dir);
+        // Only ask SwiftPM to cross-build when the target differs from the host;
+        // a plain build keeps the default (and fastest) single-arch layout.
+        if swift_arch != host_swift_arch() {
+            cmd.args(["--arch", swift_arch]);
+        }
+
+        let status = cmd.status().unwrap_or_else(|e| {
+            panic!("failed to run `swift build` for the parakeet bridge (is Xcode installed?): {e}")
+        });
+        assert!(
+            status.success(),
+            "`swift build` failed for the parakeet bridge"
+        );
     }
 
-    let status = cmd.status().unwrap_or_else(|e| {
-        panic!("failed to run `swift build` for the parakeet bridge (is Xcode installed?): {e}")
+    let using_prebuilt = prebuilt_dir.is_some();
+    let lib_dir = prebuilt_dir.unwrap_or_else(|| {
+        find_static_lib(&scratch_dir).unwrap_or_else(|| {
+            panic!(
+                "libLintyParakeet.a not found under {}",
+                scratch_dir.display()
+            )
+        })
     });
-    assert!(status.success(), "`swift build` failed for the parakeet bridge");
-
-    let lib_dir = find_static_lib(&scratch_dir).unwrap_or_else(|| {
-        panic!(
-            "libLintyParakeet.a not found under {}",
-            scratch_dir.display()
-        )
-    });
+    let archive = lib_dir.join("libLintyParakeet.a");
+    assert!(
+        archive.is_file(),
+        "Swift bridge missing: {}",
+        archive.display()
+    );
+    if using_prebuilt {
+        println!("cargo:rerun-if-changed={}", archive.display());
+    }
 
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=static=LintyParakeet");
