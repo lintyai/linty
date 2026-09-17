@@ -1,5 +1,5 @@
 import { BrandMark, SoundPattern } from "@/components/shared/BrandMark.component";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { load } from "@tauri-apps/plugin-store";
@@ -14,16 +14,25 @@ import {
   openSystemSettings,
 } from "@/services/permissions.service";
 import { useAppStore } from "@/store/app.store";
-import { useSettings } from "@/hooks/useSettings.hook";
+import { saveSetting, useSettings } from "@/hooks/useSettings.hook";
 import { formatTriggerLabel } from "@/lib/trigger.util";
 import { FnKeyConflictWarning } from "@/components/shared/FnKeyConflictWarning.component";
 import { TriggerKeyPicker } from "@/components/shared/TriggerKeyPicker.component";
 import { cn } from "@/lib/utils";
+import { downloadSpeechModel } from "@/services/model-download.service";
+import { Select } from "@/components/shared/Select.component";
 
 type Step = "welcome" | "microphone" | "accessibility" | "trigger" | "model" | "cloud-setup" | "done";
 
-// Steps used for progress dots — cloud-setup shares the "model" dot position
-const PROGRESS_STEPS: Step[] = ["welcome", "microphone", "accessibility", "trigger", "model", "done"];
+const STEP_LABELS: Record<Step, string> = {
+  welcome: "Welcome",
+  microphone: "Microphone",
+  accessibility: "Accessibility",
+  trigger: "Trigger key",
+  model: "Speech engine",
+  "cloud-setup": "Cloud setup",
+  done: "Ready",
+};
 
 interface OnboardingPageProps {
   onComplete: () => void;
@@ -32,9 +41,17 @@ interface OnboardingPageProps {
 
 export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) {
   const [step, setStep] = useState<Step>(startAtMic ? "microphone" : "welcome");
+  const [localUnavailable, setLocalUnavailable] = useState(false);
+  const [visitedModel, setVisitedModel] = useState(false);
+  const [cloudSelected, setCloudSelected] = useState(false);
+  const handleLocalUnavailable = useCallback(() => setLocalUnavailable(true), []);
 
-  // Map cloud-setup to model position for progress dots
-  const activeProgressStep = step === "cloud-setup" ? "model" : step;
+  // Cloud adds a screen after local setup, or replaces it when local support
+  // is unavailable before the user reaches the speech-engine step.
+  const progressSteps: Step[] = ["welcome", "microphone", "accessibility", "trigger"];
+  if (!localUnavailable || visitedModel) progressSteps.push("model");
+  if (localUnavailable || cloudSelected) progressSteps.push("cloud-setup");
+  progressSteps.push("done");
 
   return (
     <div className="onboarding-shell">
@@ -52,12 +69,26 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
           <AccessibilityStep onNext={() => setStep("trigger")} />
         )}
         {step === "trigger" && (
-          <TriggerStep onNext={() => setStep("model")} />
+          <TriggerStep onNext={() => {
+            if (localUnavailable) {
+              setStep("cloud-setup");
+            } else {
+              setVisitedModel(true);
+              setStep("model");
+            }
+          }} />
         )}
-        {step === "model" && (
+        {/* Keep setup mounted from the welcome screen so the download starts immediately. */}
+        {!startAtMic && (
           <ModelDownloadStep
+            active={step === "model"}
+            useLocalModel={step !== "cloud-setup"}
+            onLocalUnavailable={handleLocalUnavailable}
             onNext={() => setStep("done")}
-            onSkipToCloud={() => setStep("cloud-setup")}
+            onSkipToCloud={() => {
+              setCloudSelected(true);
+              setStep("cloud-setup");
+            }}
           />
         )}
         {step === "cloud-setup" && (
@@ -66,8 +97,8 @@ export function OnboardingPage({ onComplete, startAtMic }: OnboardingPageProps) 
         {step === "done" && <DoneStep onComplete={onComplete} />}
 
         <div className="onboarding-progress" aria-label="Setup progress">
-          <p>{startAtMic ? "Restore microphone access" : `Step ${PROGRESS_STEPS.indexOf(activeProgressStep) + 1} of ${PROGRESS_STEPS.length} · ${{ welcome: "Welcome", microphone: "Microphone", accessibility: "Permissions", trigger: "Shortcut", model: "Speech engine", done: "Ready" }[activeProgressStep]}`}</p>
-          {!startAtMic && <ol>{PROGRESS_STEPS.map((item) => <li key={item} aria-current={item === activeProgressStep ? "step" : undefined}><span className="sr-only">{item}</span></li>)}</ol>}
+          <p>{startAtMic ? "Restore microphone access" : `Step ${progressSteps.indexOf(step) + 1} of ${progressSteps.length} · ${STEP_LABELS[step]}`}</p>
+          {!startAtMic && <ol>{progressSteps.map((item) => <li key={item} aria-current={item === step ? "step" : undefined}><span className="sr-only">{STEP_LABELS[item]}</span></li>)}</ol>}
         </div>
       </div>
     </div>
@@ -88,6 +119,8 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
         Voice-to-text that works anywhere on your Mac.
         <br />
         We need a couple of permissions to get started.
+        <br />
+        Your default speech model downloads in the background during setup.
       </p>
 
       <button
@@ -363,7 +396,7 @@ function TriggerStep({ onNext }: { onNext: () => void }) {
         Choose Your Trigger Key
       </h1>
       <p className="text-[14px] text-text-secondary leading-relaxed mb-6">
-        Hold this key to record, release to transcribe and paste.
+        Hold to talk and release to paste. Or double-press to keep listening, then double-press again to finish.
         <br />
         You can change it anytime from the Shortcuts page.
       </p>
@@ -403,6 +436,7 @@ interface ModelInfo {
 }
 
 interface DownloadProgress {
+  filename: string;
   downloaded: number;
   total: number;
   progress: number;
@@ -413,9 +447,15 @@ interface DownloadProgress {
 const PREFERRED_FILENAMES = ["parakeet-tdt-0.6b-v3", "ggml-large-v3-turbo-q5_0.bin"];
 
 function ModelDownloadStep({
+  active,
+  useLocalModel,
+  onLocalUnavailable,
   onNext,
   onSkipToCloud,
 }: {
+  active: boolean;
+  useLocalModel: boolean;
+  onLocalUnavailable: () => void;
   onNext: () => void;
   onSkipToCloud: () => void;
 }) {
@@ -423,107 +463,110 @@ function ModelDownloadStep({
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
   const [model, setModel] = useState<ModelInfo | null>(null);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [unavailable, setUnavailable] = useState(false);
+  const [continuing, setContinuing] = useState(false);
+  const initialized = useRef(false);
+  const mounted = useRef(false);
+  const localSetup = useRef(useLocalModel);
+  const selection = useRef(0);
+  const selectedFilename = useRef<string | null>(null);
+  const progressByFilename = useRef(new Map<string, number>());
+  const readyDownloads = useRef(new Set<string>());
+  const activation = useRef(Promise.resolve());
+  // Once cloud setup is chosen, a late local download must not activate itself.
+  localSetup.current = localSetup.current && useLocalModel;
 
-  const { setLoadedModelFilename, setSelectedModelFilename, setIsLocalModelDownloaded, setSttMode } = useAppStore();
-
-  const persistSettings = useCallback(async (filename: string) => {
-    setSelectedModelFilename(filename);
-    setLoadedModelFilename(filename);
-    setIsLocalModelDownloaded(true);
-    setSttMode("local");
-    try {
-      const store = await load("linty-settings.json", { defaults: {}, autoSave: true });
-      await store.set("selectedModelFilename", filename);
-      await store.set("sttMode", "local");
-    } catch (err) {
-      console.error("[onboarding] Failed to persist model settings:", err);
-    }
-  }, [setSelectedModelFilename, setLoadedModelFilename, setIsLocalModelDownloaded, setSttMode]);
-
-  const startDownloadAndLoad = useCallback(async (targetModel: ModelInfo) => {
-    setStatus("downloading");
-    setProgress(0);
+  const selectModel = useCallback(async (targetModel: ModelInfo, retry = false) => {
+    const request = ++selection.current;
+    const isCurrent = () => mounted.current && localSetup.current && request === selection.current;
+    selectedFilename.current = targetModel.filename;
+    setModel(targetModel);
+    setProgress(progressByFilename.current.get(targetModel.filename) ?? 0);
     setErrorMessage("");
+    setStatus("downloading");
 
     try {
-      await invoke<string>("download_model_file", {
-        url: targetModel.url,
-        filename: targetModel.filename,
-      });
+      await downloadSpeechModel(targetModel, retry && !readyDownloads.current.has(targetModel.filename));
+      readyDownloads.current.add(targetModel.filename);
+      if (!isCurrent()) return;
 
-      // Download complete — now load into GPU
       setStatus("loading");
-      await invoke("load_local_model", { filename: targetModel.filename });
-      await persistSettings(targetModel.filename);
-      setStatus("ready");
-    } catch (err) {
-      console.error("[onboarding] Download/load failed:", err);
-      setErrorMessage(String(err));
+      // Serialize activation and persistence so an older selection cannot win.
+      const loading = activation.current.catch(() => {}).then(async () => {
+        if (!isCurrent()) return;
+        await invoke("load_local_model", { filename: targetModel.filename });
+        if (!isCurrent()) return;
+        const store = await load("linty-settings.json", { defaults: {}, autoSave: true });
+        if (!isCurrent()) return;
+        await store.set("selectedModelFilename", targetModel.filename);
+        await store.save();
+        if (!isCurrent()) return;
+        useAppStore.setState({
+          selectedModelFilename: targetModel.filename,
+          loadedModelFilename: targetModel.filename,
+          isLocalModelDownloaded: true,
+        });
+        setStatus("ready");
+      });
+      activation.current = loading;
+      await loading;
+    } catch (error) {
+      if (!isCurrent()) return;
+      console.error("[onboarding] Model setup failed:", error);
+      setErrorMessage(String(error));
       setStatus("error");
     }
-  }, [persistSettings]);
-
-  // On mount: check local-stt availability, find model, check if already downloaded
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const isAvailable = await invoke<boolean>("is_local_stt_available");
-        if (!isAvailable) {
-          // local-stt not compiled in — skip this step entirely
-          onSkipToCloud();
-          return;
-        }
-
-        const models = await invoke<ModelInfo[]>("get_available_models");
-        const recommended =
-          PREFERRED_FILENAMES.map((filename) => models.find((m) => m.filename === filename)).find(Boolean) ??
-          models[0];
-        if (!recommended) {
-          onSkipToCloud();
-          return;
-        }
-        setModel(recommended);
-
-        // Check if already downloaded
-        const exists = await invoke<boolean>("check_model_exists", { filename: recommended.filename });
-        if (exists) {
-          // Already downloaded — load and auto-advance
-          setStatus("loading");
-          await invoke("load_local_model", { filename: recommended.filename });
-          await persistSettings(recommended.filename);
-          setStatus("ready");
-          return;
-        }
-
-        // Start download automatically
-        startDownloadAndLoad(recommended);
-      } catch (err) {
-        console.error("[onboarding] Model init failed:", err);
-        setErrorMessage(String(err));
-        setStatus("error");
-      }
-    };
-    init();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Listen for download progress events
-  useEffect(() => {
-    const unlistenProgress = listen<DownloadProgress>("model-download-progress", (event) => {
-      setProgress(event.payload.progress);
-    });
-
-    return () => {
-      unlistenProgress.then((fn) => fn());
-    };
   }, []);
 
-  // Auto-advance when ready
-  useEffect(() => {
-    if (status === "ready") {
-      const timer = setTimeout(onNext, 800);
-      return () => clearTimeout(timer);
+  const initialize = useCallback(async () => {
+    setStatus("checking");
+    setErrorMessage("");
+    try {
+      if (!await invoke<boolean>("is_local_stt_available")) {
+        setUnavailable(true);
+        return;
+      }
+      const catalog = await invoke<ModelInfo[]>("get_available_models");
+      setModels(catalog);
+      const saved = useAppStore.getState().selectedModelFilename;
+      const recommended = catalog.find((item) => item.filename === saved) ??
+        PREFERRED_FILENAMES.map((filename) => catalog.find((item) => item.filename === filename)).find(Boolean) ?? catalog[0];
+      if (!recommended) {
+        setUnavailable(true);
+        return;
+      }
+      await selectModel(recommended);
+    } catch (error) {
+      setErrorMessage(String(error));
+      setStatus("error");
     }
-  }, [status, onNext]);
+  }, [selectModel]);
+
+  useEffect(() => {
+    mounted.current = true;
+    if (!initialized.current) {
+      initialized.current = true;
+      void initialize();
+    }
+    return () => { mounted.current = false; };
+  }, [initialize]);
+
+  useEffect(() => {
+    if (!unavailable) return;
+    onLocalUnavailable();
+    if (active) onSkipToCloud();
+  }, [active, unavailable, onLocalUnavailable, onSkipToCloud]);
+
+  useEffect(() => {
+    const unlisten = listen<DownloadProgress>("model-download-progress", ({ payload }) => {
+      progressByFilename.current.set(payload.filename, payload.progress);
+      if (payload.filename === selectedFilename.current) setProgress(payload.progress);
+    });
+    return () => { void unlisten.then((stop) => stop()); };
+  }, []);
+
+  if (!active) return null;
 
   return (
     <div className="flex flex-col items-center text-center animate-page-enter">
@@ -541,15 +584,22 @@ function ModelDownloadStep({
       </div>
 
       <h1 className="text-[22px] font-bold text-text-primary mb-2">
-        {status === "ready" ? "Speech Engine Ready" : status === "loading" ? "Loading Model" : "Setting Up Speech Engine"}
+        {status === "ready" ? "Speech Engine Ready" : status === "loading" ? "Preparing Dictation" : "Setting Up Speech Engine"}
       </h1>
+      {model && <div className="w-full max-w-[340px] mb-4">
+        <Select label="Speech model" value={model.filename} className="[--select-width:100%]"
+          disabled={continuing}
+          options={models.map((item) => ({ value: item.filename, label: item.name }))}
+          onChange={(filename) => {
+            const next = models.find((item) => item.filename === filename);
+            if (next) void selectModel(next);
+          }} />
+      </div>}
       <p className="text-[14px] text-text-secondary leading-relaxed mb-6">
         {status === "downloading" && "Downloading the speech model so transcription works offline."}
-        {status === "loading" && (model?.backend === "parakeet"
-          ? "Preparing the model for the Neural Engine. The first load can take up to 30 seconds."
-          : "Loading the model into memory...")}
+        {status === "loading" && "Getting your speech model and installed AI cleanup ready for the first dictation. The first preparation can take a moment."}
         {status === "ready" && "Local transcription is ready to go."}
-        {status === "error" && "Something went wrong. Check your internet connection and try again."}
+        {status === "error" && "Setup could not finish. Review the message below and try again."}
         {status === "checking" && "Preparing speech engine..."}
       </p>
 
@@ -585,9 +635,26 @@ function ModelDownloadStep({
 
       {/* Ready state */}
       {status === "ready" && (
-        <div className="flex items-center gap-2 text-[14px] font-medium text-success">
-          <CheckCircle2 size={18} />
-          Model loaded successfully
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex items-center gap-2 text-[14px] font-medium text-success">
+            <CheckCircle2 size={18} />
+            Ready for your first dictation
+          </div>
+          {errorMessage && <p role="alert" className="text-error text-[13px]">{errorMessage}</p>}
+          <button disabled={continuing} onClick={async () => {
+            setContinuing(true);
+            setErrorMessage("");
+            try {
+              await saveSetting("sttMode", "local");
+              onNext();
+            } catch {
+              setErrorMessage("Could not save your speech engine. Please try again.");
+            } finally {
+              setContinuing(false);
+            }
+          }} className="standard-button primary-button">
+            Continue {continuing ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+          </button>
         </div>
       )}
 
@@ -602,7 +669,13 @@ function ModelDownloadStep({
             </div>
           )}
           <button
-            onClick={() => model && startDownloadAndLoad(model)}
+            onClick={() => {
+              if (!model) { void initialize(); return; }
+              if (!readyDownloads.current.has(model.filename)) {
+                progressByFilename.current.delete(model.filename);
+              }
+              void selectModel(model, true);
+            }}
             className={cn(
               "flex items-center gap-2 rounded-xl px-5 py-2 text-[13px] font-medium",
               "bg-accent text-white",
@@ -611,7 +684,7 @@ function ModelDownloadStep({
             )}
           >
             <RefreshCw size={14} />
-            Retry Download
+            {model && readyDownloads.current.has(model.filename) ? "Retry Preparation" : "Retry Download"}
           </button>
         </div>
       )}

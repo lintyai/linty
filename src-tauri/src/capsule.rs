@@ -20,7 +20,9 @@ const NS_NONACTIVATING_PANEL_MASK: i32 = 1 << 7;
 pub struct CapsuleState {
     pub state: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
+    pub hands_free: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -132,10 +134,11 @@ pub fn hide_capsule(app: AppHandle) {
 pub fn emit_capsule_state(
     app: AppHandle,
     state: String,
-    text: Option<String>,
+    hands_free: Option<bool>,
+    generation: Option<u64>,
     error: Option<String>,
 ) {
-    let payload = CapsuleState { state, text, error };
+    let payload = CapsuleState { state, hands_free, generation, error };
     let _ = app.emit_to("capsule", "capsule-state", &payload);
 }
 

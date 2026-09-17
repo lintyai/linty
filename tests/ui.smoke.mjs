@@ -258,10 +258,16 @@ try {
   await page.locator('[data-transcript-id]').first().click();
   assert.equal(await page.getByRole('region', {name:'Corrections',exact:true}).count(), 0, 'Unchanged transcriptions have no empty corrections section');
   const originalText = await page.evaluate(() => window.__QA__.stores[2].transcripts.find(t=>t.transcriptId==='qa-0').rawText);
-  await page.locator('.original-transcript summary').click();
-  assert.equal(await page.locator('.original-transcript p').textContent(),originalText,'Original text is available even before an edit');
-  await page.locator('.original-transcript summary').click();
+  assert.equal(await page.locator('.history-detail .original-transcript').count(),0,'The reading pane only shows the latest transcript');
   const overflow = page.locator('.history-detail').getByRole('button',{name:'More transcription actions',exact:true});
+  await overflow.click();
+  await page.locator('.transcript-menu:popover-open').getByRole('button',{name:'Details',exact:true}).click();
+  const dictationDetails = page.getByRole('dialog',{name:'Dictation details',exact:true});
+  await dictationDetails.locator('[aria-label="Text versions"] summary').click();
+  assert.equal(await dictationDetails.locator('.text-version-content').textContent(),originalText,'Details preserves the original text even before an edit');
+  await audit('history-details'); await screenshot('history-details');
+  await page.keyboard.press('Escape');
+  assert.equal(await overflow.evaluate(el => el === document.activeElement),true,'Closing Details returns focus to its trigger');
   await overflow.click();
   await audit('history-actions');
   const menuBox = await page.locator('.transcript-menu:popover-open').boundingBox();
@@ -472,10 +478,11 @@ try {
   await page.evaluate(() => window.__QA__.emit('fnkey-released'));
   assert.equal(await page.evaluate(() => window.__QA__.calls.includes('stop_recording')), false, 'Quick release waits for microphone startup');
   await page.evaluate(() => window.__QA__.finishMicStart());
-  await page.waitForFunction(async () => {
-    const state = (await import('/src/store/app.store.ts')).useAppStore.getState();
+  const recordingStore = await page.evaluateHandle(async () => (await import('/src/store/app.store.ts')).useAppStore);
+  await page.waitForFunction(store => {
+    const state = store.getState();
     return window.__QA__.calls.includes('stop_recording') && !state.isRecording && state.status === 'idle';
-  });
+  }, recordingStore);
   await page.evaluate(() => { window.__TAURI_INTERNALS__.invoke = window.__QA__.originalMicInvoke; });
 
   // Expose recoverable failures from the same commands used by the desktop app.
@@ -741,6 +748,8 @@ try {
   await setup.screenshot({path:`${output}/onboarding-small.png`,animations:'disabled'});
   await setup.getByRole('button',{name:'Get Started'}).click();
   await setup.getByRole('heading',{name:'Choose Your Trigger Key'}).waitFor();
+  await setup.getByRole('button',{name:'Continue',exact:true}).click();
+  await setup.getByRole('heading',{name:'Speech Engine Ready'}).waitFor();
   await setup.getByRole('button',{name:'Continue',exact:true}).click();
   await setup.getByRole('button',{name:'Start Using Linty'}).waitFor();
   await setup.getByRole('button',{name:'Start Using Linty'}).click();

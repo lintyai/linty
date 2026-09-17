@@ -186,6 +186,7 @@ pub struct Engine {
     tokenizer: Tokenizer,
     device: Device,
     eos: u32,
+    warmed_up: bool,
 }
 impl Engine {
     pub fn load(dir: &Path) -> anyhow::Result<Self> {
@@ -223,7 +224,55 @@ impl Engine {
             tokenizer,
             device,
             eos,
+            warmed_up: false,
         })
+    }
+
+    /// Exercise prefill and cached decoding before accepting real transcripts.
+    /// The synthetic prompt and its KV cache never reach history or the clipboard.
+    fn warm_up(&mut self, check_cancelled: &impl Fn() -> bool) -> anyhow::Result<()> {
+        if self.warmed_up {
+            return Ok(());
+        }
+        let started = Instant::now();
+        let check = || -> anyhow::Result<()> {
+            anyhow::ensure!(!check_cancelled(), "cancelled");
+            anyhow::ensure!(started.elapsed() < Duration::from_secs(60), "warmup_timeout");
+            Ok(())
+        };
+        self.model.clear_kv_cache();
+        let result = (|| {
+            check()?;
+            let options = Options {
+                styling: "semi-formal".into(),
+                structure: "lists".into(),
+                context: "general".into(),
+            };
+            let mut current = self.tokens(&prompt(
+                "please send the report on monday and include the budget the timeline and the risks",
+                &options,
+            ))?;
+            let mut position = 0;
+            // Prefill plus two decode passes initializes both Metal paths,
+            // including attention over an existing cache. Output is discarded.
+            for _ in 0..3 {
+                check()?;
+                let input = Tensor::new(current.as_slice(), &self.device)?.unsqueeze(0)?;
+                let logits = self.model.forward(&input, position)?;
+                let token = logits.squeeze(0)?.argmax(0)?.to_scalar::<u32>()?;
+                position += current.len();
+                current = vec![token];
+                check()?;
+            }
+            self.device.synchronize()?;
+            check()
+        })();
+        self.model.clear_kv_cache();
+        if result.is_ok() {
+            self.warmed_up = true;
+            log::info!("[s1] Inference warm-up complete in {}ms", started.elapsed().as_millis());
+        }
+        result
     }
 
     fn tokens(&self, text: &str) -> anyhow::Result<Vec<u32>> {
@@ -354,12 +403,17 @@ impl ReformatState {
     pub fn cancel(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
     }
-    pub fn unload_if_idle(&self, now: u64, idle_ms: u64) {
+    pub fn unload_if_idle(&self, now: u64, idle_ms: u64) -> bool {
         if idle_ms > 0 && now.saturating_sub(self.last_used.load(Ordering::Relaxed)) > idle_ms {
             if let Ok(mut engine) = self.engine.try_lock() {
-                engine.take();
+                // Preparation may have refreshed last_used while we acquired
+                // the slot. Never unload a just-warmed instance on a stale age.
+                if now.saturating_sub(self.last_used.load(Ordering::Relaxed)) > idle_ms {
+                    return engine.take().is_some();
+                }
             }
         }
+        false
     }
 }
 
@@ -397,7 +451,7 @@ fn verify_file(path: &Path, expected: &str) -> anyhow::Result<()> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelStatus {
-    downloaded: bool,
+    pub(crate) downloaded: bool,
     loaded: bool,
     downloading: bool,
     progress: f64,
@@ -494,18 +548,35 @@ pub async fn prepare_s1_model(
     state
         .last_used
         .store(crate::now_epoch_ms(), Ordering::Relaxed);
-    tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         let mut slot = engine.lock().map_err(|e| e.to_string())?;
-        if slot.is_none() && generation.load(Ordering::SeqCst) == expected {
-            let model = Engine::load(&dir).map_err(|e| e.to_string())?;
-            if generation.load(Ordering::SeqCst) == expected {
-                *slot = Some(model);
-            }
-        }
-        Ok(())
+        prepare(&mut slot, &dir, || generation.load(Ordering::SeqCst) != expected)
+            .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    // Start the idle interval after preparation, even when a slow first load
+    // takes a significant part of that interval.
+    state.last_used.store(crate::now_epoch_ms(), Ordering::Relaxed);
+    result
+}
+
+/// Shared by the background command and the native benchmark. The caller holds
+/// the engine lock, so concurrent preparation/inference cannot duplicate work.
+pub fn prepare(
+    engine: &mut Option<Engine>,
+    dir: &Path,
+    check_cancelled: impl Fn() -> bool,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(!check_cancelled(), "cancelled");
+    if engine.is_none() {
+        let started = Instant::now();
+        let model = Engine::load(dir)?;
+        anyhow::ensure!(!check_cancelled(), "cancelled");
+        log::info!("[s1] Model loaded in {}ms", started.elapsed().as_millis());
+        *engine = Some(model);
+    }
+    engine.as_mut().unwrap().warm_up(&check_cancelled)
 }
 
 #[tauri::command]
@@ -710,6 +781,34 @@ mod tests {
         );
         assert_eq!(out.text, "Keep my original.");
         assert_eq!(out.metrics.reason.as_deref(), Some("cancelled"));
+    }
+    #[test]
+    fn preparation_cancellation_precedes_model_load() {
+        let mut engine = None;
+        let error = prepare(&mut engine, Path::new("/nonexistent"), || true).unwrap_err();
+        assert_eq!(error.to_string(), "cancelled");
+        assert!(engine.is_none());
+    }
+
+    #[test]
+    #[ignore = "requires installed S1-mini assets via LINTY_S1_TEST_MODEL_DIR"]
+    fn warmup_is_retryable_idempotent_and_does_not_change_real_output() {
+        let dir = PathBuf::from(std::env::var("LINTY_S1_TEST_MODEL_DIR").unwrap());
+        let mut engine = Engine::load(&dir).unwrap();
+        assert!(engine.warm_up(&|| true).is_err());
+        assert!(!engine.warmed_up);
+        engine.warm_up(&|| false).unwrap();
+        assert!(engine.warmed_up);
+        let mut slot = Some(engine);
+        prepare(&mut slot, &dir, || false).unwrap();
+        let text = "um please send the report on monday and include the budget the timeline and the risks";
+        let warmed = run(&mut slot, &dir, text, "en", options(), || false);
+        assert_ne!(warmed.metrics.status, "fallback");
+        assert_eq!(warmed.metrics.model_load_ms, 0.);
+        let fresh = run(&mut None, &dir, text, "en", options(), || false);
+        assert_ne!(fresh.metrics.status, "fallback");
+        assert_eq!(warmed.text, fresh.text);
+        assert_eq!(warmed.metrics.generated_tokens, fresh.metrics.generated_tokens);
     }
     #[test]
     fn chunking_preserves_unicode_and_bounds() {

@@ -163,16 +163,17 @@ try {
   const announcement = capsule.getByRole('status');
   await capsule.evaluate(() => window.__QA__.emit('capsule-state', { state: 'recording' }));
   await capsule.locator('.capsule-recording').waitFor();
-  assert.equal(await announcement.textContent(), 'Recording');
+  assert.equal(await announcement.textContent(), 'Listening. Release your trigger to finish.');
   await capsule.waitForTimeout(1100);
-  assert.equal(await announcement.textContent(), 'Recording', 'Elapsed time does not repeatedly interrupt a screen reader');
+  assert.equal(await announcement.textContent(), 'Listening. Release your trigger to finish.', 'Elapsed time does not repeatedly interrupt a screen reader');
   await capsule.evaluate(() => {
     window.__QA__.emit('capsule-state', { state: 'transcribing' });
     window.__QA__.emit('capsule-partial-text', 'A sentence still being transcribed');
     window.__QA__.emit('capsule-stt-progress', 42);
   });
-  await capsule.locator('.capsule-processing').waitFor();
-  assert.equal((await announcement.textContent()).includes('42'), false, 'Progress is visual; the live region announces the processing state');
+  await capsule.locator('.capsule-transcribing').waitFor();
+  assert.equal(await announcement.textContent(), 'Processing dictation');
+  assert.equal((await announcement.textContent()).includes('42'), false, 'Progress events do not interrupt the processing announcement');
   assert.equal((await announcement.textContent()).includes('sentence'), false);
   await capsule.evaluate(() => window.__QA__.emit('capsule-state', { state: 'error', error: 'Microphone unavailable' }));
   await capsule.locator('.capsule-error').waitFor();

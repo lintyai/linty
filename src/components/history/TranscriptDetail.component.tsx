@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronLeft, X } from "lucide-react";
+import { Check, ChevronLeft, X } from "lucide-react";
 import { copyTranscript } from "@/lib/transcript-clipboard.util";
 import { AppIcon } from "@/components/shared/AppIcon.component";
 import { useAppIcon } from "@/hooks/useAppIcons.hook";
 import { useAppStore } from "@/store/app.store";
 import { useToast } from "@/hooks/useToast.hook";
 import { useDictionary } from "@/hooks/useDictionary.hook";
+import { useTranscriptCorrections } from "@/hooks/useTranscriptCorrections.hook";
 import {
   addDictionaryEntry,
   ingestCorrection,
 } from "@/services/dictionary.service";
-import { getCorrections, updateTranscript } from "@/services/history.service";
+import { updateTranscript } from "@/services/history.service";
 import { recordCorrection } from "@/services/user-corrections.service";
 import { diffCorrection } from "@/lib/correction-diff.util";
 import { formatDayLabel } from "@/lib/usage.util";
@@ -21,7 +22,7 @@ import {
 } from "@/components/shared/TranscriptActions.component";
 import type { CorrectionRecord } from "@/types/correction.types";
 import type { TranscriptRecord } from "@/types/transcript.types";
-import { ReformatDetails } from "./ReformatDetails.component";
+import { TranscriptInfoDialogue } from "./TranscriptInfo.dialogue";
 
 export function TranscriptDetail({
   transcript: selectedTranscript,
@@ -36,46 +37,25 @@ export function TranscriptDetail({
   const transcriptionLanguage = useAppStore((s) => s.transcriptionLanguage);
   const autoLearnWords = useAppStore((s) => s.autoLearnWords);
   const { entries } = useDictionary();
-  const revision = useAppStore((s) => s.historySnapshot.revision);
-  const [correctionsError, setCorrectionsError] = useState(false);
-  const [correctionsLoaded, setCorrectionsLoaded] = useState(false);
-  const [correctionsRetry, setCorrectionsRetry] = useState(0);
-  const [selectedCorrections, setSelectedCorrections] = useState<
-    CorrectionRecord[]
-  >([]);
+  const { corrections: selectedCorrections, error: correctionsError, retry: retryCorrections } = useTranscriptCorrections(selectedTranscript.transcriptId);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [showEditHistory, setShowEditHistory] = useState(false);
+  const detailsTrigger = useRef<HTMLElement | null>(null);
   const readingRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
-  const reformatted = selectedTranscript.reformatting?.enabled && selectedTranscript.reformatting.status === "applied";
-  const hasCorrections = reformatted || selectedTranscript.cloudRefinementStatus === "applied"
-    || Boolean(selectedTranscript.dictionaryApplied?.length) || selectedCorrections.length > 0;
+  const hasEdits = selectedCorrections.some((record) => record.source === "edit")
+    || (selectedTranscript.pastedText != null && selectedTranscript.pastedText !== selectedTranscript.finalText);
+
+  const showDetails = (editHistory = false) => {
+    detailsTrigger.current = document.activeElement as HTMLElement | null;
+    setShowEditHistory(editHistory);
+    setDetailsOpen(true);
+  };
 
   const selectedAppIcon = useAppIcon(selectedTranscript.application?.bundleId);
   const visibleTranscriptId = selectedTranscript.transcriptId;
-  useEffect(() => {
-    let stale = false;
-    setCorrectionsError(false);
-    setCorrectionsLoaded(false);
-    if (visibleTranscriptId)
-      void getCorrections(visibleTranscriptId)
-        .then((records) => {
-          if (!stale) {
-            setSelectedCorrections(records.filter((record) => record.pairs.length > 0));
-            setCorrectionsLoaded(true);
-          }
-        })
-        .catch(() => {
-          if (!stale) {
-            setCorrectionsError(true);
-            setCorrectionsLoaded(true);
-          }
-        });
-    return () => {
-      stale = true;
-    };
-  }, [visibleTranscriptId, revision, correctionsRetry]);
-
   const startEdit = () => {
     if (!selectedTranscript) return;
     setDraft(selectedTranscript.finalText);
@@ -222,8 +202,8 @@ export function TranscriptDetail({
               selectedTranscript.application?.name ?? "Application not recorded"
             }
             icon={selectedAppIcon}
-            showNameOnHover
           />
+          <span>{selectedTranscript.application?.name ?? "Application not recorded"}</span>
           <span aria-hidden="true"> · </span>
           <time dateTime={new Date(selectedTranscript.timestamp).toISOString()}>
             {formatDayLabel(selectedTranscript.timestamp)},{" "}
@@ -236,6 +216,7 @@ export function TranscriptDetail({
         <TranscriptMoreActions
           transcript={selectedTranscript}
           onDelete={onDelete}
+          onShowDetails={() => showDetails()}
         />
         <button
           type="button"
@@ -268,6 +249,10 @@ export function TranscriptDetail({
         aria-label="Transcription text"
         className="transcript-reading"
       >
+        <div className="reading-title">
+          <h2>Transcript</h2>
+          {hasEdits && <span>· Edited</span>}
+        </div>
         {editing ? (
           <div className="transcript-editor">
             <textarea
@@ -305,57 +290,26 @@ export function TranscriptDetail({
         ) : (
           <p className="reading-text">{selectedTranscript.finalText}</p>
         )}
-        {hasCorrections && <section
-          className="reading-corrections"
-          aria-labelledby="history-corrections-title"
-          aria-busy={!correctionsLoaded}
-        >
-          <h2 id="history-corrections-title">Corrections</h2>
-          {reformatted && (
-            <p className="reading-note">
-              <strong>S1-mini:</strong> Automatically reformatted this transcription.
-            </p>
-          )}
-          {selectedTranscript.cloudRefinementStatus === "applied" && (
-            <p className="reading-note">
-              <strong>Cloud refinement:</strong> Automatically refined this transcription.
-            </p>
-          )}
-          {selectedTranscript.dictionaryApplied?.length ? (
-            <p className="dictionary-applied-note">
-              Dictionary applied before paste:{" "}
-              {selectedTranscript.dictionaryApplied
-                .map((a) => `${a.from} → ${a.to}`)
-                .join(", ")}
-            </p>
-          ) : null}
-          {selectedCorrections.length > 0 && (
-            <>
-              <p className="reading-note"><strong>Your edits</strong></p>
-              <CorrectionPanel
-                corrections={selectedCorrections}
-                entries={entries}
-                onAddToDictionary={addPairToDictionary}
-              />
-            </>
-          )}
-        </section>}
+        <CorrectionPanel
+          corrections={selectedCorrections}
+          entries={entries}
+          onAddToDictionary={addPairToDictionary}
+          compact
+          onShowHistory={() => showDetails(true)}
+        />
         {correctionsError && (
           <p className="reading-note" role="alert">
             Could not load your edits.{" "}
-            <button type="button" className="text-link" onClick={() => setCorrectionsRetry((n) => n + 1)}>
+            <button type="button" className="text-link" onClick={retryCorrections}>
               Retry
             </button>
           </p>
         )}
-        <details className="original-transcript">
-          <summary>
-            Original transcription <ChevronDown size={14} />
-          </summary>
-          <p>{selectedTranscript.rawText}</p>
-        </details>
-        <ReformatDetails transcript={selectedTranscript} />
       </div>
+      {detailsOpen && <TranscriptInfoDialogue transcript={selectedTranscript} showEditHistory={showEditHistory} onClose={() => {
+        setDetailsOpen(false);
+        requestAnimationFrame(() => detailsTrigger.current?.focus({ preventScroll: true }));
+      }} />}
     </section>
   );
 }

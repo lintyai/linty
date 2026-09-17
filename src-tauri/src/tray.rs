@@ -63,12 +63,13 @@ fn snapshot(app: &tauri::AppHandle) -> TrayState {
 fn busy(state: &TrayState) -> bool {
     matches!(
         state.status.as_str(),
-        "recording" | "transcribing" | "correcting" | "pasting"
+        "preparing" | "recording" | "transcribing" | "correcting" | "pasting"
     )
 }
 
 fn activity_label(state: &TrayState) -> String {
     match state.status.as_str() {
+        "preparing" => "Preparing dictation…".into(),
         "recording" => "Recording…".into(),
         "transcribing" => "Transcribing…".into(),
         "correcting" => "Polishing…".into(),

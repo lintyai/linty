@@ -37,6 +37,7 @@ firebase-debug.log
 # Tauri
 src-tauri/gen/
 src-tauri/swift/.build/
+scripts/benchmarks/vad-v6/.build/
 
 # Generated interface test screenshots
 artifacts/

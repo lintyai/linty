@@ -6,7 +6,8 @@ import {
   unregister,
   isRegistered,
 } from "@tauri-apps/plugin-global-shortcut";
-import { currentDictation, ownsDictation, isRecoveringDictation, recoverDictation } from "@/services/dictation-recovery.service";
+import { currentDictation, ownsDictation, isRecoveringDictation, recoverDictation, finishEmptyDictation } from "@/services/dictation-recovery.service";
+import { DictationTrigger } from "@/lib/dictation-trigger";
 import { useRecording } from "./useRecording.hook";
 import { useTranscription } from "./useTranscription.hook";
 import { useAppStore } from "@/store/app.store";
@@ -42,9 +43,20 @@ export function useGlobalHotkey() {
 
   // Synchronous lock — prevents concurrent release handling / duplicate pastes
   const processingRef = useRef(false);
+  const gestureRef = useRef<DictationTrigger | null>(null);
+
+  const showRecording = useCallback(() => {
+    const state = useAppStore.getState();
+    return invoke("emit_capsule_state", {
+      state: "recording", handsFree: state.handsFree, generation: state.recordingGeneration,
+    });
+  }, []);
 
   const handlePress = useCallback(async () => {
-    if (isRecordingRef.current || processingRef.current || isRecoveringDictation()) return;
+    if (isRecordingRef.current || processingRef.current || isRecoveringDictation()) {
+      gestureRef.current?.reset();
+      return;
+    }
     // Synchronously mark as recording BEFORE any async work — prevents a fast
     // fn-release from seeing isRecordingRef as false and being silently dropped.
     isRecordingRef.current = true;
@@ -55,31 +67,39 @@ export function useGlobalHotkey() {
 
     try {
       if (inFocus) setCurrentViewRef.current("system-check");
-      const started = await startRecordingRef.current();
-      if (!started) { isRecordingRef.current = false; return; }
+      const starting = startRecordingRef.current();
+      const session = currentDictation();
+      const started = await starting;
+      if (!ownsDictation(session)) return;
+      if (!started) { isRecordingRef.current = false; gestureRef.current?.reset(); return; }
       // A quick release may already be stopping the stream. Never overwrite its state.
       if (!inFocus && isRecordingRef.current && !processingRef.current) {
         void invoke("show_capsule").then(() => {
-          if (isRecordingRef.current && !processingRef.current) return invoke("emit_capsule_state", { state: "recording" });
+          if (ownsDictation(session) && !session.cancelled && isRecordingRef.current && !processingRef.current) return showRecording();
         }).catch(() => {});
         void invoke("play_capsule_sound", { sound: "start" }).catch(() => {});
       }
     } catch (error) {
       isRecordingRef.current = false;
+      gestureRef.current?.reset();
       await recoverDictation(error instanceof Error ? error.message : String(error));
     }
-  }, []);
+  }, [showRecording]);
 
-  const handleRelease = useCallback(async () => {
+  const finishRecording = useCallback(async (discard = false) => {
     if (!isRecordingRef.current || processingRef.current) return;
     // Immediately lock to prevent any concurrent entry
     processingRef.current = true;
     isRecordingRef.current = false;
+    gestureRef.current?.reset(true);
 
     const session = currentDictation();
     try {
-      const result = await stopRecordingRef.current();
-      if (result.sample_count > 0 && !session.cancelled) {
+      const result = await stopRecordingRef.current({ deferEmpty: discard });
+      if (discard && !session.cancelled) {
+        await session.run(() => invoke("recover_recording"), 5000, "Could not release the empty recording. Please try again.");
+        finishEmptyDictation(session, "quiet-stop");
+      } else if (result.sample_count > 0 && !session.cancelled) {
         await processAudioRef.current(result);
       }
     } catch (error) {
@@ -88,6 +108,41 @@ export function useGlobalHotkey() {
       if (ownsDictation(session)) processingRef.current = false;
     }
   }, []);
+
+  if (!gestureRef.current) gestureRef.current = new DictationTrigger({
+    start: () => { void handlePress(); },
+    stop: () => { void finishRecording(); },
+    latch: () => {
+      useAppStore.getState().setHandsFree(true);
+      if (useAppStore.getState().isRecording) void showRecording().catch(() => {});
+    },
+  });
+
+  useEffect(() => () => gestureRef.current?.reset(), []);
+
+  // Native capture owns silence timing. Generation checks reject queued events
+  // from a capture that was already stopped or replaced.
+  useEffect(() => {
+    type QuietInput = { generation: number; quiet_seconds: number; heard_input: boolean };
+    const current = (payload: { generation: number }) => {
+      const state = useAppStore.getState();
+      return state.isRecording && state.recordingGeneration === payload.generation;
+    };
+    const listeners = [
+      listen<QuietInput>("recording-quiet", ({ payload }) => {
+        if (!current(payload)) return;
+        useAppStore.getState().setQuietSeconds(payload.quiet_seconds);
+      }),
+      listen<QuietInput>("recording-auto-stopped", ({ payload }) => {
+        if (!current(payload)) return;
+        void finishRecording(!payload.heard_input);
+      }),
+      listen<{ generation: number }>("capsule-stop", ({ payload }) => {
+        if (payload && current(payload)) void finishRecording();
+      }),
+    ];
+    return () => { for (const listener of listeners) void listener.then((off) => off()); };
+  }, [finishRecording]);
 
   // ── Ensure fn key monitor is active (handles dev rebuilds losing accessibility) ──
   useEffect(() => {
@@ -98,6 +153,7 @@ export function useGlobalHotkey() {
   // from a cancelled dictation cannot paste or change the next attempt's UI.
   useEffect(() => {
     const recover = async (message: string) => {
+      gestureRef.current?.reset();
       await recoverDictation(message);
       processingRef.current = false;
       isRecordingRef.current = false;
@@ -108,7 +164,7 @@ export function useGlobalHotkey() {
       listen<string>("watchdog-recovery", ({ payload }) => { void recover(payload); }),
       listen("system-wake", () => {
         const state = useAppStore.getState();
-        if (isRecordingRef.current || processingRef.current || state.isRecording || ["transcribing", "correcting", "pasting"].includes(state.status)) {
+        if (isRecordingRef.current || processingRef.current || state.isRecording || ["preparing", "transcribing", "correcting", "pasting"].includes(state.status)) {
           void recover("Dictation interrupted by sleep. Please try again.");
         }
         void invoke("force_reinit_fn_key_monitor").catch(() => {});
@@ -122,20 +178,27 @@ export function useGlobalHotkey() {
   // modifier bit set_trigger_modifier points it at.
   const triggerKey = useAppStore((s) => s.triggerKey);
   useEffect(() => {
+    // Changing a trigger cannot orphan a held/latching recording.
+    return () => {
+      gestureRef.current?.reset();
+      if (isRecordingRef.current) void finishRecording();
+    };
+  }, [triggerKey, finishRecording]);
+  useEffect(() => {
     if (!isModifierHoldTrigger(triggerKey)) return;
 
     invoke("set_trigger_modifier", {
       modifier: triggerModifierName(triggerKey),
     }).catch((err) => console.error("Failed to set trigger modifier:", err));
 
-    const unlistenPress = listen("fnkey-pressed", handlePress);
-    const unlistenRelease = listen("fnkey-released", handleRelease);
+    const unlistenPress = listen("fnkey-pressed", () => gestureRef.current?.press("modifier"));
+    const unlistenRelease = listen("fnkey-released", () => gestureRef.current?.release("modifier"));
 
     return () => {
       unlistenPress.then((fn) => fn());
       unlistenRelease.then((fn) => fn());
     };
-  }, [triggerKey, handlePress, handleRelease]);
+  }, [triggerKey]);
 
   // ── Accelerator trigger: the configured combo, or Cmd+Shift+Space as
   //    an alternate alongside modifier-hold triggers ──
@@ -156,9 +219,9 @@ export function useGlobalHotkey() {
           if (!mounted) return;
 
           if (event.state === "Pressed") {
-            await handlePress();
+            gestureRef.current?.press("accelerator");
           } else if (event.state === "Released") {
-            await handleRelease();
+            gestureRef.current?.release("accelerator");
           }
         });
       } catch (err) {
@@ -180,5 +243,5 @@ export function useGlobalHotkey() {
       mounted = false;
       unregister(accelerator).catch(() => {});
     };
-  }, [triggerKey, handlePress, handleRelease]);
+  }, [triggerKey]);
 }

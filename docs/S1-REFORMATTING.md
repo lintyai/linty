@@ -61,8 +61,21 @@ greedy decoding. Model and tokenizer revisions are pinned in
 marking the installation complete. The bundled license and notice accompany the
 installed files. Files are verified again on a cold load.
 
-Enabling reformatting starts background loading. The model remains resident
-until disabled or the configured idle timeout expires. There is a bounded
+Enabling reformatting shows “Preparing on-device cleanup…” while the model loads
+and runs a synthetic prompt through prefill and two cached decode passes. The GPU
+finishes that work and the temporary KV cache is cleared before cleanup becomes
+enabled. Preparation failures leave the previous cleanup mode selected and allow
+retry. The synthetic input/output is never saved to history or pasted.
+
+Installed cleanup prepares at startup even when autocorrection is disabled.
+The shared dictation preparation command checks it again before opening the
+microphone, so startup and idle reloads finish warm-up before capture begins.
+Repeated preparation reuses a warmed engine and never downloads assets or
+enables correction. Disabling correction keeps the installed model prepared;
+the configured idle timeout still releases it. Releasing a hold-to-talk key
+during preparation cancels that recording attempt without cancelling shared
+model preparation. See [dictation readiness](DICTATION-READINESS.md).
+There is a bounded
 generation deadline, cancellation between forward passes, and no transcript KV
 cache retained between requests. Long inputs are split at whitespace into
 bounded chunks. Every chunk must finish; a failure, timeout, truncation, or
@@ -81,14 +94,37 @@ The native tests cover control prompts, Unicode chunk boundaries, language
 skips, cancellation, failures, and preservation of snapshots/metrics through
 history edits, deletion/undo, reopening, and export.
 
+`yarn test:cleanup` checks preparation before enabling, the pending/error UI,
+retry, startup preparation, and recording without waiting for preparation. To
+also exercise warm-up cancellation/retry and verify that its cache does not alter
+real inference output, run the installed-model test:
+
+```sh
+cd src-tauri
+LINTY_S1_TEST_MODEL_DIR="$HOME/Library/Application Support/ai.linty.desktop/models/s1-mini" \
+  cargo test --release --lib --features local-stt,parakeet reformat::tests -- --include-ignored
+```
+
 The production inference path can be exercised without microphone or clipboard
 access using:
 
 ```sh
 cd src-tauri
 cargo run --release --example s1_bench --features local-stt,parakeet -- \
-  "$HOME/Library/Application Support/ai.linty.desktop/models/s1-mini"
+  "$HOME/Library/Application Support/ai.linty.desktop/models/s1-mini" --prepare
 ```
+
+`--prepare` reports the loading/warm-up duration separately and checks repeated
+preparation before timing two real corrections. Omit it to time a cold first
+correction followed by a repeat.
+
+A follow-up run with the same 19-word input took 2,081 ms to load and warm up,
+then 237 ms for the first correction and 219 ms for the second. Repeated
+preparation took less than 0.001 ms. The unprepared baseline took 2,169 ms for its
+first correction, including 1,916 ms loading. All four outputs matched. These
+were single release-build runs; OS/Metal caches were not cleared, so this does
+not measure first-ever shader compilation. Raw results are in
+`docs/benchmarks/s1-mini-warmup-2026-09-17.json`.
 
 An initial two-call smoke benchmark on this Mac processed a 19-word synthetic
 transcript in 8,690 ms cold (including 2,095 ms model loading and 5,728 ms initial

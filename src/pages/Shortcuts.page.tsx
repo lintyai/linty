@@ -29,6 +29,7 @@ export function ShortcutsPage() {
 
   const shortcuts = [
     { action: "Push-to-talk", mac: formatTriggerDisplay(triggerKey) },
+    { action: "Hands-free listening on / off", mac: `${formatTriggerKeycap(triggerKey)} × 2` },
     // modifier-hold users keep the always-registered alternate combo
     ...(isModifierHoldTrigger(triggerKey)
       ? [
@@ -51,7 +52,7 @@ export function ShortcutsPage() {
         <kbd>{formatTriggerKeycap(triggerKey)}</kbd>
         <div>
           <h2>Hold, speak, release.</h2>
-          <p>Your words appear where your cursor is.</p>
+          <p>Or double-press your trigger to keep listening. Double-press again to finish.</p>
         </div>
       </div>
       <div className="mb-2.5">
@@ -64,6 +65,11 @@ export function ShortcutsPage() {
         onChange={saveTriggerKey}
         className="mb-6"
       />
+      <p className="mb-6 text-[12px] leading-relaxed text-text-secondary">
+        Both gestures work with any trigger you choose and the alternate shortcut.
+        After 20 seconds without input, Linty checks if you’re still talking.
+        Speak to continue, or listening stops at 30 seconds.
+      </p>
 
       <div className="mb-2.5">
         <span className="text-[13px] font-semibold text-text-primary">

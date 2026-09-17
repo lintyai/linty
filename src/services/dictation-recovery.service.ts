@@ -34,16 +34,28 @@ export function showDictationError(message: string, session = active) {
     if (!ownsDictation(session)) return;
     useAppStore.getState().resetTranscription();
     void invoke("emit_capsule_state", { state: "idle" }).catch(() => {});
-    void invoke("hide_capsule").catch(() => {});
+    terminalTimer = setTimeout(() => {
+      if (ownsDictation(session)) void invoke("hide_capsule").catch(() => {});
+    }, 350);
   }, 6000);
 }
 
-export function finishEmptyDictation(session = active) {
+export function finishEmptyDictation(session = active, notice: "idle" | "quiet-stop" = "idle") {
   if (!ownsDictation(session) || session.cancelled) return;
+  clearTimeout(terminalTimer);
   useAppStore.getState().resetRecording();
   useAppStore.getState().resetTranscription();
-  void invoke("emit_capsule_state", { state: "idle" }).catch(() => {});
-  void invoke("hide_capsule").catch(() => {});
+  if (notice === "quiet-stop") {
+    void invoke("show_capsule").then(() => {
+      if (ownsDictation(session)) return invoke("emit_capsule_state", { state: notice });
+    }).catch(() => {});
+  } else {
+    void invoke("emit_capsule_state", { state: notice }).catch(() => {});
+  }
+  // Let the capsule finish its exit; retain a guarded native fallback.
+  terminalTimer = setTimeout(() => {
+    if (ownsDictation(session)) void invoke("hide_capsule").catch(() => {});
+  }, notice === "quiet-stop" ? 2700 : 350);
 }
 
 export function recoverDictation(message: string, session = active): Promise<void> {

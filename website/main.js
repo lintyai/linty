@@ -2,33 +2,11 @@
 (() => {
   const root = document.documentElement;
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
-  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  const image = document.getElementById('product-image');
-  const caption = document.getElementById('screen-caption');
-  const screens = {
-    history: { caption: 'Find, copy, and edit the words you’ve already said.', alt: 'Linty’s History screen with an example project update selected for review and editing.' },
-    overview: { caption: 'An example week: 3,048 words, about 52 minutes back.', alt: 'Linty’s Overview with a plausible week of example dictations, words transcribed, and estimated time saved.' },
-    engines: { caption: 'Choose the speech engine that fits your Mac.', alt: 'Linty’s Speech engine settings showing local models and controls for processing on your device.' },
-  };
-  let selected = 'overview';
   let explicitTheme = false;
   try { explicitTheme = ['light', 'dark'].includes(localStorage.getItem('linty-site-theme')); } catch {}
-  const showScreen = (name) => {
-    if (!screens[name]) return;
-    selected = name;
-    image.src = `images/${selected}-${root.dataset.theme}.png`;
-    const imageLink = document.getElementById('product-image-link');
-    imageLink.href = image.src;
-    imageLink.setAttribute('aria-label', `Open the ${selected === 'engines' ? 'Speech engines' : selected} screenshot at full size`);
-    image.alt = screens[selected].alt;
-    caption.textContent = screens[selected].caption;
-    document.getElementById('sample-label').textContent = selected === 'overview' ? 'Example data · 40 wpm typing baseline' : 'Actual interface · example data';
-    document.querySelectorAll('[data-screen]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.screen === selected)));
-  };
   const setTheme = (theme, remember = false) => {
     root.dataset.theme = theme;
     document.querySelectorAll('[data-theme-choice]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeChoice === theme)));
-    showScreen(selected);
     if (remember) {
       explicitTheme = true;
       try { localStorage.setItem('linty-site-theme', theme); } catch {}
@@ -36,42 +14,59 @@
   };
   setTheme(root.dataset.theme || (systemTheme.matches ? 'dark' : 'light'));
   document.querySelectorAll('[data-theme-choice]').forEach(button => button.addEventListener('click', () => setTheme(button.dataset.themeChoice, true)));
-  document.querySelectorAll('[data-screen]').forEach(button => button.addEventListener('click', () => showScreen(button.dataset.screen)));
-  document.querySelectorAll('[data-open-screen]').forEach(link => link.addEventListener('click', () => showScreen(link.dataset.openScreen)));
   systemTheme.addEventListener('change', event => { if (!explicitTheme) setTheme(event.matches ? 'dark' : 'light'); });
 
-  const play = document.getElementById('play-demo');
-  const output = document.getElementById('demo-output');
-  const status = document.getElementById('demo-status');
-  const capsule = document.getElementById('demo-capsule');
-  const label = document.getElementById('capsule-label');
-  const sentence = output.parentElement.dataset.example;
-  let timer;
-  const finish = () => {
-    clearTimeout(timer);
-    output.textContent = sentence;
-    capsule.classList.remove('is-recording');
-    label.textContent = 'Words, right where you need them';
-    status.textContent = 'Example complete · text inserted';
-    play.textContent = 'Replay example ↗';
-    play.disabled = false;
-  };
-  play.addEventListener('click', () => {
-    play.disabled = true;
-    play.textContent = 'Playing example…';
-    output.replaceChildren();
-    capsule.classList.add('is-recording');
-    label.textContent = 'Listening…';
-    status.textContent = '1. Hold the key · 2. Speak';
-    if (reducedMotion.matches) return finish();
-    timer = setTimeout(() => {
-      capsule.classList.remove('is-recording');
-      label.textContent = 'Transcribing…';
-      status.textContent = '3. Release the key';
-      timer = setTimeout(finish, 800);
-    }, 1600);
-  });
-  reducedMotion.addEventListener('change', event => { if (event.matches && play.disabled) finish(); });
+  // Visitors vote on shared issues or submit a new request on GitHub.
+  const platformRequest = typeof detectDownloadPlatform === 'function'
+    ? getPlatformRequest(detectDownloadPlatform(navigator)) : null;
+  if (platformRequest) {
+    document.querySelectorAll('[data-download]').forEach(link => {
+      link.href = platformRequest.url;
+      link.removeAttribute('data-download');
+      link.setAttribute('aria-label', `Request Linty for ${platformRequest.name} on GitHub`);
+      const label = link.querySelector('.download-label > span:first-child');
+      if (label) label.textContent = link.classList.contains('button-small') ? 'Request Linty' : `Request for ${platformRequest.name}`;
+      const symbol = link.querySelector('.download-symbol');
+      if (symbol) symbol.textContent = '↗';
+    });
+    document.querySelectorAll('[data-download-note]').forEach(note => {
+      note.textContent = platformRequest.shared
+        ? `Available for Mac today. Add 👍 on GitHub to request ${platformRequest.name}; sign-in required.`
+        : 'Available for Mac today. Requests open on GitHub; sign-in required.';
+    });
+    document.querySelectorAll('[data-mac-download]').forEach(link => { link.hidden = false; });
+  }
 
-  // Download links use GitHub’s stable latest-release installer URL; no API lookup needed.
+  // Keep the native direct download. Its transfer progress belongs to the browser;
+  // this short-lived state only acknowledges the handoff, never completion.
+  const downloadStatus = document.getElementById('download-status');
+  const pendingDownloads = new Map();
+  document.querySelectorAll('[data-download], [data-mac-download]').forEach(link => {
+    const originalLabel = link.getAttribute('aria-label');
+    const reset = () => {
+      clearTimeout(pendingDownloads.get(link)?.timer);
+      pendingDownloads.delete(link);
+      link.classList.remove('is-downloading');
+      link.removeAttribute('aria-busy');
+      link.removeAttribute('aria-disabled');
+      if (originalLabel === null) link.removeAttribute('aria-label');
+      else link.setAttribute('aria-label', originalLabel);
+    };
+    link.addEventListener('click', event => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      if (pendingDownloads.has(link)) {
+        event.preventDefault();
+        return;
+      }
+      link.classList.add('is-downloading');
+      link.setAttribute('aria-busy', 'true');
+      link.setAttribute('aria-disabled', 'true');
+      link.setAttribute('aria-label', 'Starting Linty download');
+      downloadStatus.textContent = 'Starting your Linty download. Check your browser’s downloads for progress.';
+      pendingDownloads.set(link, { timer: setTimeout(reset, 5000), reset });
+    });
+  });
+  addEventListener('pageshow', () => {
+    for (const { reset } of pendingDownloads.values()) reset();
+  });
 })();

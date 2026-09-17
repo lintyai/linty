@@ -10,13 +10,17 @@
     "tauri": "tauri",
     "build:mac": "bash scripts/build-mac.sh",
     "build:mac:universal": "tauri build --target universal-apple-darwin --bundles dmg app -- --features local-stt,parakeet && mkdir -p release && cp -f src-tauri/target/release/bundle/dmg/*.dmg release/",
-    "test": "node --experimental-strip-types --test tests/usage.test.mjs tests/languages.test.mjs tests/corrections.test.mjs tests/payoff.test.mjs tests/correction-service.test.mjs tests/force-update.test.mjs tests/reformat.test.mjs tests/settings-save.test.mjs",
+    "test": "node --experimental-strip-types --test tests/usage.test.mjs tests/languages.test.mjs tests/corrections.test.mjs tests/payoff.test.mjs tests/correction-service.test.mjs tests/force-update.test.mjs tests/reformat.test.mjs tests/settings-save.test.mjs tests/dictation-trigger.test.mjs tests/website-demo.test.mjs tests/website-platform.test.mjs tests/website-product.test.mjs",
     "test:ui": "node tests/ui.smoke.mjs",
     "test:motion": "node tests/ui.motion.mjs",
     "test:usability": "node tests/ui.usability.mjs",
     "icons:generate": "node scripts/generate-icons.mjs",
     "icons:check": "node scripts/generate-icons.mjs --check",
-    "test:recovery": "node tests/ui.recovery.mjs"
+    "test:transcripts": "node tests/ui.transcript-details.mjs",
+    "test:dictation": "node tests/ui.dictation.mjs",
+    "test:recovery": "node tests/ui.recovery.mjs",
+    "test:onboarding": "node tests/ui.onboarding-models.mjs",
+    "test:cleanup": "node tests/ui.cleanup-warmup.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",

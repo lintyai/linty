@@ -204,7 +204,7 @@ function ModelsSection() {
   const cloudPending = engineView === "cloud" && sttMode !== "cloud";
   const [savingKey, setSavingKey] = useState(false);
   const [removingKey, setRemovingKey] = useState(false);
-  const dictationBusy = useAppStore((s) => s.isRecording || ["recording", "transcribing", "correcting", "pasting"].includes(s.status));
+  const dictationBusy = useAppStore((s) => s.isRecording || ["preparing", "recording", "transcribing", "correcting", "pasting"].includes(s.status));
   const keyBusy = savingKey || removingKey;
   const [keyError, setKeyError] = useState<string | null>(null);
   const [whisperInput, setWhisperInput] = useState(whisperPrompt);
@@ -558,7 +558,7 @@ function ModelsSection() {
 
 function LanguageSection() {
   const { transcriptionLanguage, saveTranscriptionLanguage } = useSettings();
-  const dictating = useAppStore((s) => s.isRecording || ["transcribing", "correcting", "pasting"].includes(s.status));
+  const dictating = useAppStore((s) => s.isRecording || ["preparing", "transcribing", "correcting", "pasting"].includes(s.status));
 
   return (
     <div className="settings-section">

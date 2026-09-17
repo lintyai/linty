@@ -12,7 +12,12 @@ the personal dictionary). Dictionary spelling replacements remain separate.
 | All engines | Empty/effectively digitally silent audio: no finite sample above `1e-10` in absolute amplitude. This is a minimal signal check, not a voice activity detector. |
 | Local Whisper | whisper.cpp's existing paired defaults: no-speech probability above `0.6` **and** average log probability below `-1.0`. High-confidence text overrides the silence prediction. |
 | Groq Whisper | Requests `verbose_json`. Applies the same paired confidence rule to segments, only when the segment text reconstructs the complete top-level transcript. Missing, null, invalid, or incomplete confidence evidence preserves text. |
-| Parakeet | No additional confidence threshold. FluidAudio's confidence is an average of token softmax scores, clamped to `[0.1, 1]`, with a `0.5` fallback when token scores are missing. It is not Whisper's no-speech probability and cannot share its threshold. |
+| Parakeet | Silero v6 speech presence at threshold `0.3` / minimum speech `100 ms`. A bounded, detector-only gain pass rescues quiet speech. Original ASR samples stay intact. An unavailable or failed detector permits transcription. No cutoff is applied to Parakeet token confidence. |
+
+The [September 18 VAD evaluation](VAD-EVALUATION-2026-09-18.md) supersedes the
+earlier decision to leave VAD disabled for Parakeet. It does not change Whisper
+or cloud filtering. Parakeet's average token confidence is not a no-speech
+probability and cannot share Whisper's confidence thresholds.
 
 The former `0.01` RMS / `2%` active-window gate could reject quiet voices and
 brief speech surrounded by long pauses. The new signal check uses the tiny
@@ -98,7 +103,7 @@ tests separately guarantee that an engine result such as `I`, `no`, `thank you`,
 or intentional repetition survives Linty's text handling without punctuation
 being needed to bypass a filter.
 
-**VAD remains disabled in the app based on this comparison.** The default VAD
+**VAD was left disabled based on this September 17 comparison.** The default VAD
 gate would discard three valid speech cases: very quiet `no`, very quiet
 `thank you`, and very quiet JFK speech. Both engines transcribed all three
 correctly. The lenient candidate still rejects two of them. These very quiet

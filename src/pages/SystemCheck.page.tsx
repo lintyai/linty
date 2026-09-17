@@ -1,3 +1,4 @@
+import { useAppStore } from "@/store/app.store";
 import { useState, useEffect, useCallback } from "react";
 import {
   Mic,
@@ -264,6 +265,7 @@ export function SystemCheckPage() {
 
 /* ── Recording Test Widget ── */
 function RecordingTestWidget() {
+  const quietSeconds = useAppStore((s) => s.quietSeconds);
   const {
     isRecording,
     recordingDuration,
@@ -275,6 +277,7 @@ function RecordingTestWidget() {
     useTranscription();
 
   const isProcessing =
+    status === "preparing" ||
     status === "transcribing" ||
     status === "correcting" ||
     status === "pasting";
@@ -351,7 +354,11 @@ function RecordingTestWidget() {
           </button>
 
           <div className="flex-1 min-w-0">
-            {isRecording ? (
+            {isRecording && quietSeconds >= 20 ? (
+              <span role="status" className="text-[12px] text-text-secondary">
+                Still talking? Speak to continue. Stopping in {Math.max(0, 30 - quietSeconds)}s.
+              </span>
+            ) : isRecording ? (
               <div className="flex items-center gap-3">
                 <WaveformVisualizer
                   amplitude={amplitude}
@@ -364,7 +371,7 @@ function RecordingTestWidget() {
               </div>
             ) : isProcessing ? (
               <span className="text-[13px] text-text-secondary">
-                {status === "transcribing"
+                {status === "preparing" ? "Preparing dictation…" : status === "transcribing"
                   ? "Transcribing..."
                   : status === "correcting"
                     ? "Polishing..."

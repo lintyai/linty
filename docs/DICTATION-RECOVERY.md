@@ -41,7 +41,7 @@ This incident was an orphaned UI state, not a native-process crash.
 - Startup is bounded to ten seconds in the frontend (eight seconds for native
   device opening); stop and routine IPC waits to five seconds. Transcription has
   at least sixty seconds, scaling to twice the recording duration plus thirty
-  seconds. Recording duration itself remains unlimited.
+  seconds. Active recording duration remains unlimited. The [quiet-input safeguard](DICTATION-PILL.md) warns after 20 seconds without input activity and closes capture at 30 seconds.
 - Cancelled sessions cannot resume the frontend pipeline and paste late inference
   results. Audio generations prevent abandoned capture from writing into the next
   recording and prevent cancelled Whisper progress from changing its capsule.

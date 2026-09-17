@@ -1,9 +1,18 @@
 use cpal::traits::{DeviceTrait, StreamTrait};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
+use crate::input_activity::{InputActivity, QUIET_STOP_SECS, QUIET_WARNING_SECS};
 use crate::state::AudioCommand;
+
+#[derive(Clone, serde::Serialize)]
+struct QuietInput {
+    generation: u64,
+    quiet_seconds: u64,
+    heard_input: bool,
+}
 
 /// The audio thread owns every CPAL stream; startup acknowledges the actual
 /// device opening so a disconnected selection cannot appear to be recording.
@@ -16,13 +25,67 @@ pub fn spawn_audio_thread(
     let (tx, rx) = mpsc::channel::<AudioCommand>();
     std::thread::spawn(move || {
         let mut active_stream: Option<cpal::Stream> = None;
-        while let Ok(command) = rx.recv() {
+        let mut activity = Arc::new(Mutex::new(InputActivity::new(Instant::now())));
+        let mut active_generation = 0;
+        let mut previous_quiet = 0;
+        loop {
+            // The native worker owns the deadline and drops the stream even if
+            // either webview is suspended. No inference runs during this check.
+            let command = if active_stream.is_some() {
+                rx.recv_timeout(Duration::from_millis(250))
+            } else {
+                rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected)
+            };
+            let command = match command {
+                Ok(command) => command,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if generation.load(Ordering::SeqCst) != active_generation {
+                        active_stream.take();
+                        continue;
+                    }
+                    let (quiet, heard_input) = {
+                        let guard = activity.lock().unwrap_or_else(|e| e.into_inner());
+                        (guard.quiet_for(Instant::now()).as_secs(), guard.heard_input)
+                    };
+                    let quiet = if quiet >= QUIET_WARNING_SECS {
+                        quiet
+                    } else {
+                        0
+                    };
+                    let payload = QuietInput {
+                        generation: active_generation,
+                        quiet_seconds: quiet,
+                        heard_input,
+                    };
+                    if quiet >= QUIET_STOP_SECS {
+                        // Drop first: freeing the mic never waits for frontend IPC.
+                        active_stream.take();
+                        let _ = app.emit("recording-auto-stopped", &payload);
+                        log::info!(
+                            "[audio] Capture stopped after {}s without input activity",
+                            quiet
+                        );
+                    } else if quiet != previous_quiet {
+                        let _ = app.emit("recording-quiet", &payload);
+                    }
+                    previous_quiet = quiet;
+                    continue;
+                }
+            };
             match command {
-                AudioCommand::Start { input_name, generation: expected, reply } => {
+                AudioCommand::Start {
+                    input_name,
+                    generation: expected,
+                    reply,
+                } => {
                     active_stream.take();
                     if generation.load(Ordering::SeqCst) != expected || reply.is_closed() {
                         continue;
                     }
+                    activity = Arc::new(Mutex::new(InputActivity::new(Instant::now())));
+                    active_generation = expected;
+                    previous_quiet = 0;
                     let result = start_stream(
                         app.clone(),
                         buffer.clone(),
@@ -30,12 +93,17 @@ pub fn spawn_audio_thread(
                         input_name.as_deref(),
                         generation.clone(),
                         expected,
+                        activity.clone(),
                     );
                     match result {
                         Ok(stream) => {
                             if generation.load(Ordering::SeqCst) != expected || reply.is_closed() {
                                 drop(stream);
                                 continue;
+                            }
+                            // Device setup time is not time spent listening.
+                            if let Ok(mut guard) = activity.lock() {
+                                *guard = InputActivity::new(Instant::now());
                             }
                             active_stream = Some(stream);
                             let _ = app.emit("recording-started", ());
@@ -65,6 +133,7 @@ fn start_stream(
     selected: Option<&str>,
     generation: Arc<AtomicU64>,
     expected: u64,
+    activity: Arc<Mutex<InputActivity>>,
 ) -> Result<cpal::Stream, String> {
     let device = crate::audio_input::resolve_device(selected)?;
     {
@@ -92,7 +161,8 @@ fn start_stream(
 
     log::info!(
         "[audio] Using device config: {}Hz, {} ch (will resample to 16kHz mono)",
-        device_sample_rate, device_channels
+        device_sample_rate,
+        device_channels
     );
 
     let buf_clone = buffer.clone();
@@ -108,7 +178,9 @@ fn start_stream(
         .build_input_stream(
             &config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if generation.load(Ordering::SeqCst) != expected { return; }
+                if generation.load(Ordering::SeqCst) != expected {
+                    return;
+                }
                 let tick = cb_count.fetch_add(1, Ordering::Relaxed);
 
                 // Downmix to mono, reusing scratch buffer
@@ -141,8 +213,14 @@ fn start_stream(
                 };
 
                 if let Ok(mut buf) = buf_clone.lock() {
-                    if generation.load(Ordering::SeqCst) != expected { return; }
+                    if generation.load(Ordering::SeqCst) != expected {
+                        return;
+                    }
                     buf.extend_from_slice(samples);
+                }
+
+                if let Ok(mut guard) = activity.lock() {
+                    guard.observe(samples, Instant::now());
                 }
 
                 // Throttle amplitude events to ~15fps (every 6th callback
@@ -155,7 +233,9 @@ fn start_stream(
                 }
             },
             move |err| {
-                if error_generation.load(Ordering::SeqCst) != expected { return; }
+                if error_generation.load(Ordering::SeqCst) != expected {
+                    return;
+                }
                 log::warn!("Audio stream error: {}", err);
                 let _ = error_app.emit(
                     "audio-stream-error",

@@ -412,6 +412,11 @@ pub fn transcribe_parakeet(
         return Ok(String::new());
     }
 
+    if !engine.has_speech(samples) {
+        log::info!("[transcribe] Parakeet: no speech detected, skipping");
+        return Ok(String::new());
+    }
+
     let hint = language.filter(|l| *l != "auto" && !l.is_empty());
     let started = std::time::Instant::now();
     let result = engine.transcribe(samples, hint)?;
@@ -468,6 +473,11 @@ pub fn transcribe_parakeet_with_vocabulary(
 
     if !audio_has_signal(samples) {
         log::info!("[transcribe] Parakeet: empty or digitally silent audio, skipping");
+        return Ok(Transcription::default());
+    }
+
+    if !engine.has_speech(samples) {
+        log::info!("[transcribe] Parakeet: no speech detected, skipping");
         return Ok(Transcription::default());
     }
 
@@ -585,8 +595,12 @@ pub async fn download_model(
     let total_size = response.content_length().unwrap_or(0);
     let mut downloaded: u64 = 0;
 
+    // Background setup can outlive the onboarding screen. Only expose a model
+    // at its final path once complete, so another screen or launch cannot load
+    // a partial Whisper download.
+    let partial = dest.with_extension("bin.part");
     let mut file =
-        std::fs::File::create(dest).map_err(|e| format!("Failed to create file: {}", e))?;
+        std::fs::File::create(&partial).map_err(|e| format!("Failed to create file: {}", e))?;
 
     let mut stream = response.bytes_stream();
 
@@ -601,6 +615,7 @@ pub async fn download_model(
             let _ = app.emit(
                 "model-download-progress",
                 serde_json::json!({
+                    "filename": dest.file_name().and_then(|name| name.to_str()),
                     "downloaded": downloaded,
                     "total": total_size,
                     "progress": progress,
@@ -609,6 +624,15 @@ pub async fn download_model(
         }
     }
 
-    let _ = app.emit("model-download-complete", ());
+    if total_size > 0 && downloaded != total_size {
+        return Err("Model download was incomplete. Please try again.".into());
+    }
+    std::io::Write::flush(&mut file).map_err(|e| format!("Failed to finish model file: {}", e))?;
+    drop(file);
+    std::fs::rename(&partial, dest).map_err(|e| format!("Failed to save model file: {}", e))?;
+
+    let _ = app.emit("model-download-complete", serde_json::json!({
+        "filename": dest.file_name().and_then(|name| name.to_str()),
+    }));
     Ok(())
 }
