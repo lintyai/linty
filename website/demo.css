@@ -1,5 +1,5 @@
 /* App-style illustrations: native text layouts, never interactive app windows. */
-.workflow-demo { min-width: 0; --demo-paper: #fff; --demo-toolbar: #f4f3f1; --demo-sidebar: #f1efeb; --demo-border: #deddd9; --demo-ink: #292a2d; --demo-muted: #787875; }
+.workflow-demo { min-width: 0; --demo-paper: #fff; --demo-toolbar: #f4f3f1; --demo-sidebar: #f1efeb; --demo-border: #deddd9; --demo-ink: #292a2d; --demo-muted: #696a67; }
 :root[data-theme='dark'] .workflow-demo { --demo-paper: #232426; --demo-toolbar: #2d2e31; --demo-sidebar: #292a2c; --demo-border: #404145; --demo-ink: #ececee; --demo-muted: #a4a4a8; }
 .demo-app-picker { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .demo-app-buttons,.demo-arrows { display: flex; gap: 4px; }
@@ -21,7 +21,8 @@
 .window-dots i { width: 8px; height: 8px; border-radius: 50%; background: #ff6058; }
 .window-dots i:nth-child(2) { background: #febc2e; }
 .window-dots i:nth-child(3) { background: #29c840; }
-.notes-tools { color: #c39b25; font-size: 13px; white-space: nowrap; }
+.notes-tools { color: #80641a; font-size: 13px; white-space: nowrap; }
+:root[data-theme='dark'] .notes-tools { color: #c39b25; }
 .notes-layout { display: grid; grid-template-columns: 132px minmax(0, 1fr); flex: 1; min-height: 0; }
 .notes-sidebar { padding: 14px 9px; background: var(--demo-sidebar); border-right: 1px solid var(--demo-border); font-size: 10px; }
 .notes-folder { display: flex; justify-content: space-between; font-weight: 600; padding: 2px 5px 16px; }

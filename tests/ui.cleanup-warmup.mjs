@@ -35,6 +35,14 @@ function setupWarmup({ enabled = false, installed = true, mode = 'local' } = {})
       qa.calls.push(command); qa.preparations.push(args);
       return installed ? prepare() : Promise.resolve();
     }
+    if (command === 'stop_recording') {
+      qa.calls.push(command);
+      return Promise.resolve({ sample_count: 16000, duration_secs: 1 });
+    }
+    if (command === 'transcribe_buffer') {
+      qa.calls.push(command);
+      return Promise.resolve({ text: 'A prepared dictation.', vocabularyApplied: [] });
+    }
     return original(command, args);
   };
 }
@@ -52,7 +60,11 @@ try {
     await page.addInitScript({ content: `(${fixture.toString()})({empty:true});(${setupWarmup.toString()})(${JSON.stringify(options)});` });
     await page.goto(`http://127.0.0.1:${port}`);
     await page.getByRole('heading', { name: 'Your dictation', exact: true }).waitFor();
-    await page.evaluate(() => { document.hasFocus = () => false; });
+    await page.evaluate(async () => {
+      document.hasFocus = () => false;
+      window.__QA__.appStore = (await import('/src/store/app.store.ts')).useAppStore;
+      window.__QA__.isRecoveringDictation = (await import('/src/services/dictation-recovery.service.ts')).isRecoveringDictation;
+    });
     return page;
   };
   const chooseMode = async (page, label) => {
@@ -60,7 +72,8 @@ try {
     await page.getByRole('option', { name: label, exact: true }).click();
   };
   const enabled = page => page.evaluate(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().reformatEnabled);
-  const waitStatus = (page, status) => page.waitForFunction(async status => (await import('/src/store/app.store.ts')).useAppStore.getState().status === status, status);
+  // Poll a synchronous predicate: a Promise is truthy even when it resolves false.
+  const waitStatus = (page, status) => page.waitForFunction(status => window.__QA__.appStore.getState().status === status, status);
   const press = page => page.evaluate(() => window.__QA__.emit('fnkey-pressed'));
   const release = page => page.evaluate(() => window.__QA__.emit('fnkey-released'));
   const micCalls = page => page.evaluate(() => window.__QA__.calls.filter(c => c === 'start_recording').length);
@@ -88,6 +101,7 @@ try {
     await release(page); await waitStatus(page, 'done');
   }
   assert.equal(await page.evaluate(() => window.__QA__.warmups.length), 1);
+  assert.equal(await page.evaluate(() => window.__QA__.calls.filter(c => c === 'paste_text').length), 2);
 
   // An idle reload waits before capture. Failure is visible and retryable.
   await page.evaluate(() => window.__QA__.cooldown());
@@ -96,7 +110,7 @@ try {
   assert.equal(await micCalls(page), 2);
   await page.evaluate(() => window.__QA__.warmups[1].reject(new Error('Synthetic preparation failure')));
   await waitStatus(page, 'error');
-  await page.waitForFunction(async () => !(await import('/src/services/dictation-recovery.service.ts')).isRecoveringDictation());
+  await page.waitForFunction(() => !window.__QA__.isRecoveringDictation());
   await release(page);
   await press(page); await waitStatus(page, 'preparing');
   await page.waitForFunction(() => window.__QA__.warmups.length === 3);

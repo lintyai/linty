@@ -93,5 +93,5 @@ Parakeet, 188/206 ms with CTC, and 1155/1095 ms for Whisper. These are individua
 runs demonstrating the prepared paths, not latency guarantees.
 
 Validation also passes the release frontend/native builds, the build check
-without local speech support, 39 frontend unit tests, 52 native tests including
+without local speech support, 73 frontend/website unit tests, 56 native tests including
 the installed S1 test, and three Swift tests using the actual detector.

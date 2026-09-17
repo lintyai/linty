@@ -44,7 +44,8 @@ try {
   const waitStatus = status => page.waitForFunction(({store,status}) => store.getState().status === status, {store,status});
   const press = () => page.evaluate(() => window.__QA__.emit('fnkey-pressed'));
   const release = () => page.evaluate(() => window.__QA__.emit('fnkey-released'));
-  const waitRecovery = () => page.waitForFunction(async () => !(await import('/src/services/dictation-recovery.service.ts')).isRecoveringDictation());
+  const recovering = await page.evaluateHandle(async () => (await import('/src/services/dictation-recovery.service.ts')).isRecoveringDictation);
+  const waitRecovery = () => page.waitForFunction(recovering => !recovering(), recovering);
   const lastCapsule = () => page.evaluate(() => window.__QA__.capsule.at(-1));
   const clearCalls = () => page.evaluate(() => { window.__QA__.calls = []; window.__QA__.capsule = []; });
 
@@ -104,7 +105,7 @@ try {
   assert.equal(await page.evaluate(() => window.__QA__.secureGroqKey),'');
   await page.evaluate(() => { delete window.__QA__.failures.set_groq_api_key; });
   await saveCloud.click();
-  await page.waitForFunction(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().sttMode === 'cloud');
+  await page.waitForFunction(store => store.getState().sttMode === 'cloud', store);
   assert.equal(await cloud.getAttribute('aria-pressed'),'true');
   assert.equal(await cloud.getAttribute('data-pending'),null);
   assert.equal(await page.getByText('Setup required',{exact:true}).count(),0);
@@ -113,7 +114,7 @@ try {
   assert.equal(await page.evaluate(() => 'groqApiKey' in window.__QA__.stores[1]),false);
   await local.click(); assert.equal(await key.count(),0);
   await cloud.click();
-  await page.waitForFunction(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().sttMode === 'cloud');
+  await page.waitForFunction(store => store.getState().sttMode === 'cloud', store);
 
   // Failed replacement/removal preserves the saved credential and engine.
   const remove = page.getByRole('button',{name:'Remove API key',exact:true});
@@ -138,7 +139,7 @@ try {
   await page.evaluate(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().setStatus('idle'));
   await page.screenshot({path:'/tmp/linty-secure-key-settings.png'});
   await remove.click();
-  await page.waitForFunction(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().sttMode === 'local');
+  await page.waitForFunction(store => store.getState().sttMode === 'local', store);
   assert.equal(await page.evaluate(() => window.__QA__.secureGroqKey),'');
   assert.equal(await page.evaluate(() => 'groqApiKey' in window.__QA__.stores[1]),false);
   assert.equal(await page.evaluate(() => window.__QA__.stores[1].sttMode),'local');
@@ -159,7 +160,7 @@ try {
   assert.equal(await cloud.getAttribute('data-pending'),'true');
   await page.evaluate(() => { delete window.__QA__.failures['plugin:store|save']; });
   await saveCloud.click();
-  await page.waitForFunction(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().sttMode === 'cloud');
+  await page.waitForFunction(store => store.getState().sttMode === 'cloud', store);
 
   // Older settings, or deletion of the saved key, cannot bypass recording preflight.
   await page.evaluate(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().setGroqApiKey(''));
@@ -167,7 +168,7 @@ try {
   assert.match((await lastCapsule()).error, /Groq API key/);
   assert.equal(await page.evaluate(() => window.__QA__.calls.includes('start_recording')), false);
   await local.click();
-  await page.waitForFunction(async () => (await import('/src/store/app.store.ts')).useAppStore.getState().sttMode === 'local');
+  await page.waitForFunction(store => store.getState().sttMode === 'local', store);
 
   // A failed startup explains the failure in the capsule; an empty recording
   // on the very next attempt ends idle, without an orphan transcribing event.

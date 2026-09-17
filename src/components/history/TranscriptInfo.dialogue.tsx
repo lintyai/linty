@@ -40,6 +40,13 @@ export function TranscriptInfoDialogue({ transcript, onClose, showEditHistory = 
     }
   }, [showEditHistory, loaded]);
 
+  const dismiss = () => {
+    // Close while the dialog is still mounted so native focus restoration
+    // completes before React removes it from the document.
+    dialog.current?.close();
+    onClose();
+  };
+
   const addPairToDictionary = (right: string, wrong: string) => {
     addDictionaryEntry(right, [wrong], "learned")
       .then(() => toast.success(`“${right}” added to your dictionary`))
@@ -71,11 +78,11 @@ export function TranscriptInfoDialogue({ transcript, onClose, showEditHistory = 
           }
         }
       }}
-      onCancel={(event) => { event.preventDefault(); onClose(); }}
+      onCancel={(event) => { event.preventDefault(); dismiss(); }}
     >
       <header className="transcript-info-heading">
         <h2 id={`${id}-title`}>Dictation details</h2>
-        <button ref={close} type="button" className="icon-button" aria-label="Close dictation details" onClick={onClose}>
+        <button ref={close} type="button" className="icon-button" aria-label="Close dictation details" onClick={dismiss}>
           <X size={16} />
         </button>
       </header>

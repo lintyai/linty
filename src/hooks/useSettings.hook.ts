@@ -246,7 +246,14 @@ export function useSettings() {
   const saveWhisperPrompt = useCallback((value: string) => saveSetting("whisperPrompt", value), []);
   const saveCorrectionPrompt = useCallback((value: string) => saveSetting("correctionPrompt", value), []);
   const saveOnboardingComplete = useCallback((value: boolean) => saveSetting("onboardingComplete", value), []);
-  const saveTranscriptionLanguage = useCallback((value: string) => saveSetting("transcriptionLanguage", value), []);
+  const saveTranscriptionLanguage = useCallback(async (value: string) => {
+    const state = useAppStore.getState();
+    if (state.isRecording || ["preparing", "recording", "transcribing", "correcting", "pasting"].includes(state.status)) {
+      throw new Error("Finish dictating before changing the transcription language.");
+    }
+    if (!isSupportedLanguage(value)) throw new Error("Choose a supported transcription language.");
+    await saveSetting("transcriptionLanguage", value);
+  }, []);
   const saveSelectedModelFilename = useCallback((value: string | null) => saveSetting("selectedModelFilename", value), []);
   const saveTriggerKey = useCallback((value: string) => saveSetting("triggerKey", value), []);
   const saveModelIdleUnloadMinutes = useCallback(async (minutes: number) => {

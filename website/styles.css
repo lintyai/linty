@@ -156,7 +156,7 @@ h2 { font-size: clamp(30px, 3.2vw, 44px); font-weight: 450; letter-spacing: -.05
 .ledger-header .brand-mark { width: 14px; height: 16px; }
 .privacy-ledger dl > div { display: grid; grid-template-columns: 1fr auto; gap: 6px 20px; border-top: 1px solid var(--line); padding: 20px 0; }
 .privacy-ledger dt { font-size: 13px; font-weight: 550; }
-.privacy-ledger dd { font-size: 12px; line-height: 1.8; color: var(--muted); grid-column: 1; }
+.privacy-ledger dd:not(.ledger-label) { font-size: 12px; line-height: 1.8; color: var(--muted); grid-column: 1; }
 .ledger-label { grid-column: 2; grid-row: 1; font-family: var(--font-code); font-size: 9px; color: var(--accent); padding-top: 3px; }
 .ledger-footer { font-size: 11px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); }
 .getting-started { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(40px, 7vw, 100px); padding-top: 20px; }

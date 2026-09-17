@@ -478,10 +478,11 @@ try {
   await page.evaluate(() => window.__QA__.emit('fnkey-released'));
   assert.equal(await page.evaluate(() => window.__QA__.calls.includes('stop_recording')), false, 'Quick release waits for microphone startup');
   await page.evaluate(() => window.__QA__.finishMicStart());
-  await page.waitForFunction(async () => {
-    const state = (await import('/src/store/app.store.ts')).useAppStore.getState();
+  const recordingStore = await page.evaluateHandle(async () => (await import('/src/store/app.store.ts')).useAppStore);
+  await page.waitForFunction(store => {
+    const state = store.getState();
     return window.__QA__.calls.includes('stop_recording') && !state.isRecording && state.status === 'idle';
-  });
+  }, recordingStore);
   await page.evaluate(() => { window.__TAURI_INTERNALS__.invoke = window.__QA__.originalMicInvoke; });
 
   // Expose recoverable failures from the same commands used by the desktop app.
