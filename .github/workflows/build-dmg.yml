@@ -83,7 +83,7 @@ jobs:
       # source/dependency/toolchain/recipe matches may reuse this archive.
       - name: Swift bridge cache
         id: swift-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 — Node 24
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 — Node 24
         with:
           path: ${{ env.LINTY_PARAKEET_LIB_DIR }}/libLintyParakeet.a
           key: swift-archive-v1-${{ runner.os }}-${{ runner.arch }}-aarch64-apple-darwin-${{ steps.swift-toolchain.outputs.hash }}-${{ hashFiles('src-tauri/swift/Package.swift', 'src-tauri/swift/Package.resolved', 'src-tauri/swift/Sources/**', 'src-tauri/build.rs', '.github/workflows/build-dmg.yml') }}
@@ -103,6 +103,15 @@ jobs:
         run: |
           test -s "$LINTY_PARAKEET_LIB_DIR/libLintyParakeet.a"
           xcrun lipo "$LINTY_PARAKEET_LIB_DIR/libLintyParakeet.a" -verify_arch arm64
+
+      # Save as soon as compilation succeeds, even if a later network upload
+      # or notarization fails. A subsequent run can still reuse this work.
+      - name: Save Swift bridge cache
+        if: steps.swift-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 — Node 24
+        with:
+          path: ${{ env.LINTY_PARAKEET_LIB_DIR }}/libLintyParakeet.a
+          key: ${{ steps.swift-cache.outputs.cache-primary-key }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -235,45 +244,30 @@ jobs:
           echo "Generated latest.json for v${VERSION}"
           cat latest.json
 
-      - name: Upload DMG artifact
+      - name: Upload release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 — Node 24
         with:
           name: Linty-macOS-arm64
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          # Keep everything needed to retry publishing without another build.
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+            latest.json
+          if-no-files-found: error
 
-      - name: Create GitHub Release
-        id: release
-        continue-on-error: true
+      - name: Create draft GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3 — Node 24
         with:
           tag_name: v${{ steps.version.outputs.version }}
           target_commitish: main
           name: Linty v${{ steps.version.outputs.version }}
-          files: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
-            latest.json
           generate_release_notes: true
-          fail_on_unmatched_files: true
+          draft: true
 
-      # A transient release-asset upload error must not require rebuilding and
-      # signing the app. Retry the same files/tag; a second failure fails the job.
-      - name: Wait before retrying release upload
-        if: steps.release.outcome == 'failure'
-        run: sleep 10
-
-      - name: Retry GitHub Release
-        if: steps.release.outcome == 'failure'
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3 — Node 24
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          target_commitish: main
-          name: Linty v${{ steps.version.outputs.version }}
-          files: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
-            latest.json
-          generate_release_notes: true
-          fail_on_unmatched_files: true
+      - name: Upload assets and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: v${{ steps.version.outputs.version }}
+        run: bash scripts/publish-release.sh "$RELEASE_TAG"
