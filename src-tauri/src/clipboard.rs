@@ -275,7 +275,7 @@ extern "C" fn pasteboard_finished_imp(
 
 /// Write text to pasteboard via lazy data provider (NSPasteboardItemDataProvider).
 /// Instead of eagerly writing text bytes, registers a provider that macOS calls back
-/// when the target app actually reads the data — giving us an exact "paste consumed" signal.
+/// when any consumer reads the data; this does not verify insertion into the target.
 fn write_clipboard_with_lazy_provider(text: &str) -> Result<i64, String> {
     let provider_cls = register_pasteboard_provider_class();
 
@@ -528,7 +528,15 @@ pub fn restore_clipboard(state: &ClipboardState) -> Result<(), String> {
 // ── Tauri command wrappers ──
 
 /// Snapshot the current clipboard into module-level state.
+// Serialize publication and restoration across timer and command threads. The
+// generation check must be in the same critical section as the OS write.
+static CLIPBOARD_OPERATION: Mutex<()> = Mutex::new(());
+
 pub fn cmd_snapshot() -> Result<(), String> {
+    let _operation = CLIPBOARD_OPERATION.lock().map_err(|e| e.to_string())?;
+    // Settle our previous transient publication before snapshotting the next.
+    // changeCount still protects a newer user copy.
+    restore_owned(None)?;
     RESTORE_GENERATION.fetch_add(1, Ordering::AcqRel);
     // Clear stale state even if this snapshot fails; the frontend's recovery
     // must never restore an earlier paste over the clipboard we preserved.
@@ -543,6 +551,7 @@ pub fn cmd_snapshot() -> Result<(), String> {
 
 /// Write transient text and record the post-write changeCount.
 pub fn cmd_write_transient(text: &str) -> Result<(), String> {
+    let _operation = CLIPBOARD_OPERATION.lock().map_err(|e| e.to_string())?;
     // New paste session — any restore timer from a previous session is now stale
     RESTORE_GENERATION.fetch_add(1, Ordering::AcqRel);
     let change_count = write_transient_text(text)?;
@@ -570,11 +579,10 @@ pub fn schedule_restore(delay_ms: u64) {
     let generation = RESTORE_GENERATION.load(Ordering::Acquire);
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(delay_ms));
-        if RESTORE_GENERATION.load(Ordering::Acquire) != generation {
-            log::debug!("[clipboard] restore skipped (newer paste session)");
+        let Ok(_operation) = CLIPBOARD_OPERATION.lock() else {
             return;
-        }
-        if let Err(e) = cmd_restore() {
+        };
+        if let Err(e) = restore_owned(Some(generation)) {
             log::warn!("[clipboard] scheduled restore failed: {}", e);
         }
     });
@@ -582,6 +590,17 @@ pub fn schedule_restore(delay_ms: u64) {
 
 /// Restore clipboard from stored state, then clear the stored state.
 pub fn cmd_restore() -> Result<(), String> {
+    let _operation = CLIPBOARD_OPERATION.lock().map_err(|e| e.to_string())?;
+    restore_owned(None)
+}
+
+/// Caller holds CLIPBOARD_OPERATION until the OS write is finished.
+fn restore_owned(expected_generation: Option<usize>) -> Result<(), String> {
+    if expected_generation
+        .is_some_and(|expected| RESTORE_GENERATION.load(Ordering::Acquire) != expected)
+    {
+        return Ok(());
+    }
     let state = {
         let mut guard = CLIPBOARD_STATE.lock().unwrap();
         guard.take()
