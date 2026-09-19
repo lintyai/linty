@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compareVersions, isDictationBusy, isUpdateRequired, isVersion, minimumVersion, waitUntilIdle, withMinimumVersion } from '../src/lib/force-update.util.ts';
+import { claimIdleForUpdate, compareVersions, isDictationBusy, isUpdateRequired, isVersion, minimumVersion, waitUntilIdle, withMinimumVersion } from '../src/lib/force-update.util.ts';
 import { parseArgs, requestedMinimum } from '../scripts/force-update.mjs';
 
 const manifest = (extra = {}) => ({ version: 'v0.0.40', notes: 'Linty v0.0.40', platforms: { 'darwin-aarch64': { signature: 's', url: 'u' } }, ...extra });
@@ -120,4 +120,19 @@ test('busy means recording or producing text', () => {
 
 test('the default timers resolve (the browser-only invocation error is covered by yarn test:ui)', async () => {
   await waitUntilIdle(() => false, () => () => {}, 1);
+});
+
+
+test('the final install claim waits for dictation started during the release recheck', async () => {
+  const w = fakeWorld();
+  w.change({ isRecording: true, status: 'recording' });
+  let claimed = false;
+  const install = claimIdleForUpdate(() => isDictationBusy(w.state), w.subscribe, () => { claimed = true; });
+  assert.equal(await settled(install), false);
+  w.change({ isRecording: false, status: 'transcribing' });
+  assert.equal(await settled(install), false);
+  w.change({ status: 'done' });
+  await install;
+  assert.equal(claimed, true);
+  assert.equal(w.listenerCount(), 0);
 });

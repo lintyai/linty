@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { load } from "@tauri-apps/plugin-store";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store/app.store";
 import { useTheme } from "@/hooks/useTheme.hook";
 import type { ThemePreference } from "@/store/slices/settings.slice";
@@ -10,15 +11,16 @@ export function useCapsuleTheme() {
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
+    let changed = false;
     const connect = async () => {
-      const store = await load("linty-settings.json", { defaults: {}, autoSave: true });
-      const stop = await store.onKeyChange<ThemePreference>("theme", (theme) => {
-        if (!disposed) useAppStore.getState().setTheme(theme ?? "system");
+      const stop = await listen<ThemePreference>("theme-changed", ({ payload }) => {
+        changed = true;
+        if (!disposed) useAppStore.getState().setTheme(payload);
       });
       if (disposed) { stop(); return; }
       unlisten = stop;
-      const theme = await store.get<ThemePreference>("theme");
-      if (!disposed) useAppStore.getState().setTheme(theme ?? "system");
+      const theme = await invoke<ThemePreference>("get_theme");
+      if (!disposed && !changed) useAppStore.getState().setTheme(theme);
     };
     connect().catch(() => {}); // System appearance remains a usable fallback.
     return () => { disposed = true; unlisten?.(); };

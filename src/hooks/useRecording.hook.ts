@@ -24,7 +24,7 @@ export function useRecording() {
   const startRecording = useCallback(() => {
     if (starting && ownsDictation(starting.session) && !starting.session.cancelled) return starting.promise;
     const state = useAppStore.getState();
-    if (isRecoveringDictation() || state.isRecording || ["preparing", "transcribing", "correcting", "pasting"].includes(state.status)) return Promise.resolve(false);
+    if (state.updateStatus === "installing" || isRecoveringDictation() || state.isRecording || ["preparing", "transcribing", "correcting", "pasting"].includes(state.status)) return Promise.resolve(false);
     const session = beginDictation();
     const promise = (async () => {
       try {

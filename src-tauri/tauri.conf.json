@@ -47,10 +47,11 @@
     "trayIcon": {
       "iconPath": "icons/tray-icon.png",
       "iconAsTemplate": true,
-      "tooltip": "Linty — Hold fn to record"
+      "tooltip": "Linty \u2014 Hold fn to record"
     },
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; media-src 'self' blob: data:; connect-src 'self' ipc: http://ipc.localhost https://api.groq.com; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; media-src 'self' blob: data:; connect-src 'self' ipc: http://ipc.localhost https://api.groq.com ws:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'"
     }
   },
   "plugins": {
@@ -77,6 +78,13 @@
       "signingIdentity": "Developer ID Application: Hari Shekhar (3RPKRQ84N3)",
       "hardenedRuntime": true,
       "entitlements": "../src-tauri/Entitlements.plist"
-    }
+    },
+    "resources": [
+      "licenses/THIRD_PARTY_NOTICES.txt",
+      "licenses/inventory.json",
+      "licenses/s1-mini/LICENSE",
+      "licenses/s1-mini/NOTICE",
+      "licenses/MODELS.md"
+    ]
   }
 }

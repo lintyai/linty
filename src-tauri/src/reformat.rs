@@ -381,8 +381,29 @@ fn chunks<'a>(
     Ok(result)
 }
 
+/// An empty model response is valid only for unambiguous hesitation sounds.
+/// Split on ordinary speech punctuation, not arbitrary nonletters: digits,
+/// symbols, quotes, and unknown words must keep the empty-output safeguard.
+/// Uppercase UM/UH may be initials, so only normal sentence casing is accepted.
+fn is_filler_only(input: &str) -> bool {
+    let mut found = false;
+    for word in input
+        .split(|c: char| c.is_whitespace() || ",.!?…—–-".contains(c))
+        .filter(|word| !word.is_empty())
+    {
+        if !matches!(word, "um" | "Um" | "uh" | "Uh") {
+            return false;
+        }
+        found = true;
+    }
+    found
+}
+
 fn validate_output(input: &str, output: &str) -> anyhow::Result<()> {
-    anyhow::ensure!(!output.trim().is_empty(), "empty_output");
+    if output.trim().is_empty() {
+        anyhow::ensure!(is_filler_only(input), "empty_output");
+        return Ok(());
+    }
     anyhow::ensure!(
         !["<|", "<think>", "</think>"]
             .iter()
@@ -673,13 +694,19 @@ pub fn run(
             check()?;
             let output = engine.generate(piece, &mut metrics, &check, started)?;
             validate_output(piece, &output)?;
-            outputs.push(output.trim().to_owned());
+            // A completed filler-only chunk contributes no text or separators.
+            if !output.trim().is_empty() {
+                outputs.push(output.trim().to_owned());
+            }
             metrics.completed_chunks += 1;
         }
         Ok(Some(outputs.join("\n\n")))
     })();
     match work {
         Ok(Some(output)) => {
+            if output.is_empty() {
+                metrics.reason = Some("filler_only".into());
+            }
             metrics.changed = output != text;
             metrics.status = if metrics.changed {
                 "applied"
@@ -738,6 +765,9 @@ pub async fn reformat_transcript(
 
 #[cfg(test)]
 mod tests {
+    // Production owns one S1 engine behind a mutex. Asset tests must not race
+    // separate Metal engines against each other's inference deadlines.
+    static MODEL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     use super::*;
     fn options() -> Options {
         Options {
@@ -803,6 +833,7 @@ mod tests {
     #[test]
     #[ignore = "requires installed S1-mini assets via LINTY_S1_TEST_MODEL_DIR"]
     fn warmup_is_retryable_idempotent_and_does_not_change_real_output() {
+        let _guard = MODEL_TEST_LOCK.lock().unwrap();
         let dir = PathBuf::from(std::env::var("LINTY_S1_TEST_MODEL_DIR").unwrap());
         let mut engine = Engine::load(&dir).unwrap();
         assert!(engine.warm_up(&|| true).is_err());
@@ -838,5 +869,56 @@ mod tests {
         assert!(validate_output("hello", "<think>hello</think>").is_err());
         assert!(validate_output(&"word ".repeat(40), "Word.").is_err());
         assert!(validate_output("um buy apples and bread", "Buy apples and bread.").is_ok());
+    }
+
+    #[test]
+    fn empty_cleanup_requires_only_recognizable_fillers() {
+        for input in ["um uh um", "Um, uh… um.", "Uh—um!", &"um uh ".repeat(40)] {
+            assert!(validate_output(input, " \n").is_ok(), "{input:?}");
+        }
+        // Short answers, expressive interjections, quoted words, initials,
+        // symbols, and meaningful speech must never be discarded as fillers.
+        for input in [
+            "",
+            "...",
+            "no",
+            "yes",
+            "hmm",
+            "oh",
+            "uh huh",
+            "UM",
+            "UH",
+            "\"um\"",
+            "‘uh’",
+            "um 5",
+            "um ₹",
+            "um 🙂",
+            "um don't send it",
+            "um uh send the report",
+            "say um",
+            "Umwelt",
+            "うむ",
+        ] {
+            assert!(validate_output(input, "").is_err(), "{input:?}");
+        }
+    }
+
+    #[test]
+    #[ignore = "requires installed S1-mini assets via LINTY_S1_TEST_MODEL_DIR"]
+    fn filler_only_model_result_is_applied_and_next_dictation_survives() {
+        let _guard = MODEL_TEST_LOCK.lock().unwrap();
+        let dir = PathBuf::from(std::env::var("LINTY_S1_TEST_MODEL_DIR").unwrap());
+        let mut engine = None;
+        let empty = run(&mut engine, &dir, "um uh um", "en", options(), || false);
+        assert_eq!(empty.text, "");
+        assert_eq!(empty.metrics.status, "applied");
+        assert_eq!(empty.metrics.reason.as_deref(), Some("filler_only"));
+        assert_eq!(empty.metrics.output_words, 0);
+        assert_eq!(empty.metrics.output_characters, 0);
+        assert_eq!(empty.metrics.completed_chunks, empty.metrics.chunks);
+        let next = run(&mut engine, &dir, "no", "en", options(), || false);
+        assert_eq!(next.text, "No.");
+        assert_eq!(next.metrics.status, "applied");
+        assert_eq!(next.metrics.reason, None);
     }
 }

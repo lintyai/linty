@@ -89,6 +89,14 @@ export function AboutPage() {
           </SectionCard>
         )}
 
+        {(updateStatus === "waiting" || updateStatus === "installing") && (
+          <SectionCard>
+            <p className="px-4 py-3 text-[13px] text-text-primary" role="status">
+              {updateStatus === "waiting" ? "Downloaded. Waiting for dictation to finish…" : "Installing and restarting…"}
+            </p>
+          </SectionCard>
+        )}
+
         {updateStatus === "error" && updateError && (
           <SectionCard className="animate-fade-in">
             <div className="flex items-center justify-between px-4 py-3">

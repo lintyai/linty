@@ -46,6 +46,7 @@ candle-core = "=0.11.0"
 candle-transformers = "=0.11.0"
 tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
 sha2 = "0.10"
+tempfile = "3"
 whatlang = "0.18"
 
 # macOS-only dependencies

@@ -563,10 +563,8 @@ pub fn available_models(parakeet_supported: bool) -> Vec<ModelInfo> {
     }
     models.push(ModelInfo {
         name: "Whisper Large Turbo Q5 (574 MB)".into(),
-        filename: "ggml-large-v3-turbo-q5_0.bin".into(),
-        url:
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"
-                .into(),
+        filename: crate::model_store::WHISPER_ID.into(),
+        url: crate::model_store::WHISPER_URL.into(),
         size_mb: 574,
         description: "Runs on the GPU · same languages · supports the vocabulary prompt".into(),
         backend: ModelBackend::Whisper,
@@ -576,12 +574,10 @@ pub fn available_models(parakeet_supported: bool) -> Vec<ModelInfo> {
 }
 
 /// Download a model file with progress events.
-pub async fn download_model(
-    app: &tauri::AppHandle,
-    url: &str,
-    dest: &std::path::Path,
-) -> Result<(), String> {
+pub async fn download_model(app: &tauri::AppHandle, dest: &std::path::Path) -> Result<(), String> {
+    use crate::model_store::{verify_artifact, WHISPER_BYTES, WHISPER_SHA256, WHISPER_URL};
     use futures_util::StreamExt;
+    use sha2::{Digest, Sha256};
     use tauri::Emitter;
 
     // Create parent dir
@@ -590,7 +586,7 @@ pub async fn download_model(
     }
 
     let response = download_client()
-        .get(url)
+        .get(WHISPER_URL)
         .send()
         .await
         .map_err(|e| format!("Download request failed: {}", e))?;
@@ -599,20 +595,32 @@ pub async fn download_model(
         return Err(format!("Download failed: HTTP {}", response.status()));
     }
 
-    let total_size = response.content_length().unwrap_or(0);
+    let total_size = WHISPER_BYTES;
+    if response
+        .content_length()
+        .is_some_and(|length| length != total_size)
+    {
+        return Err("Unexpected model download size.".into());
+    }
+    let mut digest = Sha256::new();
     let mut downloaded: u64 = 0;
 
     // Background setup can outlive the onboarding screen. Only expose a model
     // at its final path once complete, so another screen or launch cannot load
     // a partial Whisper download.
-    let partial = dest.with_extension("bin.part");
-    let mut file =
-        std::fs::File::create(&partial).map_err(|e| format!("Failed to create file: {}", e))?;
+    // A unique create-new file cannot follow a pre-existing partial-file symlink.
+    // Dropping it after any failure removes the incomplete artifact.
+    let mut file = tempfile::NamedTempFile::new_in(dest.parent().ok_or("Invalid model path")?)
+        .map_err(|e| format!("Failed to create model download: {e}"))?;
 
     let mut stream = response.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Download stream error: {}", e))?;
+        if downloaded + chunk.len() as u64 > total_size {
+            return Err("Model download exceeds its expected size.".into());
+        }
+        digest.update(&chunk);
         std::io::Write::write_all(&mut file, &chunk)
             .map_err(|e| format!("File write error: {}", e))?;
         downloaded += chunk.len() as u64;
@@ -631,12 +639,17 @@ pub async fn download_model(
         }
     }
 
-    if total_size > 0 && downloaded != total_size {
-        return Err("Model download was incomplete. Please try again.".into());
-    }
-    std::io::Write::flush(&mut file).map_err(|e| format!("Failed to finish model file: {}", e))?;
-    drop(file);
-    std::fs::rename(&partial, dest).map_err(|e| format!("Failed to save model file: {}", e))?;
+    verify_artifact(
+        downloaded,
+        &format!("{:x}", digest.finalize()),
+        WHISPER_BYTES,
+        WHISPER_SHA256,
+    )?;
+    file.as_file()
+        .sync_all()
+        .map_err(|e| format!("Failed to finish model file: {e}"))?;
+    file.persist(dest)
+        .map_err(|e| format!("Failed to save model file: {e}"))?;
 
     let _ = app.emit(
         "model-download-complete",

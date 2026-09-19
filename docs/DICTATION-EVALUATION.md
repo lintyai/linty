@@ -11,7 +11,7 @@ or always retaining only the last number would fail it. Quoted demonstrations of
 mistakes must remain understandable as demonstrations. Ambiguous cases need
 human review; fluency alone is not success.
 
-## Current baseline: September 19, 2026
+## Initial baseline: September 19, 2026
 
 The [saved 38-case report](benchmarks/dictation-evaluation-s1-2026-09-19.json)
 contains every input, output, measurement, automatic assessment, and Codex text
@@ -32,7 +32,7 @@ Concrete failures include:
 - Corrections: `send now, no, don't send until I review` retains both directions.
 - Numbers: one lakh fifty thousand rupees becomes ₹1,050,000 instead of ₹150,000.
 - Integration: S1 returns empty text for `um uh um`, but the output guard rejects
-  it and restores the fillers. This is a separate implementation defect.
+  it and restores the fillers. This implementation defect is fixed below.
 
 Simple amount/day/recipient corrections, a long message containing two
 corrections, most preservation cases, and the spoken email address worked in this
@@ -43,6 +43,32 @@ silence, a missing recording, an invalid WAV, and a too-short WAV. It correctly
 kept those as no speech, pending audio, audio error, and transcription error;
 none was substituted with reference text. These are harness checks, not human
 voice tests. All 89 JavaScript tests passed, including the six evaluation tests.
+
+## Filler-only result fix
+
+The native validator now accepts empty S1 output only for chunks containing
+recognizable `um`/`uh` fillers and ordinary speech punctuation. It still rejects
+empty output for meaningful words, quoted content, initials, numbers, symbols,
+or unknown content. The published S1 prompt is unchanged.
+
+When a whole dictation cleans to nothing, the frontend finishes quietly before
+dictionary, clipboard, paste, and History operations. It discards the pending
+audio for that recording and remains ready for the next dictation. Empty chunks
+within a longer completed result contribute no extra blank paragraphs. These
+changes address the filler-only defect; the initial model-quality findings
+remain separate.
+
+The [38-case rerun](benchmarks/dictation-evaluation-s1-filler-fix-2026-09-19.json)
+changes only `33-filler-only`: it now returns an accepted empty result with
+`reason: filler_only`. All other 37 output strings are identical to the initial
+baseline. Automatic reference matches increase from 24 to 25, with nine still
+needing review and four still failing content constraints.
+
+Validation also passes all 94 JavaScript tests, 96 standard native tests, all
+nine targeted reformat tests including the installed-model tests, the frontend
+build, and `yarn test:cleanup`. The UI regression confirms no clipboard/paste or
+History write for filler-only results, disposal of pending audio, normal delivery
+of the next `No` dictation, and preservation of meaningful text on fallback.
 
 ## First recording session: eight short dictations
 

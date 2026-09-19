@@ -91,22 +91,23 @@ unsafe fn nsstring_to_string(nsstr: *const c_void) -> Option<String> {
 
 // ── NSData helpers ──
 
-unsafe fn nsdata_to_vec(data: *const c_void) -> Vec<u8> {
+unsafe fn nsdata_to_vec(data: *const c_void, remaining: usize) -> Result<Vec<u8>, String> {
     if data.is_null() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let length = msg_send_u64(data, sel_registerName(b"length\0".as_ptr())) as usize;
+    checked_snapshot_size(MAX_SNAPSHOT_BYTES - remaining, length)?;
     if length == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let bytes_sel = sel_registerName(b"bytes\0".as_ptr());
     let send: unsafe extern "C" fn(*const c_void, *const c_void) -> *const u8 =
         std::mem::transmute(objc_msgSend as *const c_void);
     let bytes_ptr = send(data, bytes_sel);
     if bytes_ptr.is_null() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    std::slice::from_raw_parts(bytes_ptr, length).to_vec()
+    Ok(std::slice::from_raw_parts(bytes_ptr, length).to_vec())
 }
 
 unsafe fn nsdata_from_vec(bytes: &[u8]) -> *const c_void {
@@ -372,20 +373,20 @@ fn write_clipboard_with_lazy_provider(text: &str) -> Result<i64, String> {
 // ── Public API ──
 
 /// Snapshot all items and types from [NSPasteboard generalPasteboard].
-/// Returns None if pasteboard is empty.
-pub fn snapshot_clipboard() -> Option<ClipboardSnapshot> {
+/// Refuse an incomplete snapshot so the caller leaves the clipboard untouched.
+pub fn snapshot_clipboard() -> Result<ClipboardSnapshot, String> {
     unsafe {
         let pb = get_general_pasteboard();
         let change_count = msg_send_i64(pb, sel_registerName(b"changeCount\0".as_ptr()));
 
         let items = msg_send_0(pb, sel_registerName(b"pasteboardItems\0".as_ptr()));
-        if items.is_null() {
-            return None;
-        }
-
-        let count = nsarray_count(items);
+        let count = if items.is_null() {
+            0
+        } else {
+            nsarray_count(items)
+        };
         if count == 0 {
-            return Some(ClipboardSnapshot {
+            return Ok(ClipboardSnapshot {
                 items: Vec::new(),
                 change_count,
             });
@@ -393,7 +394,6 @@ pub fn snapshot_clipboard() -> Option<ClipboardSnapshot> {
 
         let mut snapshot_items = Vec::new();
         let mut total_bytes: usize = 0;
-        const MAX_BYTES: usize = 100 * 1024 * 1024; // 100MB cap
 
         for i in 0..count {
             let item = nsarray_object_at(items, i);
@@ -419,12 +419,8 @@ pub fn snapshot_clipboard() -> Option<ClipboardSnapshot> {
 
                     let data = msg_send_1(item, sel_registerName(b"dataForType:\0".as_ptr()), uti);
                     if !data.is_null() {
-                        let bytes = nsdata_to_vec(data);
+                        let bytes = nsdata_to_vec(data, MAX_SNAPSHOT_BYTES - total_bytes)?;
                         total_bytes += bytes.len();
-                        if total_bytes > MAX_BYTES {
-                            log::warn!("[clipboard] snapshot exceeds 100MB cap, truncating");
-                            break;
-                        }
                         types_data.push((uti_str, bytes));
                     }
                 }
@@ -433,13 +429,9 @@ pub fn snapshot_clipboard() -> Option<ClipboardSnapshot> {
             if !types_data.is_empty() {
                 snapshot_items.push(PasteboardItemSnapshot { types_data });
             }
-
-            if total_bytes > MAX_BYTES {
-                break;
-            }
         }
 
-        Some(ClipboardSnapshot {
+        Ok(ClipboardSnapshot {
             items: snapshot_items,
             change_count,
         })
@@ -536,28 +528,17 @@ pub fn restore_clipboard(state: &ClipboardState) -> Result<(), String> {
 // ── Tauri command wrappers ──
 
 /// Snapshot the current clipboard into module-level state.
-pub fn cmd_snapshot() {
-    // Invalidate any pending restore timer BEFORE swapping in this session's
-    // state — a stale timer firing between this snapshot and the upcoming
-    // write_transient would otherwise consume the fresh state.
+pub fn cmd_snapshot() -> Result<(), String> {
     RESTORE_GENERATION.fetch_add(1, Ordering::AcqRel);
-    let snap = snapshot_clipboard();
-    let mut guard = CLIPBOARD_STATE.lock().unwrap();
-    if let Some(s) = snap {
-        *guard = Some(ClipboardState {
-            snapshot: s,
-            post_write_change_count: 0, // will be set by write_transient
-        });
-    } else {
-        // Empty pasteboard — store empty snapshot so restore clears our text
-        *guard = Some(ClipboardState {
-            snapshot: ClipboardSnapshot {
-                items: Vec::new(),
-                change_count: 0,
-            },
-            post_write_change_count: 0,
-        });
-    }
+    // Clear stale state even if this snapshot fails; the frontend's recovery
+    // must never restore an earlier paste over the clipboard we preserved.
+    *CLIPBOARD_STATE.lock().unwrap() = None;
+    let snapshot = snapshot_clipboard()?;
+    *CLIPBOARD_STATE.lock().unwrap() = Some(ClipboardState {
+        snapshot,
+        post_write_change_count: 0,
+    });
+    Ok(())
 }
 
 /// Write transient text and record the post-write changeCount.
@@ -619,4 +600,32 @@ pub fn cmd_restore() -> Result<(), String> {
 unsafe fn get_general_pasteboard() -> *const c_void {
     let cls = objc_getClass(b"NSPasteboard\0".as_ptr());
     msg_send_0(cls, sel_registerName(b"generalPasteboard\0".as_ptr()))
+}
+
+const MAX_SNAPSHOT_BYTES: usize = 100 * 1024 * 1024;
+
+fn checked_snapshot_size(total: usize, next: usize) -> Result<usize, String> {
+    total
+        .checked_add(next)
+        .filter(|size| *size <= MAX_SNAPSHOT_BYTES)
+        .ok_or_else(|| {
+            "Clipboard is too large to preserve. Copy your transcript from History.".into()
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_budget_refuses_oversized_items_before_copying() {
+        assert_eq!(checked_snapshot_size(0, 0).unwrap(), 0);
+        assert_eq!(
+            checked_snapshot_size(MAX_SNAPSHOT_BYTES - 1, 1).unwrap(),
+            MAX_SNAPSHOT_BYTES
+        );
+        assert!(checked_snapshot_size(0, MAX_SNAPSHOT_BYTES + 1).is_err());
+        assert!(checked_snapshot_size(MAX_SNAPSHOT_BYTES, 1).is_err());
+        assert!(checked_snapshot_size(1, usize::MAX).is_err());
+    }
 }
