@@ -284,7 +284,12 @@ fn write_clipboard_with_lazy_provider(text: &str) -> Result<i64, String> {
 
         // clearContents first — this fires pasteboardFinishedWithDataProvider: for any
         // previous provider synchronously, cleaning up the old PROVIDER_STATE.
-        msg_send_i64(pb, sel_registerName(b"clearContents\0".as_ptr()));
+        let cleared_count = msg_send_i64(pb, sel_registerName(b"clearContents\0".as_ptr()));
+        // Own the cleared pasteboard even if a later allocation/publication
+        // fails. Recovery can restore it without overwriting a newer user copy.
+        if let Some(state) = CLIPBOARD_STATE.lock().unwrap().as_mut() {
+            state.post_write_change_count = cleared_count;
+        }
 
         // Now safe to store new provider state (old one is cleaned up)
         let state = Box::new(ProviderState {
