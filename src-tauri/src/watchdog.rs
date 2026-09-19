@@ -49,12 +49,25 @@ pub fn start(app: tauri::AppHandle) {
             // ── Check 1: Callback rate ──
             let count = state.audio_callback_count.swap(0, Ordering::Relaxed);
             let rate = count / TICK_INTERVAL_SECS;
-            let recording = state.recording.lock().map(|r| r.is_recording).unwrap_or(false);
+            let recording = state
+                .recording
+                .lock()
+                .map(|r| r.is_recording)
+                .unwrap_or(false);
             // Digital silence still produces callbacks. No callbacks at all
             // means capture has stalled or its device disappeared.
-            silent_ticks = if recording && count == 0 { silent_ticks + 1 } else { 0 };
+            silent_ticks = if recording && count == 0 {
+                silent_ticks + 1
+            } else {
+                0
+            };
             if silent_ticks >= 4 {
-                recover(&app, &state, "Microphone stopped responding. Check your input and try again.").await;
+                recover(
+                    &app,
+                    &state,
+                    "Microphone stopped responding. Check your input and try again.",
+                )
+                .await;
                 silent_ticks = 0;
                 continue;
             }
@@ -63,7 +76,8 @@ pub fn start(app: tauri::AppHandle) {
                 consecutive_high_ticks += 1;
                 log::warn!(
                     "[watchdog] High callback rate: {}/sec (tick {}/2)",
-                    rate, consecutive_high_ticks
+                    rate,
+                    consecutive_high_ticks
                 );
             } else {
                 consecutive_high_ticks = 0;
@@ -113,9 +127,13 @@ pub fn start(app: tauri::AppHandle) {
                     if should_unload_model(recording, unload_secs, last_used, now) {
                         // Preparation owns this lock until every linked model
                         // is warm. Never evict an instance while publishing it.
-                        let Ok(_load_guard) = state.local_model_load_lock.try_lock() else { continue; };
+                        let Ok(_load_guard) = state.local_model_load_lock.try_lock() else {
+                            continue;
+                        };
                         let last_used = state.local_model_last_used_at.load(Ordering::Relaxed);
-                        if !should_unload_model(recording, unload_secs, last_used, now) { continue; }
+                        if !should_unload_model(recording, unload_secs, last_used, now) {
+                            continue;
+                        }
                         let unloaded = state.unload_local_models();
                         state.local_model_last_used_at.store(0, Ordering::Relaxed);
                         if unloaded {
@@ -152,7 +170,9 @@ async fn recover(app: &tauri::AppHandle, state: &AppState, reason: &str) {
 
     if let Ok(mut rec) = state.recording.lock() {
         rec.is_recording = false;
-        rec.samples = Vec::new();
+        rec.samples = Default::default();
+        rec.history_audio = None;
+        rec.audio_consent = None;
     }
 
     // 3. Drop stale audio_tx so a fresh thread is spawned next recording

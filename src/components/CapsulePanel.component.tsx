@@ -1,14 +1,15 @@
 import { useCapsuleTheme } from "@/hooks/useCapsuleTheme.hook";
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { CSSProperties } from "react";
-import { listen, emit } from "@tauri-apps/api/event";
+import { listen, emit, emitTo } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LockKeyhole, Square, X, CircleAlert } from "lucide-react";
+import { LockKeyhole, Square, X, CircleAlert, BookOpen, Undo2 } from "lucide-react";
 import { advanceWaveform, flatWaveform, WAVEFORM_BAR_COUNT } from "@/lib/dictation-waveform";
+import type { CorrectionFeedback } from "@/lib/correction-feedback";
 import lintyFavicon from "../../src-tauri/icons/icon.svg?raw";
 
-type CapsuleMode = "idle" | "preparing" | "recording" | "transcribing" | "correcting" | "pasting" | "done" | "quiet-stop" | "error";
+type CapsuleMode = "idle" | "preparing" | "recording" | "transcribing" | "correcting" | "pasting" | "done" | "quiet-stop" | "error" | "feedback";
 interface CapsuleStatePayload {
   state: CapsuleMode;
   error?: string;
@@ -16,6 +17,7 @@ interface CapsuleStatePayload {
   generation?: number;
 }
 interface QuietInput { generation: number; quiet_seconds: number }
+const FEEDBACK_DURATION_MS = 3000;
 
 function formatDuration(seconds: number) {
   return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`;
@@ -53,29 +55,91 @@ export function CapsulePanel() {
   const [quietSeconds, setQuietSeconds] = useState(0);
   const [dismissing, setDismissing] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [feedback, setFeedback] = useState<CorrectionFeedback | null>(null);
+  const feedbackRef = useRef<CorrectionFeedback | null>(null);
+  const pendingFeedbackRef = useRef<CorrectionFeedback[]>([]);
+  const presentFeedbackRef = useRef<(feedback: CorrectionFeedback) => void>(() => {});
   const modeRef = useRef<CapsuleMode>("idle");
   const generationRef = useRef<number | undefined>(undefined);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const feedbackRemainingRef = useRef(FEEDBACK_DURATION_MS);
+  const feedbackDeadlineRef = useRef<number | null>(null);
+  const feedbackInteractionRef = useRef({ pointer: false, focus: false });
 
   const dismiss = useCallback(() => {
     if (exitTimerRef.current !== null) return;
+    if (dismissTimerRef.current !== null) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = null;
+    feedbackDeadlineRef.current = null;
     setDismissing(true);
     if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
     exitTimerRef.current = setTimeout(() => {
       exitTimerRef.current = null;
+      const next = pendingFeedbackRef.current.shift();
+      if (next) { presentFeedbackRef.current(next); return; }
+      const wasFeedback = modeRef.current === "feedback";
+      feedbackRef.current = null;
+      feedbackInteractionRef.current = { pointer: false, focus: false };
       modeRef.current = "idle";
       setMode("idle");
       setDismissing(false);
-      invoke("hide_capsule").catch(() => {});
+      invoke("hide_capsule", { feedback: wasFeedback }).catch(() => {});
     }, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180);
   }, []);
 
+  const scheduleFeedbackDismissal = useCallback(() => {
+    if (modeRef.current !== "feedback" || exitTimerRef.current !== null) return;
+    if (dismissTimerRef.current !== null) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = null;
+    feedbackDeadlineRef.current = null;
+    if (feedbackInteractionRef.current.pointer || feedbackInteractionRef.current.focus) return;
+    feedbackDeadlineRef.current = Date.now() + feedbackRemainingRef.current;
+    dismissTimerRef.current = setTimeout(dismiss, feedbackRemainingRef.current);
+  }, [dismiss]);
+
+  const interactWithFeedback = useCallback((kind: "pointer" | "focus", active: boolean) => {
+    if (feedbackInteractionRef.current[kind] === active) return;
+    feedbackInteractionRef.current[kind] = active;
+    if (modeRef.current !== "feedback") return;
+    if (feedbackDeadlineRef.current !== null) {
+      feedbackRemainingRef.current = Math.max(0, feedbackDeadlineRef.current - Date.now());
+    }
+    scheduleFeedbackDismissal();
+  }, [scheduleFeedbackDismissal]);
+
   useEffect(() => {
+    const presentFeedback = (notice: CorrectionFeedback) => {
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      if (exitTimerRef.current !== null) clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+      feedbackRef.current = notice;
+      modeRef.current = "feedback";
+      setFeedback(notice);
+      setMode("feedback");
+      setExpandedMode("feedback");
+      setDismissing(false);
+      void invoke("show_capsule", { feedback: true }).catch(() => {});
+      feedbackRemainingRef.current = FEEDBACK_DURATION_MS;
+      scheduleFeedbackDismissal();
+    };
+    presentFeedbackRef.current = presentFeedback;
     const listeners = [
+      listen<CorrectionFeedback>("correction-feedback", ({ payload }) => {
+        if (modeRef.current === "idle") presentFeedback(payload);
+        else pendingFeedbackRef.current.push(payload);
+      }),
       listen<CapsuleStatePayload>("capsule-state", ({ payload }) => {
         const { state, error, hands_free, generation } = payload;
+        // Late cleanup cannot dismiss a fresh acknowledgment. Once shown, an
+        // interrupted notice is finished; it never returns after dictation.
+        if (modeRef.current === "feedback") {
+          if (state === "idle") return;
+          feedbackRef.current = null;
+          feedbackDeadlineRef.current = null;
+          feedbackInteractionRef.current.focus = false;
+        }
         if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
         if (state === "idle") { dismiss(); return; }
         if (exitTimerRef.current !== null) {
@@ -85,7 +149,7 @@ export function CapsulePanel() {
         const newRecording = state === "recording" && (modeRef.current !== "recording" || generationRef.current !== generation);
         modeRef.current = state;
         setMode(state);
-        if (state === "recording" || state === "error" || state === "quiet-stop") setExpandedMode(state);
+        if (state === "recording" || state === "preparing" || state === "error" || state === "quiet-stop") setExpandedMode(state);
         setDismissing(false);
         if (state === "error") setErrorMsg(error || "Something went wrong");
         if (newRecording) {
@@ -120,12 +184,12 @@ export function CapsulePanel() {
       if (exitTimerRef.current !== null) clearTimeout(exitTimerRef.current);
       if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
     };
-  }, [dismiss]);
+  }, [dismiss, scheduleFeedbackDismissal]);
 
   const isRecording = mode === "recording";
   const isDraggable = isRecording && handsFree;
   const isProcessing = ["preparing", "transcribing", "correcting", "pasting"].includes(mode);
-  const isCompact = isProcessing || mode === "done";
+  const isCompact = (isProcessing && mode !== "preparing") || mode === "done";
   const isQuiet = isRecording && quietSeconds >= 20;
   const expandedQuiet = expandedMode === "recording" && quietSeconds >= 20;
   const isSpeaking = isRecording && !isQuiet && levels.slice(-3).some(level => level > 0.02);
@@ -136,15 +200,22 @@ export function CapsulePanel() {
   const remainingSeconds = Math.max(0, Math.min(10, 30 - quietSeconds));
   const announcement = mode === "idle" ? "" : isQuiet ? "Stopping automatically. Speak to keep listening, or click the countdown to finish now."
     : isRecording ? handsFree ? "Hands-free listening. Press your trigger once to finish." : "Listening. Release your trigger to finish."
+    : mode === "feedback" && feedback ? `${feedback.title}. ${feedback.message}`
     : mode === "error" ? errorMsg : mode === "done" ? "Dictation complete" : mode === "quiet-stop" ? "No input. Listening stopped."
-    : mode === "preparing" ? "Preparing dictation" : "Processing dictation";
+    : mode === "preparing" ? "Getting ready" : "Processing dictation";
 
   return (
     <div className="capsule-stage">
       <span className="sr-only" role="status" aria-atomic="true">{announcement}</span>
       {mode !== "idle" && <div
-        className={`capsule-pill capsule-${mode}${isDraggable ? " is-draggable" : ""}${isCompact ? " is-compact" : ""}${isProcessing ? " is-processing" : ""}${isQuiet ? " capsule-quiet" : ""}${dismissing ? " is-dismissing" : ""}`}
-        title={isDraggable ? "Hands-free listening · drag to reposition" : isCompact ? mode === "done" ? "Dictation complete" : mode === "preparing" ? "Getting ready" : "Processing dictation" : undefined}
+        className={`capsule-pill capsule-${mode}${mode === "feedback" && feedback?.learned ? " is-learned" : ""}${isDraggable ? " is-draggable" : ""}${isCompact ? " is-compact" : ""}${isProcessing ? " is-processing" : ""}${isQuiet ? " capsule-quiet" : ""}${dismissing ? " is-dismissing" : ""}`}
+        title={isDraggable ? "Hands-free listening · drag to reposition" : mode === "preparing" ? "Getting ready" : isCompact ? mode === "done" ? "Dictation complete" : "Processing dictation" : undefined}
+        onPointerOver={() => interactWithFeedback("pointer", true)}
+        onPointerLeave={() => interactWithFeedback("pointer", false)}
+        onFocusCapture={() => interactWithFeedback("focus", true)}
+        onBlurCapture={event => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) interactWithFeedback("focus", false);
+        }}
         onPointerDown={event => {
           if (!isDraggable || event.button !== 0 || !event.isPrimary || (event.target as Element).closest("button")) return;
           event.preventDefault(); // Moving the nonactivating panel must not take text focus.
@@ -154,7 +225,7 @@ export function CapsulePanel() {
         <div className="capsule-emblem">
           <span
             className={`capsule-favicon${isRecording ? " is-listening" : ""}${isSpeaking ? " is-speaking" : ""}`}
-            role="img" aria-label="Linty" aria-hidden={isCompact}
+            role="img" aria-label="Linty" aria-hidden={isCompact || isProcessing}
             style={{
               "--voice-left": isRecording ? 0.35 + brandLevels[0] * 0.65 : 1,
               "--voice-center": isRecording ? 0.35 + brandLevels[1] * 0.65 : 1,
@@ -182,8 +253,12 @@ export function CapsulePanel() {
               </div>
               <span className="capsule-time" aria-hidden="true">{handsFree && <LockKeyhole size={10} strokeWidth={1.6} />}{formatDuration(duration)}</span>
             </>)}
+            {expandedMode === "preparing" && <span className="capsule-message" aria-hidden="true">Getting ready…</span>}
             {expandedMode === "quiet-stop" && <span className="capsule-message" aria-hidden="true">No input · stopped</span>}
             {expandedMode === "error" && <div className="capsule-error-message"><CircleAlert size={15} aria-hidden="true" /><span title={errorMsg}>{errorMsg}</span></div>}
+            {expandedMode === "feedback" && feedback && <div className="capsule-feedback-message">
+              <strong>{feedback.title}</strong><span>{feedback.message}</span>
+            </div>}
           </div>
           {expandedMode === "recording" && <button
             className={`capsule-action${expandedQuiet ? " capsule-action-countdown" : ""}`}
@@ -197,7 +272,16 @@ export function CapsulePanel() {
             {expandedQuiet ? <StopCountdown seconds={remainingSeconds} /> : <Square size={10} fill="currentColor" strokeWidth={0} />}
           </button>}
           {expandedQuiet && <span id="capsule-stop-description" className="sr-only">Automatically stops in {remainingSeconds} seconds. Click to finish now.</span>}
-          {(expandedMode === "error" || expandedMode === "quiet-stop") && <button className="capsule-action" aria-label="Dismiss" onClick={dismiss}><X size={12} /></button>}
+          {expandedMode === "feedback" && feedback?.actions?.map(action => <button
+            key={action.action} className="capsule-action" aria-label={action.label} title={action.label}
+            onClick={() => {
+              void emitTo("main", "correction-feedback-action", action).then(() => {
+                if (feedbackRef.current === feedback) dismiss();
+              }).catch(() => {});
+            }}>
+            {action.action === "undo" ? <Undo2 size={13} /> : <BookOpen size={13} />}
+          </button>)}
+          {(expandedMode === "error" || expandedMode === "quiet-stop" || expandedMode === "feedback") && <button className="capsule-action" aria-label="Dismiss" onClick={dismiss}><X size={12} /></button>}
         </div>
       </div>}
     </div>

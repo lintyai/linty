@@ -13,6 +13,7 @@ import type { HistoryPageResult } from "@/types/history.types";
 
 export function useHistory(paginated = false) {
   const snapshot = useAppStore((s) => s.historySnapshot);
+  const cacheEpoch = useAppStore((s) => s.historyCacheEpoch);
   const recent = useAppStore((s) => s.transcripts);
   const loaded = useAppStore((s) => s.historyLoaded);
   const loadError = useAppStore((s) => s.historyError);
@@ -25,6 +26,10 @@ export function useHistory(paginated = false) {
     records: [],
     total: 0,
   });
+  const [resultEpoch, setResultEpoch] = useState(cacheEpoch);
+  useEffect(() => {
+    setResult({ records: [], total: 0 });
+  }, [cacheEpoch]);
   const [loading, setLoading] = useState(paginated);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
@@ -48,7 +53,7 @@ export function useHistory(paginated = false) {
       () => {
         queryHistory(searchQuery, currentPage * HISTORY_PAGE_SIZE)
           .then((data) => {
-            if (stale) return;
+            if (stale || cacheEpoch !== useAppStore.getState().historyCacheEpoch) return;
             const lastPage = Math.max(
               0,
               Math.ceil(data.total / HISTORY_PAGE_SIZE) - 1,
@@ -58,6 +63,7 @@ export function useHistory(paginated = false) {
               return;
             }
             setResult(data);
+            setResultEpoch(cacheEpoch);
             setLoading(false);
           })
           .catch((e) => {
@@ -73,14 +79,14 @@ export function useHistory(paginated = false) {
       stale = true;
       clearTimeout(timer);
     };
-  }, [paginated, searchQuery, currentPage, snapshot.revision, retry]);
+  }, [paginated, searchQuery, currentPage, snapshot.revision, retry, cacheEpoch]);
   const deleteTranscript = useCallback(async (id: string) => {
     const deleted = await removeTranscript(id);
     if (!deleted) return;
     let restored = false;
     useAppStore.getState().addToast({
       type: "success",
-      message: "Transcript deleted",
+      message: deleted.transcript.audio ? "Transcript and audio deleted. Undo restores text only." : "Transcript deleted",
       action: {
         label: "Undo",
         onClick: async function undoTranscript() {
@@ -107,9 +113,9 @@ export function useHistory(paginated = false) {
     });
   }, []);
   return {
-    transcripts: paginated ? result.records : recent,
+    transcripts: paginated ? (resultEpoch === cacheEpoch ? result.records : []) : recent,
     total: snapshot.total,
-    totalMatches: paginated ? result.total : snapshot.total,
+    totalMatches: paginated ? (resultEpoch === cacheEpoch ? result.total : 0) : snapshot.total,
     page: currentPage,
     pageSize: HISTORY_PAGE_SIZE,
     setPage: (next: number) => {

@@ -301,7 +301,7 @@ export function DictionaryPage() {
               <h3>Nothing to review</h3>
               <p>
                 {correctionCount
-                  ? "New suggestions appear after a word is corrected twice, or once for names."
+                  ? "Suggestions appear for verified spelling fixes in other apps, or after History corrections are seen twice, or once for names."
                   : "Open a transcript in History, choose Edit, and fix a word. Or turn on “Learn from corrections in other apps” in Settings and fix words where you dictate."}
               </p>
             </div>

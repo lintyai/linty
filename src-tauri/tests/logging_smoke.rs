@@ -23,7 +23,11 @@ fn plugin_writes_the_log_file_and_startup_hook_tidies_up() {
     let legacy = home.join("linty-fnkey.log");
 
     fs::create_dir_all(&data_dir).unwrap();
-    fs::write(data_dir.join(logging::CRASH_MARKER), "time=1\nversion=0.0.1\nthread=main\nlocation=src/x.rs:1\n").unwrap();
+    fs::write(
+        data_dir.join(logging::CRASH_MARKER),
+        "time=1\nversion=0.0.1\nthread=main\nlocation=src/x.rs:1\n",
+    )
+    .unwrap();
     fs::write(&legacy, "[fnkey] old line\n").unwrap();
 
     let mut context = mock_context(noop_assets());
@@ -36,23 +40,36 @@ fn plugin_writes_the_log_file_and_startup_hook_tidies_up() {
         .expect("mock app builds");
     logging::init(app.handle());
 
-    assert_eq!(app.path().app_log_dir().unwrap(), log_file.parent().unwrap());
+    assert_eq!(
+        app.path().app_log_dir().unwrap(),
+        log_file.parent().unwrap()
+    );
     log::info!("[test] after startup {}", data_dir.display());
-    log::warn!("[test] bridge error: file://{}/model.mlmodelc", data_dir.display());
+    log::warn!(
+        "[test] bridge error: file://{}/model.mlmodelc",
+        data_dir.display()
+    );
     log::debug!("[test] debug lines are kept in debug builds");
     log::logger().flush();
 
     let written = fs::read_to_string(&log_file).expect("log file exists");
     let _ = fs::remove_dir_all(&home);
 
-    assert!(written.contains("[app] Linty 0.1.0 starting (macOS "), "{written}");
+    assert!(
+        written.contains("[app] Linty 0.1.0 starting (macOS "),
+        "{written}"
+    );
     assert!(
         written.contains("[app] A previous session crashed (time=1, version=0.0.1, thread=main, location=src/x.rs:1)"),
         "{written}"
     );
-    assert!(written.contains("[app] Removed legacy ~/linty-fnkey.log"), "{written}");
     assert!(
-        written.contains("[test] after startup ~/Library/Application Support/ai.linty.logging-smoke"),
+        written.contains("[app] Removed legacy ~/linty-fnkey.log"),
+        "{written}"
+    );
+    assert!(
+        written
+            .contains("[test] after startup ~/Library/Application Support/ai.linty.logging-smoke"),
         "{written}"
     );
     assert!(
@@ -60,6 +77,9 @@ fn plugin_writes_the_log_file_and_startup_hook_tidies_up() {
         "{written}"
     );
     assert!(written.contains("[DEBUG]"), "{written}");
-    assert!(!written.contains(&*home.to_string_lossy()), "home folder leaked into the log:\n{written}");
+    assert!(
+        !written.contains(&*home.to_string_lossy()),
+        "home folder leaked into the log:\n{written}"
+    );
     assert!(!legacy.exists());
 }

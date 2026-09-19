@@ -19,6 +19,40 @@ const PANEL_WIDTH: f64 = 380.0;
 const PANEL_HEIGHT: f64 = 52.0;
 const POSITION_STORE: &str = "linty-window-state.json";
 static POSITIONED: AtomicBool = AtomicBool::new(false);
+// Dictation fallback timers must not hide a newer correction acknowledgment.
+static SHOWING_FEEDBACK: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct CorrectionFeedback {
+    title: String,
+    message: String,
+    learned: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    actions: Option<Vec<CorrectionFeedbackAction>>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct CorrectionFeedbackAction {
+    label: String,
+    action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
+}
+
+#[tauri::command]
+pub fn show_correction_feedback(
+    app: AppHandle,
+    feedback: CorrectionFeedback,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window("capsule")
+        .ok_or("Correction panel unavailable")?;
+    // Resume a hidden WKWebView before delivering the notice. The webview waits
+    // for any active dictation to finish before showing the nonactivating panel.
+    window.eval("/* wake */").map_err(|e| e.to_string())?;
+    app.emit_to("capsule", "correction-feedback", feedback)
+        .map_err(|e| e.to_string())
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 struct CapsulePosition {
@@ -165,7 +199,7 @@ fn apply_panel_properties(panel: &tauri_nspanel::raw_nspanel::RawNSPanel) {
 
 #[tauri::command]
 #[allow(unexpected_cfgs)]
-pub fn show_capsule(app: AppHandle) {
+pub fn show_capsule(app: AppHandle, feedback: Option<bool>) {
     let Ok(panel) = app.get_webview_panel("capsule") else {
         log::warn!("[capsule] show_capsule: panel not found");
         return;
@@ -222,10 +256,14 @@ pub fn show_capsule(app: AppHandle) {
 
     // order_front_regardless avoids making the panel key (no focus steal)
     panel.order_front_regardless();
+    SHOWING_FEEDBACK.store(feedback.unwrap_or(false), Ordering::SeqCst);
 }
 
 #[tauri::command]
-pub fn hide_capsule(app: AppHandle) {
+pub fn hide_capsule(app: AppHandle, feedback: Option<bool>) {
+    if SHOWING_FEEDBACK.load(Ordering::SeqCst) != feedback.unwrap_or(false) {
+        return;
+    }
     let Ok(panel) = app.get_webview_panel("capsule") else {
         return;
     };
@@ -233,6 +271,7 @@ pub fn hide_capsule(app: AppHandle) {
     let frame: NSRect = unsafe { msg_send![&*panel, frame] };
     save_position(&app, frame);
     panel.order_out(None);
+    SHOWING_FEEDBACK.store(false, Ordering::SeqCst);
 }
 
 #[cfg(test)]
@@ -301,6 +340,10 @@ pub fn emit_capsule_state(
     generation: Option<u64>,
     error: Option<String>,
 ) {
+    if state == "idle" && SHOWING_FEEDBACK.load(Ordering::SeqCst) {
+        return;
+    }
+    SHOWING_FEEDBACK.store(false, Ordering::SeqCst);
     let payload = CapsuleState {
         state,
         hands_free,

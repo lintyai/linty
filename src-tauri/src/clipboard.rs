@@ -45,16 +45,9 @@ unsafe fn msg_send_0(obj: *const c_void, sel: *const c_void) -> *const c_void {
     send(obj, sel)
 }
 
-unsafe fn msg_send_1(
-    obj: *const c_void,
-    sel: *const c_void,
-    arg: *const c_void,
-) -> *const c_void {
-    let send: unsafe extern "C" fn(
-        *const c_void,
-        *const c_void,
-        *const c_void,
-    ) -> *const c_void = std::mem::transmute(objc_msgSend as *const c_void);
+unsafe fn msg_send_1(obj: *const c_void, sel: *const c_void, arg: *const c_void) -> *const c_void {
+    let send: unsafe extern "C" fn(*const c_void, *const c_void, *const c_void) -> *const c_void =
+        std::mem::transmute(objc_msgSend as *const c_void);
     send(obj, sel, arg)
 }
 
@@ -119,12 +112,8 @@ unsafe fn nsdata_to_vec(data: *const c_void) -> Vec<u8> {
 unsafe fn nsdata_from_vec(bytes: &[u8]) -> *const c_void {
     let cls = objc_getClass(b"NSData\0".as_ptr());
     let sel = sel_registerName(b"dataWithBytes:length:\0".as_ptr());
-    let send: unsafe extern "C" fn(
-        *const c_void,
-        *const c_void,
-        *const u8,
-        u64,
-    ) -> *const c_void = std::mem::transmute(objc_msgSend as *const c_void);
+    let send: unsafe extern "C" fn(*const c_void, *const c_void, *const u8, u64) -> *const c_void =
+        std::mem::transmute(objc_msgSend as *const c_void);
     send(cls, sel, bytes.as_ptr(), bytes.len() as u64)
 }
 
@@ -187,11 +176,7 @@ fn register_pasteboard_provider_class() -> *const c_void {
 
     unsafe {
         let superclass = objc_getClass(b"NSObject\0".as_ptr());
-        let cls = objc_allocateClassPair(
-            superclass,
-            b"LintyPasteProvider\0".as_ptr(),
-            0,
-        );
+        let cls = objc_allocateClassPair(superclass, b"LintyPasteProvider\0".as_ptr(), 0);
         if cls.is_null() {
             // Class already exists (race) — fetch it
             let existing = objc_getClass(b"LintyPasteProvider\0".as_ptr());
@@ -206,8 +191,7 @@ fn register_pasteboard_provider_class() -> *const c_void {
         }
 
         // pasteboard:item:provideDataForType: — called when target app reads our data
-        let provide_sel =
-            sel_registerName(b"pasteboard:item:provideDataForType:\0".as_ptr());
+        let provide_sel = sel_registerName(b"pasteboard:item:provideDataForType:\0".as_ptr());
         class_addMethod(
             cls,
             provide_sel,
@@ -216,8 +200,7 @@ fn register_pasteboard_provider_class() -> *const c_void {
         );
 
         // pasteboardFinishedWithDataProvider: — cleanup when pasteboard releases provider
-        let finished_sel =
-            sel_registerName(b"pasteboardFinishedWithDataProvider:\0".as_ptr());
+        let finished_sel = sel_registerName(b"pasteboardFinishedWithDataProvider:\0".as_ptr());
         class_addMethod(
             cls,
             finished_sel,
@@ -307,8 +290,7 @@ fn write_clipboard_with_lazy_provider(text: &str) -> Result<i64, String> {
             text: text.to_string(),
             consumed: AtomicBool::new(false),
         });
-        let old_ptr =
-            PROVIDER_STATE.swap(Box::into_raw(state) as usize, Ordering::AcqRel);
+        let old_ptr = PROVIDER_STATE.swap(Box::into_raw(state) as usize, Ordering::AcqRel);
         if old_ptr != 0 {
             // Shouldn't happen after clearContents, but guard against leaks
             let _ = Box::from_raw(old_ptr as *mut ProviderState);
@@ -374,11 +356,8 @@ fn write_clipboard_with_lazy_provider(text: &str) -> Result<i64, String> {
         );
 
         let write_sel = sel_registerName(b"writeObjects:\0".as_ptr());
-        let send_write: unsafe extern "C" fn(
-            *const c_void,
-            *const c_void,
-            *const c_void,
-        ) -> bool = std::mem::transmute(objc_msgSend as *const c_void);
+        let send_write: unsafe extern "C" fn(*const c_void, *const c_void, *const c_void) -> bool =
+            std::mem::transmute(objc_msgSend as *const c_void);
         let ok = send_write(pb, write_sel, items_array);
 
         if !ok {
@@ -438,18 +417,12 @@ pub fn snapshot_clipboard() -> Option<ClipboardSnapshot> {
                         continue;
                     }
 
-                    let data = msg_send_1(
-                        item,
-                        sel_registerName(b"dataForType:\0".as_ptr()),
-                        uti,
-                    );
+                    let data = msg_send_1(item, sel_registerName(b"dataForType:\0".as_ptr()), uti);
                     if !data.is_null() {
                         let bytes = nsdata_to_vec(data);
                         total_bytes += bytes.len();
                         if total_bytes > MAX_BYTES {
-                            log::warn!(
-                                "[clipboard] snapshot exceeds 100MB cap, truncating"
-                            );
+                            log::warn!("[clipboard] snapshot exceeds 100MB cap, truncating");
                             break;
                         }
                         types_data.push((uti_str, bytes));
@@ -490,7 +463,8 @@ pub fn restore_clipboard(state: &ClipboardState) -> Result<(), String> {
         if current_count != state.post_write_change_count {
             log::debug!(
                 "[clipboard] changeCount mismatch ({} != {}), skipping restore",
-                current_count, state.post_write_change_count
+                current_count,
+                state.post_write_change_count
             );
             return Ok(());
         }
@@ -546,11 +520,8 @@ pub fn restore_clipboard(state: &ClipboardState) -> Result<(), String> {
         }
 
         let write_sel = sel_registerName(b"writeObjects:\0".as_ptr());
-        let send_write: unsafe extern "C" fn(
-            *const c_void,
-            *const c_void,
-            *const c_void,
-        ) -> bool = std::mem::transmute(objc_msgSend as *const c_void);
+        let send_write: unsafe extern "C" fn(*const c_void, *const c_void, *const c_void) -> bool =
+            std::mem::transmute(objc_msgSend as *const c_void);
         let ok = send_write(pb, write_sel, items_array);
 
         if !ok {

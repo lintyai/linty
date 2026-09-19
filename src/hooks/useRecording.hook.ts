@@ -9,11 +9,12 @@ import { prepareDictation } from "@/services/dictation-preparation.service";
 export interface StopResult {
   sample_count: number;
   duration_secs: number;
+  recording_generation?: number;
   application?: ApplicationIdentity | null;
 }
 
 // The hotkey and microphone-test widget control the same native recording.
-let starting: { session: DictationSession; promise: Promise<boolean>; phase: "preparing" | "microphone" } | null = null;
+let starting: { session: DictationSession; promise: Promise<boolean> } | null = null;
 let startedAt = 0;
 
 export function useRecording() {
@@ -28,6 +29,7 @@ export function useRecording() {
     const promise = (async () => {
       try {
         const settings = useAppStore.getState();
+        if (!settings.settingsLoaded) throw new Error("Settings are still loading. Please try again.");
         if (settings.sttMode === "cloud" && !settings.groqApiKey.trim()) throw new Error(GROQ_SETUP_ERROR);
         useAppStore.getState().setStatus("preparing");
         if (!document.hasFocus()) void invoke("show_capsule").then(() => {
@@ -35,20 +37,21 @@ export function useRecording() {
             return invoke("emit_capsule_state", { state: "preparing" });
           }
         }).catch(() => {});
-        await session.run(prepareDictation, 180_000, "Dictation preparation timed out. Please try again.");
-        if (starting?.session === session) starting.phase = "microphone";
         const generation = await session.run(() => invoke<number>("start_recording", { trackApplication: settings.settingsLoaded && settings.trackApplicationUsage }), 10_000, "Microphone did not start. Check your input and try again.");
         useAppStore.getState().setRecordingGeneration(generation);
         startedAt = Date.now();
         useAppStore.getState().setIsRecording(true);
         useAppStore.getState().setStatus("recording");
+        // Capture never waits for model loading. Transcription shares this work
+        // if it is still pending, or retries a failed preparation after stop.
+        void prepareDictation().catch((error) => console.warn("[dictation] Background preparation failed:", error));
         return true;
       } catch (error) {
         if (!session.cancelled) await recoverDictation(error instanceof Error ? error.message : String(error), session);
         return false;
       }
     })();
-    starting = { session, promise, phase: "preparing" };
+    starting = { session, promise };
     void promise.finally(() => { if (starting?.session === session) starting = null; });
     return promise;
   }, []);
@@ -56,13 +59,6 @@ export function useRecording() {
   const stopRecording = useCallback(async (options?: { deferEmpty?: boolean }): Promise<StopResult> => {
     const session = currentDictation();
     const empty = { sample_count: 0, duration_secs: 0 };
-    if (starting?.session === session && starting.phase === "preparing") {
-      // Releasing a hold-to-talk key while warming must never open the mic
-      // later or produce a phantom empty dictation. Keep the preparation work.
-      finishEmptyDictation(session);
-      session.cancel();
-      return empty;
-    }
     if (starting?.session === session && !(await starting.promise)) return empty;
     if (session.cancelled) return empty;
     try {
@@ -70,7 +66,7 @@ export function useRecording() {
       useAppStore.getState().setIsRecording(false);
       useAppStore.getState().setHandsFree(false);
       useAppStore.getState().setQuietSeconds(0);
-      if (result.sample_count > 0) useAppStore.getState().setStatus("transcribing");
+      if (result.sample_count > 0) useAppStore.getState().setStatus("preparing");
       else if (!options?.deferEmpty) finishEmptyDictation(session);
       return result;
     } catch (error) {

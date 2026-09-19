@@ -4,7 +4,8 @@ import type {
   DictionaryEntry,
   DictionarySuggestion,
 } from "../types/correction.types";
-import { normalizeWord } from "./correction-diff.util.ts";
+import { isSpellingCorrection } from "./correction-classifier.ts";
+import { isWordBoundaryCorrection, normalizeWord } from "./correction-diff.util.ts";
 
 /** Roughly 224 Whisper tokens; keeps the prompt within what the engines accept. */
 export const PROMPT_CHAR_BUDGET = 600;
@@ -37,7 +38,8 @@ function bareWord(word: string): string {
 
 /**
  * The substitutions in a correction that could become dictionary entries:
- * single-word swaps where the new word is not an everyday word.
+ * single-word swaps (including names split or joined by the engine) where the
+ * new word is not an everyday word.
  */
 export function learnablePairs(pairs: CorrectionPair[]): { from: string; to: string }[] {
   const seen = new Set<string>();
@@ -46,7 +48,8 @@ export function learnablePairs(pairs: CorrectionPair[]): { from: string; to: str
     if (pair.kind !== "substitution") continue;
     const from = bareWord(pair.from);
     const to = bareWord(pair.to);
-    if (!from || !to || from.includes(" ") || to.includes(" ")) continue;
+    if (!from || !to) continue;
+    if ((/\s/u.test(from) || /\s/u.test(to)) && !isWordBoundaryCorrection(from, to)) continue;
     if (from.length < 2 || to.length < 2) continue;
     if (from === to) continue;
     if (isCommonWord(to)) continue;
@@ -62,7 +65,8 @@ export function learnablePairs(pairs: CorrectionPair[]): { from: string; to: str
 export function isKnownToDictionary(entries: DictionaryEntry[], from: string, to: string): boolean {
   const wrong = normalizeWord(from);
   return entries.some(
-    (e) => e.right === to && e.wrong.some((w) => normalizeWord(w) === wrong),
+    (e) => e.right === to && (normalizeWord(from) === normalizeWord(to)
+      || e.wrong.some((w) => normalizeWord(w) === wrong)),
   );
 }
 
@@ -75,7 +79,10 @@ export function suggestionsFromCorrection(
   if (record.rewrite) return suggestions;
   let next = suggestions;
   for (const { from, to } of learnablePairs(record.pairs)) {
+    if (record.source === "observed" && (!isSpellingCorrection(from, to) || isCommonWord(from))) continue;
     if (isKnownToDictionary(entries, from, to)) continue;
+    if (record.source === "observed" && entries.some(e => e.right !== to
+      && e.wrong.some(w => normalizeWord(w) === normalizeWord(from)))) continue;
     const wrong = normalizeWord(from);
     const existing = next.find((s) => s.right === to && normalizeWord(s.wrong) === wrong);
     if (existing) {
@@ -85,6 +92,7 @@ export function suggestionsFromCorrection(
           ? {
               ...s,
               seenCount: s.seenCount + 1,
+              spellingEvidence: s.spellingEvidence || record.source === "observed",
               lastSeenAt: record.timestamp,
               correctionIds: [...s.correctionIds, record.correctionId],
             }
@@ -98,6 +106,7 @@ export function suggestionsFromCorrection(
           right: to,
           wrong: from,
           seenCount: 1,
+          spellingEvidence: record.source === "observed",
           firstSeenAt: record.timestamp,
           lastSeenAt: record.timestamp,
           correctionIds: [record.correctionId],
@@ -108,9 +117,10 @@ export function suggestionsFromCorrection(
   return next;
 }
 
-/** Ready to be offered (or auto-learned): seen twice, or a proper noun seen once. */
+/** Native spelling evidence is ready once. Explicit History edits retain the
+ * existing proper-noun / repeated-sighting policy. */
 export function isSuggestionReady(s: DictionarySuggestion): boolean {
-  return s.seenCount >= SUGGEST_AFTER_SIGHTINGS || isProperNoun(s.right);
+  return s.spellingEvidence === true || s.seenCount >= SUGGEST_AFTER_SIGHTINGS || isProperNoun(s.right);
 }
 
 /** Merge a wrong → right pair into the entries; extends an existing entry for the same right form. */

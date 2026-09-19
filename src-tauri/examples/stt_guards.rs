@@ -78,11 +78,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         None
     };
-    if let Some(ctx) = &whisper { linty_lib::warm_up_whisper(ctx)?; }
+    if let Some(ctx) = &whisper {
+        linty_lib::warm_up_whisper(ctx)?;
+    }
     if vocabulary {
         let dir = models.join(transcribe::PARAKEET_CTC_ID);
         if dir.is_dir() {
-            parakeet.as_ref().ok_or("--vocabulary requires Parakeet")?.load_ctc(&dir)?;
+            parakeet
+                .as_ref()
+                .ok_or("--vocabulary requires Parakeet")?
+                .load_ctc(&dir)?;
         }
     }
     let load_ms = load_started.elapsed().as_secs_f64() * 1000.0;

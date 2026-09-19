@@ -76,8 +76,14 @@ pub fn replace_whole_word(text: &str, from: &str, to: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(pos) = rest.find(from) {
-        let before_ok = rest[..pos].chars().last().map_or(true, |c| !c.is_alphanumeric());
-        let after_ok = rest[pos + from.len()..].chars().next().map_or(true, |c| !c.is_alphanumeric());
+        let before_ok = rest[..pos]
+            .chars()
+            .last()
+            .map_or(true, |c| !c.is_alphanumeric());
+        let after_ok = rest[pos + from.len()..]
+            .chars()
+            .next()
+            .map_or(true, |c| !c.is_alphanumeric());
         out.push_str(&rest[..pos]);
         if before_ok && after_ok {
             out.push_str(to);
@@ -135,11 +141,19 @@ mod tests {
     use super::*;
 
     fn term(text: &str, aliases: &[&str]) -> VocabTerm {
-        VocabTerm { text: text.into(), aliases: aliases.iter().map(|a| a.to_string()).collect() }
+        VocabTerm {
+            text: text.into(),
+            aliases: aliases.iter().map(|a| a.to_string()).collect(),
+        }
     }
 
     fn candidate(from: &str, to: &str, apply: bool) -> VocabReplacement {
-        VocabReplacement { from: from.into(), to: to.into(), apply, reason: String::new() }
+        VocabReplacement {
+            from: from.into(),
+            to: to.into(),
+            apply,
+            reason: String::new(),
+        }
     }
 
     #[test]
@@ -152,8 +166,14 @@ mod tests {
 
     #[test]
     fn replaces_whole_words_and_keeps_trailing_punctuation() {
-        assert_eq!(replace_whole_word("use Tari, not Taris", "Tari,", "Tauri"), "use Tauri, not Taris");
-        assert_eq!(replace_whole_word("Groke and groke", "Groke", "Groq"), "Groq and groke");
+        assert_eq!(
+            replace_whole_word("use Tari, not Taris", "Tari,", "Tauri"),
+            "use Tauri, not Taris"
+        );
+        assert_eq!(
+            replace_whole_word("Groke and groke", "Groke", "Groq"),
+            "Groq and groke"
+        );
         assert_eq!(replace_whole_word("unchanged", "", "x"), "unchanged");
     }
 
@@ -161,19 +181,26 @@ mod tests {
     fn applies_only_candidates_that_resemble_the_term_or_a_known_wrong_form() {
         let terms = [term("Tauri", &["Tory"]), term("Groq", &[])];
         let candidates = [
-            candidate("Tory", "Tauri", true),          // known wrong form
-            candidate("Groke", "Groq", true),          // close to the term
-            candidate("meeting", "Tauri", true),       // rescorer over-reach
-            candidate("Grok", "Groq", false),          // engine itself would not apply
-            candidate("Torrey", "Zustand", true),      // not a dictionary term
+            candidate("Tory", "Tauri", true),     // known wrong form
+            candidate("Groke", "Groq", true),     // close to the term
+            candidate("meeting", "Tauri", true),  // rescorer over-reach
+            candidate("Grok", "Groq", false),     // engine itself would not apply
+            candidate("Torrey", "Zustand", true), // not a dictionary term
         ];
-        let (text, applied) = apply_replacements("Tory and Groke at the meeting", &candidates, &terms);
+        let (text, applied) =
+            apply_replacements("Tory and Groke at the meeting", &candidates, &terms);
         assert_eq!(text, "Tauri and Groq at the meeting");
         assert_eq!(
             applied,
             vec![
-                AppliedReplacement { from: "Tory".into(), to: "Tauri".into() },
-                AppliedReplacement { from: "Groke".into(), to: "Groq".into() },
+                AppliedReplacement {
+                    from: "Tory".into(),
+                    to: "Tauri".into()
+                },
+                AppliedReplacement {
+                    from: "Groke".into(),
+                    to: "Groq".into()
+                },
             ]
         );
     }

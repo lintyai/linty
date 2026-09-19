@@ -163,9 +163,8 @@ impl ParakeetEngine {
         let mut error = std::ptr::null_mut();
         // SAFETY: the engine, sample buffer, and out pointer outlive this
         // synchronous call. The Swift actor owns the detector's state.
-        let result = unsafe {
-            linty_parakeet_has_speech(self.handle, samples.as_ptr(), count, &mut error)
-        };
+        let result =
+            unsafe { linty_parakeet_has_speech(self.handle, samples.as_ptr(), count, &mut error) };
         if result < 0 {
             log::warn!(
                 "[speech-presence] Detection failed; retaining audio: {}",
@@ -195,7 +194,10 @@ impl ParakeetEngine {
         // Bypass the speech gate so synthetic silence actually runs the decoder.
         let started = std::time::Instant::now();
         engine.transcribe(&vec![0.0; 16000], None)?;
-        log::info!("[stt] Parakeet inference prepared in {}ms", started.elapsed().as_millis());
+        log::info!(
+            "[stt] Parakeet inference prepared in {}ms",
+            started.elapsed().as_millis()
+        );
         Ok(engine)
     }
 
@@ -216,9 +218,9 @@ impl ParakeetEngine {
             .map_err(|_| "Audio too long for a single Parakeet call".to_string())?;
 
         let c_lang = match language {
-            Some(code) if !code.is_empty() => Some(
-                CString::new(code).map_err(|_| "Invalid language code".to_string())?,
-            ),
+            Some(code) if !code.is_empty() => {
+                Some(CString::new(code).map_err(|_| "Invalid language code".to_string())?)
+            }
             _ => None,
         };
         let lang_ptr = c_lang.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
@@ -305,9 +307,9 @@ impl ParakeetEngine {
         let terms_json = serde_json::to_string(terms).map_err(|e| e.to_string())?;
         let c_terms = CString::new(terms_json).map_err(|_| "Invalid vocabulary".to_string())?;
         let c_lang = match language {
-            Some(code) if !code.is_empty() => Some(
-                CString::new(code).map_err(|_| "Invalid language code".to_string())?,
-            ),
+            Some(code) if !code.is_empty() => {
+                Some(CString::new(code).map_err(|_| "Invalid language code".to_string())?)
+            }
             _ => None,
         };
         let lang_ptr = c_lang.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());

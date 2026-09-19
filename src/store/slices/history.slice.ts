@@ -8,6 +8,8 @@ export interface HistorySlice {
   historySnapshot: HistorySnapshot;
   historyLoaded: boolean;
   historyError: string | null;
+  historyCacheEpoch: number;
+  invalidateHistoryCache: () => void;
   searchQuery: string;
   selectedTranscriptId: string | null;
   setHistorySnapshot: (snapshot: HistorySnapshot) => void;
@@ -26,10 +28,20 @@ export const createHistorySlice: StateCreator<HistorySlice> = (set) => ({
     correctionCount: 0,
     correctionRate: null,
     retentionDays: 0,
+    saveAudio: false,
+    audioCount: 0,
+    audioBytes: 0,
     revision: 0,
   },
   historyLoaded: false,
   historyError: null,
+  historyCacheEpoch: 0,
+  invalidateHistoryCache: () => set((state) => ({
+    historyCacheEpoch: state.historyCacheEpoch + 1,
+    transcripts: [],
+    historySnapshot: { ...state.historySnapshot, recent: [] },
+    historyLoaded: false,
+  })),
   searchQuery: "",
   selectedTranscriptId: null,
   setHistorySnapshot: (historySnapshot) =>

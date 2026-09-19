@@ -100,8 +100,7 @@ pub fn app_icon_png(bundle_id: &str) -> Option<Vec<u8>> {
                     let rep: *mut Object = msg_send![rep, initWithCGImage: cg_image];
                     if !rep.is_null() {
                         let props: *mut Object = msg_send![class!(NSDictionary), dictionary];
-                        let data: *mut Object =
-                            msg_send![rep, representationUsingType: PNG_FILE_TYPE properties: props];
+                        let data: *mut Object = msg_send![rep, representationUsingType: PNG_FILE_TYPE properties: props];
                         if !data.is_null() {
                             let len: usize = msg_send![data, length];
                             let bytes: *const u8 = msg_send![data, bytes];
@@ -134,7 +133,11 @@ mod tests {
     fn finder_icon_renders_as_png() {
         let png = app_icon_png("com.apple.finder").expect("Finder is always installed");
         assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n", "not a PNG header");
-        assert!(png.len() < 200 * 1024, "icon unexpectedly large: {} bytes", png.len());
+        assert!(
+            png.len() < 200 * 1024,
+            "icon unexpectedly large: {} bytes",
+            png.len()
+        );
     }
 
     #[test]

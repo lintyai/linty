@@ -283,7 +283,7 @@ try {
   const editor = page.getByLabel('Edit transcription text', {exact:true});
   await editor.fill((await editor.inputValue()).replace('experience', 'expereince'));
   await page.getByRole('button', {name:'Save', exact:true}).click();
-  await page.getByText('Saved. 1 suggestion waiting on the Dictionary page.').waitFor();
+  await page.getByText('Correction noted. I’ll keep learning from your edits.').waitFor();
   await page.locator('.correction-pair ins', {hasText:'expereince'}).waitFor();
   assert.equal(await page.evaluate(() => window.__QA__.stores[3].corrections[0].pairs[0].from), 'experience');
   assert.equal(await page.evaluate(() => window.__QA__.stores[4].suggestions.length), 2);
@@ -522,11 +522,12 @@ try {
   await page.getByRole('switch', {name:'Learn from corrections in other apps', exact:true}).click();
   assert.equal(await page.evaluate(() => window.__QA__.stores[1].observeCorrections), true);
   await screenshot('privacy-light');
-  // A fix noticed in another app is recorded like a History edit; with auto-learn on (above) a name is learned at once.
-  await page.evaluate(() => window.__QA__.emit('correction-observed', { transcriptId: 'qa-3', pasted: 'The best tools make room for your ideas.', wordCount: 8, application: { name: 'Safari', bundleId: 'com.apple.Safari' }, pairs: [{ kind: 'substitution', from: 'tools', to: 'Tauri' }], secondsAfterPaste: 9 }));
-  await page.getByText('Learned 1 word from your fix in Safari.').waitFor();
+  // A verified native batch records a reusable spelling correction in History
+  // and learns it once when automatic learning is enabled.
+  await page.evaluate(() => window.__QA__.emit('correction-observed', { batchId: 'smoke-observed-session', corrections: [{ transcriptId: 'qa-3', wordCount: 8, application: { name: 'Safari', bundleId: 'com.apple.Safari' }, pairs: [{ kind: 'substitution', from: 'Taury', to: 'Tauri' }], secondsAfterPaste: 9 }] }));
+  await page.waitForFunction(() => window.__QA__.correctionFeedback.at(-1)?.title === 'Correction learned');
   assert.equal(await page.evaluate(() => window.__QA__.stores[3].corrections[0].source), 'observed');
-  assert.equal(await page.evaluate(() => window.__QA__.stores[4].entries.find(e => e.right === 'Tauri').wrong.includes('tools')), true);
+  assert.equal(await page.evaluate(() => window.__QA__.stores[4].entries.find(e => e.right === 'Tauri').wrong.includes('Taury')), true);
   await page.getByRole('navigation', {name:'Main navigation'}).getByRole('button', {name:'History',exact:true}).click();
   await page.locator('[data-transcript-id="qa-3"]').click();
   await page.getByText('Corrected in Safari').waitFor();
@@ -722,7 +723,7 @@ try {
   assert.ok(retained>0&&retained<605);
   assert.equal(await retention.innerText(),'30 days');
   await archive.getByRole('button',{name:'Overview',exact:true}).click();
-  await archive.getByText('Based on saved history from the last 30 days.',{exact:true}).waitFor();
+  await archive.getByText('Based on retained history with a 30-day retention period.',{exact:true}).waitFor();
   await archive.keyboard.press('Meta+,');
   await chooseOption(archive,'History retention','Until I delete it');
   await archive.getByText('History will be kept until you delete it.',{exact:true}).waitFor();

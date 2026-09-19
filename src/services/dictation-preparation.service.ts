@@ -19,7 +19,7 @@ export const dictationPreparation = {
   invalidate() { revision++; publish("idle"); },
 };
 
-/** Native preparation is idempotent; check it again before capture to cover
+/** Native preparation is idempotent; check it again before transcription to cover
  * idle unloading. Only concurrent requests are shared, never stale readiness. */
 function requestedPreparation() {
   const state = useAppStore.getState();
@@ -51,7 +51,7 @@ export async function prepareDictation() {
     }
     await promise;
     // A pending model-selection load can finish while this request waits.
-    // Prepare its final selection before allowing microphone capture.
+    // Prepare its final selection before allowing transcription.
     if (key === JSON.stringify(requestedPreparation())) return;
   }
 }

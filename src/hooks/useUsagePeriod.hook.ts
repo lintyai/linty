@@ -37,6 +37,8 @@ export function useUsagePeriod(view: UsageView = "dashboard") {
   const setUsagePeriod = useAppStore((s) => s.setUsagePeriod);
   const [now, setNow] = useState(Date.now);
   const snapshot = useAppStore((s) => s.historySnapshot);
+  const cacheEpoch = useAppStore((s) => s.historyCacheEpoch);
+  const [resultEpoch, setResultEpoch] = useState(cacheEpoch);
   const [data, setData] = useState<
     UsageResult & {
       comparison: UsageSummary | null;
@@ -46,6 +48,9 @@ export function useUsagePeriod(view: UsageView = "dashboard") {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    setData({ ...EMPTY, comparison: null, comparisonDays: null });
+  }, [cacheEpoch]);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
@@ -79,8 +84,9 @@ export function useUsagePeriod(view: UsageView = "dashboard") {
         return { ...usage, comparison, comparisonDays: prior?.days ?? null };
       })
       .then((result) => {
-        if (!stale) {
+        if (!stale && cacheEpoch === useAppStore.getState().historyCacheEpoch) {
           setData(result);
+          setResultEpoch(cacheEpoch);
           setLoading(false);
         }
       })
@@ -93,9 +99,9 @@ export function useUsagePeriod(view: UsageView = "dashboard") {
     return () => {
       stale = true;
     };
-  }, [period, now, snapshot.revision, retry]);
+  }, [period, now, snapshot.revision, retry, cacheEpoch]);
   return {
-    ...data,
+    ...(resultEpoch === cacheEpoch ? data : { ...EMPTY, comparison: null, comparisonDays: null }),
     period,
     setPeriod: (nextPeriod: typeof period) => setUsagePeriod(view, nextPeriod),
     asOf: now,

@@ -14,6 +14,7 @@ import {
 import { updateTranscript } from "@/services/history.service";
 import { recordCorrection } from "@/services/user-corrections.service";
 import { diffCorrection } from "@/lib/correction-diff.util";
+import { correctionFeedback } from "@/lib/correction-feedback";
 import { formatDayLabel } from "@/lib/usage.util";
 import { CorrectionPanel } from "@/components/shared/CorrectionPanel.component";
 import {
@@ -23,6 +24,7 @@ import {
 import type { CorrectionRecord } from "@/types/correction.types";
 import type { TranscriptRecord } from "@/types/transcript.types";
 import { TranscriptInfoDialogue } from "./TranscriptInfo.dialogue";
+import { TranscriptAudio } from "./TranscriptAudio.component";
 
 export function TranscriptDetail({
   transcript: selectedTranscript,
@@ -106,16 +108,15 @@ export function TranscriptDetail({
         finalText: edited,
       });
       await recordCorrection(record);
-      const { suggested, learned } = await ingestCorrection(
+      const result = await ingestCorrection(
         record,
         autoLearnWords,
       );
+      const feedback = correctionFeedback(result, useAppStore.getState().dictionaryEnabled);
       success(
-        learned
-          ? `Saved. ${learned} word${learned === 1 ? "" : "s"} added to your dictionary.`
-          : suggested
-            ? `Saved. ${suggested} suggestion${suggested === 1 ? "" : "s"} waiting on the Dictionary page.`
-            : diff.rewrite
+        feedback
+          ? `${feedback.title}. ${feedback.message}`
+          : diff.rewrite
               ? "Saved as a rewrite; rewrites are not used for learning."
               : "Correction saved.",
       );
@@ -290,6 +291,7 @@ export function TranscriptDetail({
         ) : (
           <p className="reading-text">{selectedTranscript.finalText}</p>
         )}
+        <TranscriptAudio transcript={selectedTranscript} />
         <CorrectionPanel
           corrections={selectedCorrections}
           entries={entries}

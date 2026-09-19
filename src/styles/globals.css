@@ -426,7 +426,12 @@ kbd { border: 1px solid var(--color-border); border-bottom-width: 2px; border-ra
 .setting-row + .setting-row { border-top: 1px solid var(--color-border-subtle); }
 .setting-row > div:last-child { margin-left: 0; }
 .setting-row span, .setting-toggle span { overflow-wrap: anywhere; }
-.setting-toggle { padding:16px 0; }
+.setting-toggle {
+  width: calc(100% + 24px);
+  margin-inline: -12px;
+  padding: 16px 12px;
+  border-radius: var(--radius-control);
+}
 .preferences-footnote { color: var(--color-text-muted); font-size: 11px; margin-top: 24px; }
 
 /* History: valid sibling controls and a comfortable reading pane. */

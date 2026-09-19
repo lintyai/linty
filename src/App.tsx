@@ -74,9 +74,17 @@ export default function App() {
   useHistory();
   useEffect(() => {
     const refresh = () => { void refreshHistory().catch(() => {}); };
-    const timer = setInterval(refresh, 60_000);
+    const invalidated = listen("history-invalidated", () => {
+      useAppStore.getState().invalidateHistoryCache();
+      refresh();
+    });
+    const wake = listen("system-wake", refresh);
     window.addEventListener("focus", refresh);
-    return () => { clearInterval(timer); window.removeEventListener("focus", refresh); };
+    return () => {
+      void invalidated.then((off) => off());
+      void wake.then((off) => off());
+      window.removeEventListener("focus", refresh);
+    };
   }, []);
   useUpdaterAutoCheck();
   useTraySync(saveSttMode, saveTranscriptionLanguage);

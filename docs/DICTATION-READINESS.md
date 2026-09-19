@@ -1,8 +1,8 @@
 # Dictation preparation
 
 “Ready” means inference preparation has completed, rather than only the model
-file being loaded. The preparation path is shared by startup and capture and is
-rechecked before every recording to cover idle unloading.
+file being loaded. The preparation path is shared by startup, capture, and
+transcription. Recording opens the microphone without waiting for model loading.
 
 ## Prepared components
 
@@ -14,7 +14,7 @@ rechecked before every recording to cover idle unloading.
   publishing it. GPU initialization errors are reported rather than ignored.
 - Parakeet vocabulary: installed CTC models run keyword-spotter inference on
   synthetic audio before becoming ready. Enabled dictionary words cause missing
-  CTC assets to prepare before capture. No user transcript is needed to warm CTC.
+  CTC assets to prepare before transcription. No user transcript is needed to warm CTC.
 - S1-mini: any installed copy is prepared, even when correction is disabled,
   as requested. Prefill and two decode passes finish, GPU work synchronizes,
   and the synthetic KV cache is cleared. This never downloads or enables S1.
@@ -31,13 +31,19 @@ After download, the loading command awaits preparation before the screen says
 “Speech Engine Ready.” Installed S1 is included in that readiness check.
 
 Returning launches prepare proactively. The status bar shows preparation rather
-than ready until the linked components finish. At capture time, a final native
-check reuses warm instances or reloads idle-unloaded models. “Preparing dictation”
-is shown before the microphone opens and the start sound plays.
+than ready until the linked components finish. Pressing the trigger opens the
+microphone immediately, then starts preparation in the background. The listening
+indicator, start sound, and duration follow actual microphone capture.
 
-Releasing a hold-to-talk key while preparation is pending abandons that recording
-attempt. A later preparation result cannot open the microphone or paste text.
-Failures are retryable; no recorded audio is consumed by preparation.
+Releasing the trigger stops capture even when preparation is pending. Recorded
+samples stay in Rust while transcription waits for readiness, with a visible
+“Getting ready…” message in the pill. Concurrent requests share preparation; warm
+instances do not repeat inference. Empty recordings return to idle immediately.
+
+A background preparation failure does not interrupt capture. Transcription checks
+readiness again after stop, retrying a failed preparation. A failure or a wait
+exceeding three minutes uses normal dictation recovery. Cancelled attempts cannot
+resume transcription or paste after a late preparation result.
 
 Disabling correction keeps installed S1 warm. The existing idle setting still
 unloads models, including S1, and marks readiness stale. Reopening the app or
@@ -47,9 +53,9 @@ instances from the idle watchdog.
 
 ## Costs and limits
 
-Preparation moves computation before capture; it does not remove that work.
-Startup and a first recording after idle can wait for loading/compilation. Keeping
-installed S1 ready uses memory even with correction disabled, until idle unload.
+Preparation overlaps computation with capture; it does not remove that work.
+A short recording after idle can still wait for loading/compilation after stop.
+Keeping installed S1 ready uses memory even with correction disabled, until idle unload.
 No periodic inference loop keeps the processors busy.
 
 Core ML uses CPU and Neural Engine for the detector; Whisper and S1 can use Metal.
@@ -67,9 +73,10 @@ they exclude first-install compilation and full transcription latency.
 ## Validation
 
 `tests/ui.cleanup-warmup.mjs` holds preparation promises to verify installed and
-absent S1, disabled/enabled cleanup, readiness before recording, concurrent
-startup/capture, first/second dictation, early release, idle reload, failure and
-retry. `tests/ui.onboarding-models.mjs` covers first-run download/load readiness;
+absent S1, disabled/enabled cleanup, immediate capture, concurrent startup/capture,
+first/second dictation, release before readiness, empty audio, idle reload, failure,
+retry, cancellation, and preparation timeout.
+`tests/ui.onboarding-models.mjs` covers first-run download/load readiness;
 `tests/ui.recovery.mjs` covers capture cancellation and stale-result suppression.
 These checks also cover model selection changing during preparation and a
 first-run warm-up failure retrying without downloading the speech model again.

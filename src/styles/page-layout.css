@@ -160,6 +160,8 @@
   line-height: 1.7;
 }
 .dictation-settings .setting-toggle {
+  width: 100%;
+  margin-inline: 0;
   padding: 16px 20px;
   border-radius: 6px;
 }
@@ -767,3 +769,60 @@
   overflow-wrap: anywhere;
 }
 .history-storage-actions {display:flex;flex-wrap:wrap;gap:10px;padding-top:16px;}
+
+.audio-storage-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 18px 20px;
+  border-left: 3px solid var(--color-info);
+  border-radius: 0 8px 8px 0;
+  background: var(--color-info-glow);
+}
+.audio-storage-info-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--color-info);
+}
+.audio-storage-info-content { min-width: 0; }
+.audio-storage-info h3 {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 550;
+}
+.audio-storage-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  margin-block: 16px;
+}
+.audio-storage-stats > div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 3px;
+}
+.audio-storage-stats dt {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+.audio-storage-stats dd {
+  color: var(--color-text-primary);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.audio-storage-info p {
+  max-width: 68ch;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.audio-storage-info .audio-storage-estimate {
+  margin-top: 6px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}

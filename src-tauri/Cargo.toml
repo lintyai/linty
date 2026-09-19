@@ -39,7 +39,7 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2"
 # Local STT (behind feature flag — long compile with Metal)
 whisper-rs = { version = "0.15", features = ["metal"], optional = true }
 hound = { version = "3.5", optional = true }
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.40.2", features = ["bundled", "blob"] }
 tauri-plugin-dialog = "2"
 anyhow = "1"
 candle-core = "=0.11.0"
@@ -76,6 +76,14 @@ required-features = ["local-stt", "parakeet"]
 
 [[example]]
 name = "stt_guards"
+required-features = ["local-stt", "parakeet"]
+
+[[example]]
+name = "dictation_eval"
+required-features = ["local-stt", "parakeet"]
+
+[[example]]
+name = "corpus_eval"
 required-features = ["local-stt", "parakeet"]
 
 [dev-dependencies]

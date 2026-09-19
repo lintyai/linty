@@ -105,7 +105,11 @@ pub fn init<R: Runtime>(app: &tauri::AppHandle<R>) {
         version,
         macos_version().as_deref().unwrap_or("unknown"),
         std::env::consts::ARCH,
-        if cfg!(debug_assertions) { "debug" } else { "release" },
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
     );
 
     match app.path().app_data_dir() {
@@ -204,7 +208,12 @@ fn write_crash_marker(thread_name: &str, location: &str) {
     }
 }
 
-fn crash_marker_contents(unix_secs: u64, version: &str, thread_name: &str, location: &str) -> String {
+fn crash_marker_contents(
+    unix_secs: u64,
+    version: &str,
+    thread_name: &str,
+    location: &str,
+) -> String {
     format!(
         "time={}\nversion={}\nthread={}\nlocation={}\n",
         unix_secs, version, thread_name, location
@@ -244,7 +253,11 @@ fn macos_version() -> Option<String> {
 
 fn product_version(plist: &str) -> Option<String> {
     let after_key = plist.split("<key>ProductVersion</key>").nth(1)?;
-    let value = after_key.split("<string>").nth(1)?.split("</string>").next()?;
+    let value = after_key
+        .split("<string>")
+        .nth(1)?
+        .split("</string>")
+        .next()?;
     let value = value.trim();
     (!value.is_empty()).then(|| value.to_string())
 }
@@ -274,9 +287,18 @@ mod tests {
 
     #[test]
     fn redact_home_leaves_other_paths_alone() {
-        assert!(matches!(redact_home("/tmp/x", "/Users/alice"), Cow::Borrowed("/tmp/x")));
-        assert_eq!(redact_home("/Users/alicebob/x", "/Users/alice"), "/Users/alicebob/x");
-        assert_eq!(redact_home("/Users/alice.old/x", "/Users/alice"), "/Users/alice.old/x");
+        assert!(matches!(
+            redact_home("/tmp/x", "/Users/alice"),
+            Cow::Borrowed("/tmp/x")
+        ));
+        assert_eq!(
+            redact_home("/Users/alicebob/x", "/Users/alice"),
+            "/Users/alicebob/x"
+        );
+        assert_eq!(
+            redact_home("/Users/alice.old/x", "/Users/alice"),
+            "/Users/alice.old/x"
+        );
         assert_eq!(redact_home("/Users/alice/x", ""), "/Users/alice/x");
     }
 
@@ -326,6 +348,9 @@ mod tests {
         let plist = "<dict>\n\t<key>BuildID</key>\n\t<string>X</string>\n\t<key>ProductVersion</key>\n\t<string>26.0.1</string>\n</dict>";
         assert_eq!(product_version(plist).as_deref(), Some("26.0.1"));
         assert_eq!(product_version("<dict></dict>"), None);
-        assert_eq!(product_version("<key>ProductVersion</key><string> </string>"), None);
+        assert_eq!(
+            product_version("<key>ProductVersion</key><string> </string>"),
+            None
+        );
     }
 }

@@ -10,6 +10,7 @@ import { applyDictionary, engineTerms, promptWithDictionary } from "@/lib/dictio
 import { currentDictation, ownsDictation, finishEmptyDictation, GROQ_SETUP_ERROR, recoverDictation } from "@/services/dictation-recovery.service";
 import { transcriptionTimeoutMs } from "@/lib/dictation-session";
 import { noteDictionaryUse } from "@/services/dictionary.service";
+import { prepareDictation } from "@/services/dictation-preparation.service";
 import { initialReformatMetrics, reformatApplied, reformatOptions } from "@/lib/reformat.util";
 import type { ReformatResult } from "@/types/reformat.types";
 
@@ -77,10 +78,15 @@ export function useTranscription() {
       const effectiveMode = sttMode;
       let clipboardDirty = false;
       try {
+        // The microphone is already stopped; samples stay in Rust while any
+        // preparation started during capture finishes. Cancellation still wins.
+        setStatus("preparing");
+        emitCapsule("preparing");
         if (effectiveMode === "local" && !(await run(() => invoke<boolean>("is_local_stt_available")))) {
           throw new Error("Local transcription is unavailable in this build.");
         }
         if (effectiveMode === "cloud" && !groqApiKey.trim()) throw new Error(GROQ_SETUP_ERROR);
+        await run(prepareDictation, 180_000, "Dictation preparation timed out. Please try again.");
 
         // Step 1: Transcribe (samples stay in Rust — no IPC transfer)
         setStatus("transcribing");
@@ -271,10 +277,12 @@ export function useTranscription() {
           application: result.application ?? null,
           dictionaryApplied: dictionaryApplied.length ? dictionaryApplied : undefined,
         };
-        saveTranscript(record).catch((err) => {
+        // Finish attaching this recording before a new capture can replace it.
+        await saveTranscript(record, result.recording_generation).catch((err) => {
           console.error("Failed to persist transcript:", err);
           addToast({ type: "error", message: "Text transcribed, but history could not be saved on this Mac." });
         });
+        if (session.cancelled || !ownsDictation(session)) return;
 
         setStatus("done");
         if (deliveryStatus === "pasted") {
@@ -303,6 +311,11 @@ export function useTranscription() {
           ? "Download a local model in Settings → Speech engine."
           : rawMsg;
         await recoverDictation(errMsg, session);
+      } finally {
+        // Silence, failures and cancelled processing never leave an orphan recording.
+        if (result.recording_generation != null) {
+          void invoke("history_discard_pending_audio", { generation: result.recording_generation }).catch(() => {});
+        }
       }
     },
     [

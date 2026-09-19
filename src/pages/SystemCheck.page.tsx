@@ -369,7 +369,7 @@ function RecordingTestWidget() {
               </div>
             ) : isProcessing ? (
               <span className="text-[13px] text-text-secondary">
-                {status === "preparing" ? "Preparing dictation…" : status === "transcribing"
+                {status === "preparing" ? "Getting ready…" : status === "transcribing"
                   ? "Transcribing..."
                   : status === "correcting"
                     ? "Polishing..."

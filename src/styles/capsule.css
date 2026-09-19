@@ -31,7 +31,7 @@ html, body, #root {
 .capsule-emblem { position: absolute; left: 10px; top: 8px; width: 22px; height: 22px; z-index: 1; transition: transform var(--pill-morph); }
 .is-compact .capsule-emblem { transform: translateX(-2px); }
 .capsule-favicon { display: block; width: 22px; height: 22px; border-radius: 6px; opacity: 1; transform: scale(1); transition: opacity 160ms ease, transform 260ms var(--ease-out); }
-.is-compact .capsule-favicon { opacity: 0; transform: scale(.65); }
+.is-compact .capsule-favicon, .is-processing .capsule-favicon { opacity: 0; transform: scale(.65); }
 .capsule-favicon > svg { display: block; width: 22px; height: 22px; }
 .capsule-favicon rect { transform-box: fill-box; transform-origin: center; transition: transform 100ms var(--ease-out); }
 .capsule-favicon rect:nth-child(1) { transform: scaleY(var(--voice-left, 1)); }
@@ -81,6 +81,13 @@ html, body, #root {
 .capsule-error-message { display: flex; min-width: 0; gap: 8px; align-items: center; font-size: 11px; line-height: 14px; color: var(--color-text-secondary); }
 .capsule-error-message svg { color: var(--color-error); flex: none; }
 .capsule-error-message span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.capsule-feedback { --pill-width: 352px; }
+.capsule-feedback.is-learned { border-color: color-mix(in srgb, var(--color-success) 35%, var(--color-border-subtle)); }
+.capsule-feedback .capsule-details { padding-top: 4px; padding-bottom: 4px; gap: 6px; }
+.capsule-feedback-message { min-width: 0; display: flex; flex-direction: column; gap: 1px; line-height: 14px; }
+.capsule-feedback-message strong { font-size: 11px; font-weight: 600; }
+.capsule-feedback-message strong, .capsule-feedback-message span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.capsule-feedback-message span { font-size: 10px; color: var(--color-text-secondary); }
 @keyframes capsule-in { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes capsule-orbit { to { transform: rotate(360deg); } }
 /* With its start anchored at twelve, shortening the arc retreats counterclockwise. */

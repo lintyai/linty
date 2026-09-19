@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { showTranscriptMenu } from "@/lib/transcript-menu.util";
 import { copyTranscript } from "@/lib/transcript-clipboard.util";
-import { Cloud, Cpu } from "lucide-react";
+import { Cloud, Cpu, Volume2 } from "lucide-react";
 import { AppIcon } from "@/components/shared/AppIcon.component";
 import { useAppIcon } from "@/hooks/useAppIcons.hook";
 import { formatDuration } from "@/lib/usage.util";
@@ -89,6 +89,7 @@ export function TranscriptRow({
             (t.engine === "cloud" ? <Cloud size={11} /> : <Cpu size={11} />)}
           {t.engine === "cloud" ? "Cloud" : history ? "On-device" : "Local"}
         </span>
+        {history && t.audio && <span className="transcript-saved-audio" aria-label="Saved audio" title="Saved audio"><Volume2 size={12} aria-hidden="true" /></span>}
       </span>
     </>
   );
