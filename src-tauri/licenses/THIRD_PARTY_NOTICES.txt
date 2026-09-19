@@ -3357,6 +3357,13 @@ Declared license: See notices below
   Source: https://github.com/FluidInference/FluidAudio.git@56607d90b97de7d95a731200563bf49aa5beef20/ThirdPartyLicenses/vbx-LICENSE.md
   License text: 7ce3d3c8708d2647644a6ba9ba05b8f5d2b7dd6750464972bf29aae1dd57eceb
 
+npm: @tauri-apps/api 2.10.1
+Declared license: Apache-2.0 OR MIT
+  Source: npm:@tauri-apps/api@2.10.1/LICENSE_APACHE-2.0
+  License text: bb28c48e3e078166e91cfc2b6db7ffebb8a0973b9e23b3df060561292d8d69ec
+  Source: npm:@tauri-apps/api@2.10.1/LICENSE_MIT
+  License text: 9dd42ea92cff2ede5cd477cbfcce051b2d0115c0ac7f368ee88cb545055dff1d
+
 npm: @tauri-apps/api 2.11.1
 Declared license: Apache-2.0 OR MIT
   Source: npm:@tauri-apps/api@2.11.1/LICENSE_APACHE-2.0
@@ -3389,9 +3396,9 @@ Declared license: MIT OR Apache-2.0
   Source: npm:@tauri-apps/plugin-store@2.4.5/LICENSE.spdx
   License text: 9c1db6b7e7eb83e1cb2af973b5df2bdc63651ede0f38506ab98dfa0940487759
 
-npm: @tauri-apps/plugin-updater 2.11.0
+npm: @tauri-apps/plugin-updater 2.10.1
 Declared license: MIT OR Apache-2.0
-  Source: npm:@tauri-apps/plugin-updater@2.11.0/LICENSE.spdx
+  Source: npm:@tauri-apps/plugin-updater@2.10.1/LICENSE.spdx
   License text: 9c1db6b7e7eb83e1cb2af973b5df2bdc63651ede0f38506ab98dfa0940487759
 
 npm: clsx 2.1.1

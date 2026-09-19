@@ -609,8 +609,7 @@ fn checked_snapshot_size(total: usize, next: usize) -> Result<usize, String> {
         .checked_add(next)
         .filter(|size| *size <= MAX_SNAPSHOT_BYTES)
         .ok_or_else(|| {
-            "Clipboard is too large to preserve. Copy a smaller item, then retry from History."
-                .into()
+            "Clipboard is too large to preserve. Copy your transcript from History.".into()
         })
 }
 

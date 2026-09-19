@@ -162,7 +162,7 @@ jobs:
           # (e.g. runs 34694558903, 34873986016). Cargo output is cached within
           # the job, so a retry only re-signs, re-notarizes and re-bundles.
           for attempt in 1 2 3; do
-            if yarn tauri build --bundles dmg,app -- --features local-stt,parakeet; then
+            if yarn tauri build --bundles dmg,app --features local-stt,parakeet; then
               exit 0
             fi
             echo "::warning::tauri build failed (attempt $attempt/3); retrying in 20s"

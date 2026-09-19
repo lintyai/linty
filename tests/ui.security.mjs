@@ -29,6 +29,10 @@ try {
   await page.goto(`http://127.0.0.1:${port}`);
   await page.getByRole('heading', { name: 'Your dictation', exact: true }).waitFor();
   assert.deepEqual(errors, [], 'Production assets must work under CSP');
+  await page.evaluate(() => {
+    window.__cspViolations = [];
+    document.addEventListener('securitypolicyviolation', event => window.__cspViolations.push(event.effectiveDirective));
+  });
   assert.equal(await page.evaluate(async () => {
     const script = document.createElement('script');
     script.textContent = 'window.__unsafeInlineRan = true';
@@ -39,6 +43,8 @@ try {
   assert.equal(await page.evaluate(async () => {
     try { await fetch('https://unapproved.invalid/'); return true; } catch { return false; }
   }), false, 'Unexpected network destinations are blocked');
+  await page.waitForFunction(() => window.__cspViolations.includes('connect-src'));
+  assert.ok((await page.evaluate(() => window.__cspViolations)).some(directive => directive.startsWith('script-src')), 'CSP enforces the inline script block');
   await page.goto(`http://127.0.0.1:${port}/capsule.html`);
   await page.waitForFunction(() => window.__QA__.calls.includes('get_theme'));
   await page.evaluate(() => window.__QA__.emit('theme-changed', 'light'));

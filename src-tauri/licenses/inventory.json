@@ -1,10 +1,10 @@
 {
   "inputs": {
-    "yarn.lock": "17e2ca8081b84f84edcd87de5ea71a0b290a454a84411f95f00fc4d5023b49dd",
+    "yarn.lock": "ba600d730d710b7bc2453c8fc0fbfa4a0218c170c687246a77cfed8aad49ecc4",
     "src-tauri/Cargo.lock": "cf39be8cce844014f824c44085fb534b345cc3d01cbed63a31fa1431064ff92a",
     "src-tauri/swift/Package.resolved": "51ca7f28c7e3ec9a6078527ab7a67f6ab6517c21a8d3f6ee2f260941cb682e12"
   },
-  "notices_sha256": "5ff535c65bf745d977253b637465ed69f38c49617cd92010ff6bc24c1b88843c",
+  "notices_sha256": "46dd9439090e92bd048deebeb974c8211018462cf46feb104b65c4fd4daf926a",
   "components": [
     {
       "ecosystem": "Cargo",
@@ -8251,6 +8251,26 @@
     {
       "ecosystem": "npm",
       "name": "@tauri-apps/api",
+      "version": "2.10.1",
+      "license": "Apache-2.0 OR MIT",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/tauri-apps/tauri.git"
+      },
+      "notices": [
+        {
+          "source": "npm:@tauri-apps/api@2.10.1/LICENSE_APACHE-2.0",
+          "sha256": "bb28c48e3e078166e91cfc2b6db7ffebb8a0973b9e23b3df060561292d8d69ec"
+        },
+        {
+          "source": "npm:@tauri-apps/api@2.10.1/LICENSE_MIT",
+          "sha256": "9dd42ea92cff2ede5cd477cbfcce051b2d0115c0ac7f368ee88cb545055dff1d"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@tauri-apps/api",
       "version": "2.11.1",
       "license": "Apache-2.0 OR MIT",
       "repository": {
@@ -8336,12 +8356,12 @@
     {
       "ecosystem": "npm",
       "name": "@tauri-apps/plugin-updater",
-      "version": "2.11.0",
+      "version": "2.10.1",
       "license": "MIT OR Apache-2.0",
       "repository": "https://github.com/tauri-apps/plugins-workspace",
       "notices": [
         {
-          "source": "npm:@tauri-apps/plugin-updater@2.11.0/LICENSE.spdx",
+          "source": "npm:@tauri-apps/plugin-updater@2.10.1/LICENSE.spdx",
           "sha256": "9c1db6b7e7eb83e1cb2af973b5df2bdc63651ede0f38506ab98dfa0940487759"
         }
       ]

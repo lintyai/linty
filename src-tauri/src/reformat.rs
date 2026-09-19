@@ -765,6 +765,9 @@ pub async fn reformat_transcript(
 
 #[cfg(test)]
 mod tests {
+    // Production owns one S1 engine behind a mutex. Asset tests must not race
+    // separate Metal engines against each other's inference deadlines.
+    static MODEL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     use super::*;
     fn options() -> Options {
         Options {
@@ -830,6 +833,7 @@ mod tests {
     #[test]
     #[ignore = "requires installed S1-mini assets via LINTY_S1_TEST_MODEL_DIR"]
     fn warmup_is_retryable_idempotent_and_does_not_change_real_output() {
+        let _guard = MODEL_TEST_LOCK.lock().unwrap();
         let dir = PathBuf::from(std::env::var("LINTY_S1_TEST_MODEL_DIR").unwrap());
         let mut engine = Engine::load(&dir).unwrap();
         assert!(engine.warm_up(&|| true).is_err());
@@ -902,6 +906,7 @@ mod tests {
     #[test]
     #[ignore = "requires installed S1-mini assets via LINTY_S1_TEST_MODEL_DIR"]
     fn filler_only_model_result_is_applied_and_next_dictation_survives() {
+        let _guard = MODEL_TEST_LOCK.lock().unwrap();
         let dir = PathBuf::from(std::env::var("LINTY_S1_TEST_MODEL_DIR").unwrap());
         let mut engine = None;
         let empty = run(&mut engine, &dir, "um uh um", "en", options(), || false);
