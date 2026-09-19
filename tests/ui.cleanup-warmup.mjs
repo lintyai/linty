@@ -16,6 +16,8 @@ function setupWarmup({ enabled = false, installed = true, mode = 'local' } = {})
   qa.warmups = [];
   qa.preparations = [];
   qa.capsule = [];
+  qa.discardedAudio = [];
+  qa.transcript = 'A prepared dictation.';
   qa.stopResult = { sample_count: 16000, duration_secs: 1 };
   let warm = false;
   let pending;
@@ -33,6 +35,7 @@ function setupWarmup({ enabled = false, installed = true, mode = 'local' } = {})
   qa.cooldown = () => { warm = false; qa.emit('model-idle-unloaded'); };
   window.__TAURI_INTERNALS__.invoke = (command, args) => {
     if (command === 'emit_capsule_state') qa.capsule.push(args);
+    if (command === 'history_discard_pending_audio') qa.discardedAudio.push(args.generation);
     if (command === 'prepare_s1_model') { qa.calls.push(command); return prepare(); }
     if (command === 'prepare_dictation') {
       qa.calls.push(command); qa.preparations.push(args);
@@ -44,7 +47,11 @@ function setupWarmup({ enabled = false, installed = true, mode = 'local' } = {})
     }
     if (command === 'transcribe_buffer') {
       qa.calls.push(command);
-      return Promise.resolve({ text: 'A prepared dictation.', vocabularyApplied: [] });
+      return Promise.resolve({ text: qa.transcript, vocabularyApplied: [] });
+    }
+    if (command === 'reformat_transcript' && qa.cleanupResult) {
+      qa.calls.push(command);
+      return Promise.resolve(qa.cleanupResult);
     }
     return original(command, args);
   };
@@ -156,6 +163,58 @@ try {
   assert.equal(await page.evaluate(() => window.__QA__.calls.includes('download_s1_model')), false);
   await page.evaluate(() => window.__QA__.warmups[0].resolve());
   await page.getByRole('button', { name: 'On-device: Ready. Configure speech engine' }).waitFor();
+
+  // A native-validated empty cleanup is a successful no-op. Never paste an
+  // empty clipboard over a selection or save a blank entry/recording.
+  await page.evaluate(() => {
+    const qa = window.__QA__;
+    qa.transcript = 'um uh um';
+    qa.stopResult.recording_generation = 1;
+    qa.cleanupResult = { text: '', metrics: {
+      schemaVersion: 1, status: 'applied', reason: 'filler_only', changed: true,
+      options: { styling: 'semi-formal', structure: 'lists', context: 'general' },
+      requestedLanguage: 'en', inputWords: 3, outputWords: 0, inputCharacters: 8, outputCharacters: 0,
+    } };
+  });
+  await press(page); await waitStatus(page, 'recording');
+  await release(page); await waitStatus(page, 'idle');
+  await page.waitForFunction(() => window.__QA__.discardedAudio.includes(1));
+  assert.equal(await page.evaluate(() => window.__QA__.calls.filter(c => c === 'reformat_transcript').length), 1);
+  for (const command of ['snapshot_clipboard', 'write_transient_text', 'paste_text', 'history_save']) {
+    assert.equal(await page.evaluate(command => window.__QA__.calls.includes(command), command), false, `${command} must not run for filler-only cleanup`);
+  }
+  assert.equal(await page.evaluate(() => window.__QA__.appStore.getState().toasts.length), 0, 'Intentional empty cleanup is not an error');
+  assert.equal(await page.evaluate(() => window.__QA__.appStore.getState().isRecording), false);
+  assert.equal(await page.evaluate(() => window.__QA__.capsule.at(-1).state), 'idle');
+  await page.waitForFunction(() => window.__QA__.calls.includes('hide_capsule'));
+
+  // The next meaningful short dictation still pastes and saves exactly once.
+  await page.evaluate(() => {
+    const qa = window.__QA__;
+    qa.transcript = 'no';
+    qa.cleanupResult = { text: 'No.', metrics: { ...qa.cleanupResult.metrics,
+      status: 'applied', reason: null, inputWords: 1, outputWords: 1, inputCharacters: 2, outputCharacters: 3,
+    } };
+  });
+  await press(page); await waitStatus(page, 'recording');
+  await release(page); await waitStatus(page, 'done');
+  assert.equal(await page.evaluate(() => window.__QA__.calls.filter(c => c === 'paste_text').length), 1);
+  assert.equal(await page.evaluate(() => window.__QA__.stores[2].transcripts.length), 1);
+  assert.equal(await page.evaluate(() => window.__QA__.stores[2].transcripts[0].finalText), 'No.');
+
+  // Rejected empty results still use the complete original and surface fallback.
+  await page.evaluate(() => {
+    const qa = window.__QA__;
+    qa.transcript = "um don't send the report";
+    qa.cleanupResult = { text: qa.transcript, metrics: { ...qa.cleanupResult.metrics,
+      status: 'fallback', reason: 'empty_output', changed: false,
+    } };
+  });
+  await press(page); await waitStatus(page, 'recording');
+  await release(page); await waitStatus(page, 'done');
+  assert.equal(await page.evaluate(() => window.__QA__.calls.filter(c => c === 'paste_text').length), 2);
+  assert.equal(await page.evaluate(() => window.__QA__.stores[2].transcripts[0].finalText), "um don't send the report");
+  assert.equal(await page.evaluate(() => window.__QA__.appStore.getState().toasts.some(t => t.message.includes('original text was kept'))), true);
   await page.close();
 
   // Absent optional cleanup stays absent. Speech readiness still works.
@@ -254,7 +313,7 @@ try {
   await page.close();
 
   assert.deepEqual(errors, []);
-  console.log('Preparation checks passed: immediate capture, overlapping warm-up, release before readiness, idle reload, empty audio, failure/retry, cancellation, timeout and mode changes.');
+  console.log('Cleanup checks passed: preparation, filler-only no-op, pending audio disposal, next dictation, meaningful-text fallback, cancellation, timeout and mode changes.');
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

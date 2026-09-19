@@ -1,7 +1,9 @@
 {
   "identifier": "default",
-  "description": "Default capability for Linty",
-  "windows": ["main", "capsule"],
+  "description": "Main application capabilities",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -31,6 +33,7 @@
     "shell:default",
     "shell:allow-open",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "main-commands"
   ]
 }

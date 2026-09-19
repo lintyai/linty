@@ -80,8 +80,14 @@ There is a bounded
 generation deadline, cancellation between forward passes, and no transcript KV
 cache retained between requests. Long inputs are split at whitespace into
 bounded chunks. Every chunk must finish; a failure, timeout, truncation, or
-rejected output preserves the complete original. Output checks catch empty,
-control-token, and extreme length results, but do not guarantee semantic fidelity.
+rejected output preserves the complete original. Empty output is accepted only
+when its input chunk contains recognizable `um`/`uh` fillers and ordinary speech
+punctuation; meaningful text, quoted words, initials, and unknown content retain
+the empty-output safeguard. Accepted empty chunks add no blank paragraphs. If
+the whole dictation cleans to nothing, recording finishes quietly without
+clipboard changes, a paste, or an empty History entry; pending audio is discarded.
+Output checks also catch control-token and extreme length results, but do not
+guarantee semantic fidelity. The model's required prompt is unchanged.
 
 Reformatting failures never trigger cloud refinement. The personal dictionary
 still runs after reformatting or fallback. Completed transcripts are saved even

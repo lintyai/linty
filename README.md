@@ -132,7 +132,7 @@ cargo fmt --check
 cargo check --features local-stt,parakeet
 ```
 
-Built with **Tauri 2 + Rust + React**, [whisper.cpp](https://github.com/ggml-org/whisper.cpp) through whisper-rs, and [FluidAudio](https://github.com/FluidInference/FluidAudio). See [Development setup](docs/DEV-SETUP.md) for release signing and architecture. Third-party engines and models retain their own licenses.
+Built with **Tauri 2 + Rust + React**, [whisper.cpp](https://github.com/ggml-org/whisper.cpp) through whisper-rs, and [FluidAudio](https://github.com/FluidInference/FluidAudio). See [Development setup](docs/DEV-SETUP.md) for release signing and architecture. Third-party engines and models retain their own licenses. The app bundles [dependency notices](src-tauri/licenses/THIRD_PARTY_NOTICES.txt) and [model attribution](src-tauri/licenses/MODELS.md).
 
 ## Build with me
 

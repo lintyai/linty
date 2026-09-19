@@ -126,3 +126,16 @@ export function waitUntilIdle(
     update();
   });
 }
+
+/** Claim installation synchronously after the final idle check. Recording
+ * observes the claimed state before it starts any asynchronous native work. */
+export async function claimIdleForUpdate(
+  isBusy: () => boolean,
+  subscribe: (listener: () => void) => () => void,
+  claim: () => void,
+): Promise<void> {
+  do {
+    await waitUntilIdle(isBusy, subscribe, 0);
+  } while (isBusy());
+  claim();
+}

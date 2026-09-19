@@ -35,7 +35,7 @@ yarn test
 yarn build
 cd src-tauri
 cargo fmt --check
-cargo check --features local-stt,parakeet
+cargo test --locked --features local-stt,parakeet
 ```
 
 For UI changes, include screenshots in both themes and verify keyboard navigation, narrow layouts, and reduced motion. Browser checks are available through `yarn test:ui`, `yarn test:motion`, and `yarn test:usability` with the dev server running.
@@ -53,3 +53,5 @@ Report vulnerabilities privately through [GitHub Security Advisories](https://gi
 ## License
 
 Contributions are licensed under the repository's [MIT License](LICENSE). Third-party code and assets must retain their applicable notices.
+
+Dependency changes also require refreshing the bundled notices and reviewing advisory exceptions; see [Security maintenance](docs/SECURITY-MAINTENANCE.md).

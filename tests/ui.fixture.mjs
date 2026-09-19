@@ -534,6 +534,7 @@ export const fixture = ({
         window.__QA__.clipboard = args.text;
         return;
       }
+      if (command === "get_theme") return stores[1].theme;
       if (command === "plugin:updater|check") return update;
       if (command === "plugin:updater|download") return 11;
       if (command === "plugin:updater|install") return null;

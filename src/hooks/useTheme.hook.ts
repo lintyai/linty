@@ -1,4 +1,5 @@
 import { useLayoutEffect } from "react";
+import { emitTo } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store/app.store";
 
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
@@ -13,6 +14,9 @@ export function useTheme() {
   const theme = useAppStore((s) => s.theme);
 
   useLayoutEffect(() => {
+    if (!window.location.pathname.includes("capsule")) {
+      void emitTo("capsule", "theme-changed", theme).catch(() => {});
+    }
     const mq = window.matchMedia(MEDIA_QUERY);
     let firstFrame = 0;
     let secondFrame = 0;

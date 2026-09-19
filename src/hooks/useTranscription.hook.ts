@@ -188,6 +188,14 @@ export function useTranscription() {
           }
         }
 
+        // Native S1 validation accepts empty output only for recognizable fillers.
+        // Finish quietly before dictionary, clipboard, paste, and history work.
+        // The finally block still discards this generation's pending recording.
+        if (reformatApplied(reformatting) && !finalResult.trim()) {
+          finishEmptyDictation(session);
+          return;
+        }
+
         // Step 2b: personal dictionary — whole-word fixes for words the engine still misses.
         // Engine-side fixes count too, so "Applied" reflects every time a word helped.
         const dictionaryApplied: { from: string; to: string }[] = engineApplied.map(({ from, to }) => ({ from, to }));
@@ -235,7 +243,11 @@ export function useTranscription() {
           console.warn("Paste failed (accessibility?):", pasteErr);
           addToast({
             type: "error",
-            message: "Paste failed — check Accessibility permission in System Settings",
+            message: pasteErr instanceof Error && pasteErr.message.startsWith("Clipboard is too large")
+              ? pasteErr.message
+              : typeof pasteErr === "string" && pasteErr.startsWith("Clipboard is too large")
+                ? pasteErr
+                : "Paste failed — check Accessibility permission in System Settings",
           });
         }
         const pasteTimeMs = Date.now() - pasteStart;

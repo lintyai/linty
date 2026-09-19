@@ -800,9 +800,29 @@ try {
   await requiredAudit(forced, 'required-update');
   await forced.screenshot({path:`${output}/update-required.png`,animations:'disabled'});
   await forced.evaluate(() => { window.__QA__.calls.length = 0; });
+  await forced.evaluate(() => {
+    const invoke = window.__TAURI_INTERNALS__.invoke;
+    window.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === 'plugin:updater|check') {
+        await new Promise(resolve => { window.__QA__.finishUpdateRecheck = resolve; });
+      }
+      return invoke(command, args);
+    };
+  });
   await forced.clock.runFor(31_000);
+  await forced.waitForFunction(() => window.__QA__.finishUpdateRecheck);
+  await forced.evaluate(() => window.__QA__.emit('fnkey-pressed'));
+  await forced.waitForFunction(() => window.__QA__.calls.includes('start_recording'));
+  await forced.evaluate(() => window.__QA__.finishUpdateRecheck());
+  await forced.clock.runFor(1_000);
+  assert.ok(!(await forced.evaluate(() => window.__QA__.calls)).includes('plugin:updater|install'), 'dictation during the recheck postpones installation');
+  await forced.evaluate(() => window.__QA__.emit('fnkey-released'));
+  await forced.clock.runFor(2_000);
   await forced.waitForFunction(() => window.__QA__.calls.includes('plugin:process|restart'));
   const installCalls = await forced.evaluate(() => window.__QA__.calls);
+  await forced.evaluate(() => { window.__QA__.calls.length = 0; window.__QA__.emit('fnkey-pressed'); });
+  await forced.clock.runFor(1_000);
+  assert.ok(!(await forced.evaluate(() => window.__QA__.calls)).includes('start_recording'), 'installation blocks new recordings');
   assert.ok(installCalls.indexOf('plugin:updater|check') < installCalls.indexOf('plugin:updater|install'), 'the release is checked again before installing');
   await forcedContext.close();
 
@@ -830,6 +850,24 @@ try {
   await optional.goto(url);
   await optional.getByRole('button', {name:/Update$/}).waitFor({ timeout: 15000 });
   assert.equal(await optional.getByRole('dialog').count(), 0, 'an update without a minimum stays optional');
+  await optional.evaluate(() => {
+    const invoke = window.__TAURI_INTERNALS__.invoke;
+    window.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === 'plugin:updater|download') {
+        await new Promise(resolve => { window.__QA__.finishOptionalDownload = resolve; });
+      }
+      return invoke(command, args);
+    };
+  });
+  await optional.getByRole('button', {name:/Update$/}).click();
+  await optional.waitForFunction(() => window.__QA__.finishOptionalDownload);
+  await optional.evaluate(() => window.__QA__.emit('fnkey-pressed'));
+  await optional.waitForFunction(() => window.__QA__.calls.includes('start_recording'));
+  await optional.evaluate(() => window.__QA__.finishOptionalDownload());
+  await optional.waitForFunction(() => window.__QA__.calls.includes('plugin:updater|download'));
+  assert.ok(!(await optional.evaluate(() => window.__QA__.calls)).includes('plugin:updater|install'), 'manual updates also preserve dictation');
+  await optional.evaluate(() => window.__QA__.emit('fnkey-released'));
+  await optional.waitForFunction(() => window.__QA__.calls.includes('plugin:process|restart'));
   await optionalContext.close();
 
   assert.deepEqual(errors, [], 'Unexpected runtime errors');

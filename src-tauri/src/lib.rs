@@ -16,6 +16,7 @@ mod history;
 mod history_db;
 mod input_activity;
 pub mod logging;
+mod model_store;
 #[cfg(feature = "parakeet")]
 pub mod parakeet;
 mod paste;
@@ -71,11 +72,7 @@ async fn load_whisper_ctx(
 ) -> Result<whisper_rs::WhisperContext, String> {
     use whisper_rs::{WhisperContext, WhisperContextParameters};
 
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("No app data dir: {}", e))?;
-    let model_path = data_dir.join("models").join(filename);
+    let model_path = model_store::speech_path(&models_dir(app)?, filename)?;
 
     if !model_path.exists() {
         log::error!("[stt] Model file not found: {}", model_path.display());
@@ -140,8 +137,8 @@ async fn load_local_engine(
     if transcribe::is_parakeet_model(filename) {
         #[cfg(feature = "parakeet")]
         {
-            let dir = models_dir(app)?.join(filename);
-            let ctc_dir = models_dir(app)?.join(transcribe::PARAKEET_CTC_ID);
+            let dir = model_store::speech_path(&models_dir(app)?, filename)?;
+            let ctc_dir = model_store::vocabulary_path(&models_dir(app)?)?;
             log::info!("[stt] Loading Parakeet bundle from: {}", dir.display());
             let started = std::time::Instant::now();
             let engine = tokio::task::spawn_blocking(move || {
@@ -683,10 +680,14 @@ fn force_reinit_fn_key_monitor(app: tauri::AppHandle) {
 // in the data-provider callback). Run these off the main thread — snapshotting
 // a large clipboard (screenshots, files) can take seconds and must not beachball.
 #[tauri::command(async)]
-fn snapshot_clipboard() {
+fn snapshot_clipboard() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        clipboard::cmd_snapshot();
+        clipboard::cmd_snapshot()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
     }
 }
 
@@ -955,6 +956,22 @@ fn get_available_models() -> Vec<transcribe::ModelInfo> {
     transcribe::available_models(parakeet_supported)
 }
 
+/// The capsule needs the appearance preference, not general store access.
+#[tauri::command]
+fn get_theme(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app
+        .store("linty-settings.json")
+        .map_err(|e| e.to_string())?;
+    let value = store.get("theme");
+    Ok(match value.as_ref().and_then(|value| value.as_str()) {
+        Some("light") => "light",
+        Some("dark") => "dark",
+        _ => "system",
+    }
+    .into())
+}
+
 #[tauri::command]
 fn get_models_dir(app: tauri::AppHandle) -> Result<String, String> {
     let data_dir = app
@@ -968,7 +985,7 @@ fn get_models_dir(app: tauri::AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 fn check_model_exists(app: tauri::AppHandle, filename: String) -> Result<bool, String> {
-    let model_path = models_dir(&app)?.join(&filename);
+    let model_path = model_store::speech_path(&models_dir(&app)?, &filename)?;
     if transcribe::is_parakeet_model(&filename) {
         // A Parakeet bundle is a directory of CoreML models; only count it
         // when every required file is present (a partial download is not usable).
@@ -981,19 +998,14 @@ fn check_model_exists(app: tauri::AppHandle, filename: String) -> Result<bool, S
 }
 
 #[tauri::command]
-async fn download_model_file(
-    app: tauri::AppHandle,
-    url: String,
-    filename: String,
-) -> Result<String, String> {
-    let dest = models_dir(&app)?.join(&filename);
+async fn download_model_file(app: tauri::AppHandle, filename: String) -> Result<String, String> {
+    let dest = model_store::speech_path(&models_dir(&app)?, &filename)?;
 
     if transcribe::is_parakeet_model(&filename) {
         #[cfg(feature = "parakeet")]
         {
             // FluidAudio fetches the multi-file CoreML bundle itself and
             // reports a 0–1 fraction covering download + Neural Engine compile.
-            let _ = url;
             let app_progress = app.clone();
             let progress_filename = filename.clone();
             let dir = dest.clone();
@@ -1025,18 +1037,17 @@ async fn download_model_file(
         }
         #[cfg(not(feature = "parakeet"))]
         {
-            let _ = url;
             return Err("This build does not include Parakeet support".to_string());
         }
     }
 
-    transcribe::download_model(&app, &url, &dest).await?;
+    transcribe::download_model(&app, &dest).await?;
     Ok(dest.to_string_lossy().to_string())
 }
 
 #[tauri::command(async)]
 fn delete_model_file(app: tauri::AppHandle, filename: String) -> Result<(), String> {
-    let model_path = models_dir(&app)?.join(&filename);
+    let model_path = model_store::speech_path(&models_dir(&app)?, &filename)?;
     if model_path.is_dir() {
         // Parakeet bundles are directories of .mlmodelc packages.
         std::fs::remove_dir_all(&model_path)
@@ -1154,7 +1165,7 @@ async fn prepare_dictation(
             #[cfg(feature = "parakeet")]
             if vocabulary {
                 if let LocalEngine::Parakeet(engine) = engine {
-                    let dir = models_dir(&app)?.join(transcribe::PARAKEET_CTC_ID);
+                    let dir = model_store::vocabulary_path(&models_dir(&app)?)?;
                     tokio::task::spawn_blocking(move || engine.load_ctc(&dir))
                         .await
                         .map_err(|e| e.to_string())??;
@@ -1212,7 +1223,7 @@ async fn prepare_parakeet_vocabulary(
         if engine.has_vocabulary_models() {
             return Ok(false);
         }
-        let dir = models_dir(&app)?.join(transcribe::PARAKEET_CTC_ID);
+        let dir = model_store::vocabulary_path(&models_dir(&app)?)?;
         let downloaded = !dir.is_dir();
         log::info!(
             "[stt] Preparing Parakeet vocabulary models in {}",
@@ -1240,6 +1251,7 @@ fn register_local_model(
     #[allow(unused_variables)] state: tauri::State<'_, AppState>,
     #[allow(unused_variables)] filename: String,
 ) -> Result<(), String> {
+    model_store::validate_speech_id(&filename)?;
     #[cfg(feature = "local-stt")]
     {
         log::debug!(
@@ -1691,6 +1703,7 @@ pub fn run() {
             request_microphone,
             get_app_icons,
             get_available_models,
+            get_theme,
             get_models_dir,
             check_model_exists,
             download_model_file,

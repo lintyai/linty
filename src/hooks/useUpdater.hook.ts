@@ -8,6 +8,7 @@ import {
   isUpdateRequired,
   minimumVersion,
   waitUntilIdle,
+  claimIdleForUpdate,
 } from "@/lib/force-update.util";
 
 const CHECK_DELAY_MS = 5_000;
@@ -130,7 +131,11 @@ async function installRequiredUpdate(update: Update) {
       return;
     }
 
-    store.setUpdateStatus("installing");
+    await claimIdleForUpdate(
+      () => isDictationBusy(useAppStore.getState()),
+      useAppStore.subscribe,
+      () => store.setUpdateStatus("installing"),
+    );
     await update.install();
     await relaunch();
   } catch (err) {
@@ -200,14 +205,21 @@ export function useUpdater() {
 
   const downloadAndInstall = useCallback(async () => {
     const update = pendingUpdate;
-    if (!update) return;
+    if (!update || BUSY_UPDATE_STATUSES.has(useAppStore.getState().updateStatus)) return;
 
     try {
       setUpdateStatus("downloading");
       setUpdateProgress(0);
       setUpdateError(null);
 
-      await update.downloadAndInstall(progressHandler());
+      await update.download(progressHandler());
+      setUpdateStatus("waiting");
+      await claimIdleForUpdate(
+        () => isDictationBusy(useAppStore.getState()),
+        useAppStore.subscribe,
+        () => setUpdateStatus("installing"),
+      );
+      await update.install();
 
       addToast({ type: "success", message: "Update installed — restarting..." });
       // Brief delay so the user sees the toast
