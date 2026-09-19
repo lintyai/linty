@@ -9,8 +9,84 @@ pub const DEFAULT_MODEL_IDLE_UNLOAD_SECS: u64 = 15 * 60;
 #[derive(Default)]
 pub struct RecordingState {
     pub is_recording: bool,
-    pub samples: Vec<f32>,
+    /// Shared by inference and optional history storage without copying samples.
+    pub samples: Arc<Vec<f32>>,
     pub application: Option<crate::application::ApplicationIdentity>,
+    pub audio_consent: Option<i64>,
+    pub history_audio: Option<crate::history_db::PendingAudio>,
+}
+
+impl RecordingState {
+    pub fn take_history_audio(
+        &mut self,
+        generation: u64,
+    ) -> Option<crate::history_db::PendingAudio> {
+        if self
+            .history_audio
+            .as_ref()
+            .is_some_and(|a| a.generation == generation)
+        {
+            self.history_audio.take()
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod audio_history_tests {
+    use super::*;
+
+    #[test]
+    fn stale_save_or_cleanup_cannot_consume_another_recording() {
+        let mut rec = RecordingState {
+            history_audio: Some(crate::history_db::PendingAudio {
+                generation: 12,
+                consent_epoch: 3,
+                samples: Arc::new(vec![0.1, 0.2, 0.3]),
+            }),
+            ..Default::default()
+        };
+        assert!(rec.take_history_audio(11).is_none());
+        assert!(rec.take_history_audio(13).is_none());
+        assert_eq!(
+            *rec.take_history_audio(12).unwrap().samples,
+            vec![0.1, 0.2, 0.3]
+        );
+        assert!(
+            rec.take_history_audio(12).is_none(),
+            "A recording attaches only once"
+        );
+    }
+
+    #[test]
+    fn inference_and_history_share_one_sample_allocation_and_release_it() {
+        let samples = Arc::new(vec![0.25; 16000]);
+        let weak = Arc::downgrade(&samples);
+        let pointer = samples.as_ptr();
+        let mut rec = RecordingState {
+            samples: Arc::clone(&samples),
+            history_audio: Some(crate::history_db::PendingAudio {
+                generation: 1,
+                consent_epoch: 1,
+                samples: Arc::clone(&samples),
+            }),
+            ..Default::default()
+        };
+        drop(samples);
+        let inference = std::mem::take(&mut rec.samples);
+        assert_eq!(inference.as_ptr(), pointer);
+        assert_eq!(
+            rec.history_audio.as_ref().unwrap().samples.as_ptr(),
+            pointer
+        );
+        drop(inference);
+        drop(rec.take_history_audio(1));
+        assert!(
+            weak.upgrade().is_none(),
+            "Completing/cancelling releases the shared capture"
+        );
+    }
 }
 
 /// Commands sent to the dedicated audio thread.
@@ -56,8 +132,6 @@ pub struct AppState {
     pub local_model_load_lock: tokio::sync::Mutex<()>,
     /// Text most recently written for paste; the corrections watch diffs the target field against it.
     pub last_pasted_text: Mutex<Option<String>>,
-    /// Bumped on every paste so a running corrections watch ends when a newer paste starts.
-    pub correction_watch_generation: AtomicU64,
     /// App icons already rendered for the UI, keyed by bundle id (None = no icon).
     /// Icons are a few KB each and only apps the user dictated into are ever asked for.
     pub app_icon_cache: Mutex<HashMap<String, Option<String>>>,
@@ -86,7 +160,6 @@ impl AppState {
             #[cfg(feature = "local-stt")]
             local_model_load_lock: tokio::sync::Mutex::new(()),
             last_pasted_text: Mutex::new(None),
-            correction_watch_generation: AtomicU64::new(0),
             app_icon_cache: Mutex::new(HashMap::new()),
             audio_callback_count: Arc::new(AtomicU64::new(0)),
             audio_generation: Arc::new(AtomicU64::new(0)),

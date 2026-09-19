@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { diffCorrection, wordDiff, REWRITE_THRESHOLD } from "../src/lib/correction-diff.util.ts";
+import { correctionFeedback } from "../src/lib/correction-feedback.ts";
 import {
   addToDictionary,
   applyDictionary,
@@ -13,6 +14,14 @@ import {
 } from "../src/lib/dictionary.util.ts";
 
 const now = 1_757_900_000_000;
+
+test("feedback promises future use only for saved, enabled dictionary learning", () => {
+  assert.equal(correctionFeedback({ learned: 1, suggested: 0 }, true).message, "I’ll remember it next time.");
+  assert.equal(correctionFeedback({ learned: 1, suggested: 0 }, false).message, "Saved. Turn on Dictionary to use it.");
+  assert.equal(correctionFeedback({ learned: 0, suggested: 1 }, true).learned, false);
+  assert.equal(correctionFeedback({ learned: 0, suggested: 0, pending: 1 }, true).message, "I’ll keep learning from your edits.");
+  assert.equal(correctionFeedback({ learned: 0, suggested: 0 }, true), null);
+});
 
 test("word diff pairs equal-length runs one to one and keeps punctuation with the word", () => {
   const pairs = wordDiff(
@@ -52,6 +61,21 @@ test("learnable pairs skip everyday words and multi-word swaps", () => {
     { from: "Tari", to: "Tauri" },
     { from: "linty", to: "Linty" },
   ]);
+});
+
+test("joining or splitting a name is a learnable correction, including in a short sentence", () => {
+  for (const [before, after, from, to] of [
+    ['My name is Hari Shekhar.', 'My name is Harishekhar.', 'Hari Shekhar', 'Harishekhar'],
+    ['My name is Harishekhar.', 'My name is Hari Shekhar.', 'Harishekhar', 'Hari Shekhar'],
+  ]) {
+    const diff = diffCorrection(before, after);
+    assert.equal(diff.rewrite, false);
+    assert.deepEqual(learnablePairs(diff.pairs), [{ from, to }]);
+    const entries = addToDictionary([], to, [from], 'learned', now);
+    assert.equal(applyDictionary(before, entries).text, after);
+    assert.equal(applyDictionary(`Meet ${from}son.`, entries).applied.length, 0, 'The name must still match whole words');
+  }
+  assert.deepEqual(learnablePairs([{ kind: 'substitution', from: 'few seconds per', to: 'Parakeet' }]), []);
 });
 
 test("suggestions count sightings and proper nouns are ready at once", () => {
@@ -114,4 +138,34 @@ test("corrections per 100 words counts pairs and treats a rewrite as one", () =>
   ];
   assert.equal(correctionsPer100Words(records, 300), 1);
   assert.equal(correctionsPer100Words(records, 0), null);
+});
+
+
+test("undo restores only the correction batch and refuses to overwrite newer edits", async () => {
+  const { undoDictionaryChange } = await import("../src/lib/dictionary-undo.util.ts");
+  const before = { entries: addToDictionary([], "Groq", ["Groke"], "manual", now), suggestions: [] };
+  const after = { entries: addToDictionary(before.entries, "Harishekhar", ["Hari Shekhar"], "learned", now), suggestions: [] };
+  const current = { entries: addToDictionary(after.entries, "YULU", ["YOLO"], "learned", now), suggestions: [] };
+  const undone = undoDictionaryChange(current, before, after);
+  assert.deepEqual(undone.entries.map(e => e.right), ["Groq", "YULU"]);
+  const edited = { entries: addToDictionary(after.entries, "Harishekhar", ["Another spelling"], "manual", now), suggestions: [] };
+  assert.throws(() => undoDictionaryChange(edited, before, after), /changed since learning/);
+  assert.equal(edited.entries.at(-1).wrong.length, 2);
+});
+
+test("native classification learns lowercase spellings but rejects unrelated replacements", () => {
+  const base = { correctionId: 'native-1', transcriptId: 't', timestamp: now, source: 'observed',
+    engine: 'local', modelName: 'm', language: 'en', wordCount: 10, changedRatio: 0.2, rewrite: false };
+  for (const [from, to] of [['Jolo', 'yolo'], ['Groc', 'Groq'], ['YOLO', 'YULU'],
+    ['Hari Shekhar', 'Harishekhar'], ['recieve', 'receive']]) {
+    const suggestions = suggestionsFromCorrection({ ...base, pairs: [{ kind: 'substitution', from, to }] }, [], []);
+    assert.equal(suggestions.length, 1, `${from} → ${to}`);
+    assert.equal(isSuggestionReady(suggestions[0]), true, 'One verified session suffices');
+  }
+  for (const [from, to] of [['red', 'blue'], ['Monday', 'Friday'], ['Alice', 'Robert'],
+    ['dog', 'cat'], ['the', 'Tauri'], ['first draft', 'final version']]) {
+    assert.deepEqual(suggestionsFromCorrection({ ...base, pairs: [{ kind: 'substitution', from, to }] }, [], []), [], `${from} → ${to}`);
+  }
+  const existing = addToDictionary([], 'YULU', ['Jolo'], 'manual', now);
+  assert.deepEqual(suggestionsFromCorrection({ ...base, pairs: [{ kind: 'substitution', from: 'Jolo', to: 'yolo' }] }, [], existing), [], 'Native learning cannot introduce competing replacement rules');
 });

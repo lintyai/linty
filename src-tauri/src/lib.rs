@@ -1,7 +1,6 @@
-mod audio;
-mod input_activity;
-mod audio_input;
 mod application;
+mod audio;
+mod audio_input;
 #[cfg(target_os = "macos")]
 #[allow(deprecated, unexpected_cfgs)]
 mod capsule;
@@ -15,13 +14,15 @@ mod credentials;
 mod fnkey;
 mod history;
 mod history_db;
+mod input_activity;
 pub mod logging;
-pub mod reformat;
-mod paste;
-#[cfg(target_os = "macos")]
-mod permissions;
 #[cfg(feature = "parakeet")]
 pub mod parakeet;
+mod paste;
+mod pcm_wav;
+#[cfg(target_os = "macos")]
+mod permissions;
+pub mod reformat;
 mod state;
 pub mod transcribe;
 mod tray;
@@ -41,6 +42,7 @@ use tauri::{
 struct StopResult {
     sample_count: usize,
     duration_secs: f64,
+    recording_generation: u64,
     application: Option<application::ApplicationIdentity>,
 }
 
@@ -121,7 +123,9 @@ fn resident_local_engine(state: &AppState) -> Result<Option<LocalEngine>, String
         }
     }
     let guard = state.whisper_ctx.lock().map_err(|e| e.to_string())?;
-    Ok(guard.as_ref().map(|ctx| LocalEngine::Whisper(Arc::clone(ctx))))
+    Ok(guard
+        .as_ref()
+        .map(|ctx| LocalEngine::Whisper(Arc::clone(ctx))))
 }
 
 /// Load `filename` (whisper .bin or the Parakeet bundle) into memory, evicting
@@ -144,11 +148,13 @@ async fn load_local_engine(
                 let engine = parakeet::ParakeetEngine::load(&dir)?;
                 // Installed vocabulary models belong to this instance too.
                 // Publish it only after their inference warm-up has completed.
-                if ctc_dir.is_dir() { engine.load_ctc(&ctc_dir)?; }
+                if ctc_dir.is_dir() {
+                    engine.load_ctc(&ctc_dir)?;
+                }
                 Ok::<_, String>(engine)
             })
-                .await
-                .map_err(|e| format!("Task join error: {}", e))??;
+            .await
+            .map_err(|e| format!("Task join error: {}", e))??;
             log::info!(
                 "[stt] Parakeet loaded in {:.0}ms",
                 started.elapsed().as_millis()
@@ -169,7 +175,11 @@ async fn load_local_engine(
     // Same eviction rule as above: take the old engine out, release the lock,
     // then let it drop (ParakeetEngine::drop blocks on the Swift actor's cleanup).
     #[cfg(feature = "parakeet")]
-    let previous = state.parakeet_engine.lock().map_err(|e| e.to_string())?.take();
+    let previous = state
+        .parakeet_engine
+        .lock()
+        .map_err(|e| e.to_string())?
+        .take();
     *state.whisper_ctx.lock().map_err(|e| e.to_string())? = Some(Arc::clone(&ctx));
     #[cfg(feature = "parakeet")]
     drop(previous);
@@ -213,16 +223,24 @@ async fn resolve_local_engine(
 #[cfg(feature = "local-stt")]
 pub fn warm_up_whisper(ctx: &whisper_rs::WhisperContext) -> Result<(), String> {
     let started = std::time::Instant::now();
-    let mut state = ctx.create_state().map_err(|e| format!("Whisper preparation failed: {e}"))?;
-    let mut params = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
+    let mut state = ctx
+        .create_state()
+        .map_err(|e| format!("Whisper preparation failed: {e}"))?;
+    let mut params =
+        whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
     params.set_n_threads(1);
     params.set_single_segment(true);
     params.set_no_timestamps(true);
     params.set_print_special(false);
     params.set_print_progress(false);
     params.set_print_realtime(false);
-    state.full(params, &vec![0.0; 16000]).map_err(|e| format!("Whisper preparation failed: {e}"))?;
-    log::info!("[stt] Whisper inference prepared in {}ms", started.elapsed().as_millis());
+    state
+        .full(params, &vec![0.0; 16000])
+        .map_err(|e| format!("Whisper preparation failed: {e}"))?;
+    log::info!(
+        "[stt] Whisper inference prepared in {}ms",
+        started.elapsed().as_millis()
+    );
     Ok(())
 }
 
@@ -233,13 +251,18 @@ async fn start_recording(
     track_application: Option<bool>,
 ) -> Result<u64, String> {
     let previous_generation = state.audio_generation.load(Ordering::SeqCst);
+    // Capture never waits for database locks, disk I/O or retention cleanup.
+    // The cache is populated in the background; unavailable consent fails closed.
+    let audio_consent = app.state::<history::HistoryState>().capture_consent();
     let application = if track_application.unwrap_or(false) {
         let (reply, receive) = tokio::sync::oneshot::channel();
         app.run_on_main_thread(move || {
             let _ = reply.send(application::frontmost_application());
-        }).map_err(|e| e.to_string())?;
+        })
+        .map_err(|e| e.to_string())?;
         tokio::time::timeout(std::time::Duration::from_secs(3), receive)
-            .await.map_err(|_| "Could not identify the active application. Try again.".to_string())?
+            .await
+            .map_err(|_| "Could not identify the active application. Try again.".to_string())?
             .map_err(|e| e.to_string())?
     } else {
         None
@@ -253,17 +276,24 @@ async fn start_recording(
             return Err("Already recording".into());
         }
         let selected = audio_input::snapshot(&app).selected;
-        rec.samples = Vec::new();
+        rec.samples = Default::default();
+        rec.history_audio = None;
+        rec.audio_consent = audio_consent;
         rec.application = application;
         rec.is_recording = true;
-        (selected, state.audio_generation.fetch_add(1, Ordering::SeqCst) + 1)
+        (
+            selected,
+            state.audio_generation.fetch_add(1, Ordering::SeqCst) + 1,
+        )
     };
 
     // Reset callback monitoring and keep the local model warm while recording.
     {
         state.audio_callback_count.store(0, Ordering::Relaxed);
         #[cfg(feature = "local-stt")]
-        state.local_model_last_used_at.store(now_epoch_ms(), Ordering::Relaxed);
+        state
+            .local_model_last_used_at
+            .store(now_epoch_ms(), Ordering::Relaxed);
     }
 
     {
@@ -280,11 +310,20 @@ async fn start_recording(
     }
 
     let (reply, ready) = tokio::sync::oneshot::channel();
-    let sent = state.audio_tx.lock().map_err(|e| e.to_string())?
-        .as_ref().ok_or_else(|| "Audio thread is unavailable".to_string())?
-        .send(AudioCommand::Start { input_name, generation, reply });
+    let sent = state
+        .audio_tx
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .ok_or_else(|| "Audio thread is unavailable".to_string())?
+        .send(AudioCommand::Start {
+            input_name,
+            generation,
+            reply,
+        });
     let result = match sent {
-        Ok(()) => tokio::time::timeout(std::time::Duration::from_secs(8), ready).await
+        Ok(()) => tokio::time::timeout(std::time::Duration::from_secs(8), ready)
+            .await
             .map_err(|_| "Microphone did not start. Check your input and try again.".to_string())
             .and_then(|reply| reply.map_err(|_| "Audio startup was interrupted".to_string()))
             .and_then(|result| result),
@@ -311,7 +350,9 @@ async fn recover_recording(state: tauri::State<'_, AppState>) -> Result<(), Stri
         let _ = tx.send(AudioCommand::Stop);
     }
     rec.is_recording = false;
-    rec.samples = Vec::new();
+    rec.samples = Default::default();
+    rec.history_audio = None;
+    rec.audio_consent = None;
     rec.application = None;
     *state.audio_buffer.lock().map_err(|e| e.to_string())? = Vec::new();
     state.audio_callback_count.store(0, Ordering::Relaxed);
@@ -327,7 +368,9 @@ async fn stop_recording(
     let generation = state.audio_generation.load(Ordering::SeqCst);
     // A long recording is activity, not idle time. Start the idle clock at stop.
     #[cfg(feature = "local-stt")]
-    state.local_model_last_used_at.store(now_epoch_ms(), Ordering::Relaxed);
+    state
+        .local_model_last_used_at
+        .store(now_epoch_ms(), Ordering::Relaxed);
 
     {
         let tx_guard = state.audio_tx.lock().map_err(|e| e.to_string())?;
@@ -359,12 +402,23 @@ async fn stop_recording(
     );
 
     rec.is_recording = false;
+    let samples = Arc::new(samples);
+    rec.history_audio =
+        rec.audio_consent
+            .take()
+            .filter(|_| sample_count > 0)
+            .map(|consent_epoch| history_db::PendingAudio {
+                generation,
+                consent_epoch,
+                samples: Arc::clone(&samples),
+            });
     rec.samples = samples;
     let application = rec.application.take();
 
     Ok(StopResult {
         sample_count,
         duration_secs,
+        recording_generation: generation,
         application,
     })
 }
@@ -424,7 +478,8 @@ async fn transcribe_buffer(
                         |_| {},
                         move |progress| {
                             if progress_generation.load(Ordering::SeqCst) == generation {
-                                let _ = app_prog.emit_to("capsule", "capsule-stt-progress", progress);
+                                let _ =
+                                    app_prog.emit_to("capsule", "capsule-stt-progress", progress);
                             }
                         },
                     )
@@ -485,13 +540,7 @@ async fn transcribe_buffer_cloud(
         samples.len() as f64 / 16000.0
     );
 
-    transcribe::transcribe_cloud(
-        &samples,
-        &api_key,
-        prompt.as_deref(),
-        language.as_deref(),
-    )
-    .await
+    transcribe::transcribe_cloud(&samples, &api_key, prompt.as_deref(), language.as_deref()).await
 }
 
 // Stays async so the pre-paste and inter-key delays never block event
@@ -505,19 +554,22 @@ fn paste_text(
     observe: Option<bool>,
     transcript_id: Option<String>,
 ) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let capture = corrections::prepare_paste(&app, observe.unwrap_or(false));
     let result = paste::simulate_paste(&app);
-    // Learn from corrections in other apps (Settings → Privacy & storage): watch
-    // the target field for edits to the text that was just pasted. Every paste
-    // bumps the generation so an older watch ends.
     #[cfg(target_os = "macos")]
     {
-        let generation = state.correction_watch_generation.fetch_add(1, Ordering::SeqCst) + 1;
-        let pasted = state.last_pasted_text.lock().ok().and_then(|mut g| g.take());
-        if result.is_ok() && observe.unwrap_or(false) {
-            if let (Some(text), Some(id)) = (pasted, transcript_id) {
-                corrections::watch_after_paste(app.clone(), generation, id, text);
-            }
-        }
+        let pasted = state
+            .last_pasted_text
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take());
+        let insertion = if result.is_ok() && observe.unwrap_or(false) {
+            transcript_id.zip(pasted)
+        } else {
+            None
+        };
+        corrections::complete_paste(capture, insertion);
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (&state, observe, transcript_id);
@@ -528,6 +580,14 @@ fn paste_text(
     #[cfg(target_os = "macos")]
     clipboard::schedule_restore(clipboard::RESTORE_DELAY_MS);
     result
+}
+
+#[tauri::command]
+fn stop_correction_watch() {
+    #[cfg(target_os = "macos")]
+    {
+        corrections::stop();
+    }
 }
 
 #[tauri::command]
@@ -666,21 +726,29 @@ fn open_system_settings(pane: String) -> Result<(), String> {
     {
         use std::ffi::c_void;
         unsafe {
-            let objc_get_class: unsafe extern "C" fn(*const u8) -> *const c_void = fnkey_ffi::objc_getClass;
-            let sel_register: unsafe extern "C" fn(*const u8) -> *const c_void = fnkey_ffi::sel_registerName;
+            let objc_get_class: unsafe extern "C" fn(*const u8) -> *const c_void =
+                fnkey_ffi::objc_getClass;
+            let sel_register: unsafe extern "C" fn(*const u8) -> *const c_void =
+                fnkey_ffi::sel_registerName;
 
             // Create NSURL from string
             let ns_string_class = objc_get_class(b"NSString\0".as_ptr());
             let url_bytes = format!("{}\0", pane);
             let alloc_sel = sel_register(b"stringWithUTF8String:\0".as_ptr());
-            let send_str: unsafe extern "C" fn(*const c_void, *const c_void, *const u8) -> *const c_void =
-                std::mem::transmute(fnkey_ffi::objc_msgSend as *const c_void);
+            let send_str: unsafe extern "C" fn(
+                *const c_void,
+                *const c_void,
+                *const u8,
+            ) -> *const c_void = std::mem::transmute(fnkey_ffi::objc_msgSend as *const c_void);
             let ns_string = send_str(ns_string_class, alloc_sel, url_bytes.as_ptr());
 
             let nsurl_class = objc_get_class(b"NSURL\0".as_ptr());
             let url_sel = sel_register(b"URLWithString:\0".as_ptr());
-            let send_url: unsafe extern "C" fn(*const c_void, *const c_void, *const c_void) -> *const c_void =
-                std::mem::transmute(fnkey_ffi::objc_msgSend as *const c_void);
+            let send_url: unsafe extern "C" fn(
+                *const c_void,
+                *const c_void,
+                *const c_void,
+            ) -> *const c_void = std::mem::transmute(fnkey_ffi::objc_msgSend as *const c_void);
             let nsurl = send_url(nsurl_class, url_sel, ns_string);
 
             if nsurl.is_null() {
@@ -695,8 +763,11 @@ fn open_system_settings(pane: String) -> Result<(), String> {
             let workspace = send_ws(ws_class, shared_sel);
 
             let open_sel = sel_register(b"openURL:\0".as_ptr());
-            let send_open: unsafe extern "C" fn(*const c_void, *const c_void, *const c_void) -> bool =
-                std::mem::transmute(fnkey_ffi::objc_msgSend as *const c_void);
+            let send_open: unsafe extern "C" fn(
+                *const c_void,
+                *const c_void,
+                *const c_void,
+            ) -> bool = std::mem::transmute(fnkey_ffi::objc_msgSend as *const c_void);
             let opened = send_open(workspace, open_sel, nsurl);
 
             if opened {
@@ -766,8 +837,15 @@ fn reset_all_data(
     history: tauri::State<'_, history::HistoryState>,
 ) -> Result<(), String> {
     app.state::<reformat::ReformatState>().cancel();
-    app.state::<reformat::ReformatState>().unload_if_idle(u64::MAX, 1);
+    app.state::<reformat::ReformatState>()
+        .unload_if_idle(u64::MAX, 1);
     let _history_lock = history.0.lock().map_err(|e| e.to_string())?;
+    history.forget_audio_consent();
+    {
+        let mut rec = state.recording.lock().map_err(|e| e.to_string())?;
+        rec.history_audio = None;
+        rec.audio_consent = None;
+    }
     let data_dir = app
         .path()
         .app_data_dir()
@@ -939,7 +1017,10 @@ async fn download_model_file(
             })
             .await
             .map_err(|e| format!("Task join error: {}", e))??;
-            let _ = app.emit("model-download-complete", serde_json::json!({ "filename": filename }));
+            let _ = app.emit(
+                "model-download-complete",
+                serde_json::json!({ "filename": filename }),
+            );
             return Ok(dest.to_string_lossy().to_string());
         }
         #[cfg(not(feature = "parakeet"))]
@@ -1028,7 +1109,7 @@ async fn load_local_model(
     Err("Local STT not available — rebuild with `local-stt` feature".into())
 }
 
-/// A single readiness barrier used before capture and proactively on startup.
+/// Shared preparation during startup/capture, awaited before transcription.
 /// Reuses warm instances; idle-unloaded instances follow the same load path.
 #[tauri::command]
 async fn prepare_dictation(
@@ -1042,19 +1123,31 @@ async fn prepare_dictation(
     #[cfg(feature = "local-stt")]
     {
         let _guard = state.local_model_load_lock.lock().await;
-        state.local_model_last_used_at.store(now_epoch_ms(), Ordering::Relaxed);
+        state
+            .local_model_last_used_at
+            .store(now_epoch_ms(), Ordering::Relaxed);
         if local {
-            let selected = state.local_model_filename.lock().map_err(|e| e.to_string())?.clone();
-            let filename = filename.or(selected.clone())
+            let selected = state
+                .local_model_filename
+                .lock()
+                .map_err(|e| e.to_string())?
+                .clone();
+            let filename = filename
+                .or(selected.clone())
                 .ok_or("Choose a speech model in Settings → Speech engine.")?;
             let engine = if selected.as_ref() == Some(&filename) {
                 resident_local_engine(&state)?
-            } else { None };
+            } else {
+                None
+            };
             let engine = match engine {
                 Some(engine) => engine,
                 None => {
                     let engine = load_local_engine(&app, &state, &filename).await?;
-                    *state.local_model_filename.lock().map_err(|e| e.to_string())? = Some(filename);
+                    *state
+                        .local_model_filename
+                        .lock()
+                        .map_err(|e| e.to_string())? = Some(filename);
                     engine
                 }
             };
@@ -1063,20 +1156,25 @@ async fn prepare_dictation(
                 if let LocalEngine::Parakeet(engine) = engine {
                     let dir = models_dir(&app)?.join(transcribe::PARAKEET_CTC_ID);
                     tokio::task::spawn_blocking(move || engine.load_ctc(&dir))
-                        .await.map_err(|e| e.to_string())??;
+                        .await
+                        .map_err(|e| e.to_string())??;
                 }
             }
             #[cfg(not(feature = "parakeet"))]
             let _ = (engine, vocabulary);
         }
         let result = prepare_installed_cleanup(&app, cleanup_required).await;
-        state.local_model_last_used_at.store(now_epoch_ms(), Ordering::Relaxed);
+        state
+            .local_model_last_used_at
+            .store(now_epoch_ms(), Ordering::Relaxed);
         result
     }
     #[cfg(not(feature = "local-stt"))]
     {
         let _ = (state, filename, vocabulary);
-        if local { return Err("Local STT is not available in this build".into()); }
+        if local {
+            return Err("Local STT is not available in this build".into());
+        }
         prepare_installed_cleanup(&app, cleanup_required).await
     }
 }
@@ -1104,7 +1202,9 @@ async fn prepare_parakeet_vocabulary(
         // Reloads the model after an idle unload, exactly like a dictation would.
         let engine = match resolve_local_engine(&app, &state).await? {
             LocalEngine::Parakeet(engine) => engine,
-            LocalEngine::Whisper(_) => return Err("Parakeet is not the selected engine".to_string()),
+            LocalEngine::Whisper(_) => {
+                return Err("Parakeet is not the selected engine".to_string())
+            }
         };
         state
             .local_model_last_used_at
@@ -1114,7 +1214,10 @@ async fn prepare_parakeet_vocabulary(
         }
         let dir = models_dir(&app)?.join(transcribe::PARAKEET_CTC_ID);
         let downloaded = !dir.is_dir();
-        log::info!("[stt] Preparing Parakeet vocabulary models in {}", dir.display());
+        log::info!(
+            "[stt] Preparing Parakeet vocabulary models in {}",
+            dir.display()
+        );
         let started = std::time::Instant::now();
         tokio::task::spawn_blocking(move || engine.load_ctc(&dir))
             .await
@@ -1139,7 +1242,10 @@ fn register_local_model(
 ) -> Result<(), String> {
     #[cfg(feature = "local-stt")]
     {
-        log::debug!("[cmd] register_local_model: {} (lazy, not loaded)", filename);
+        log::debug!(
+            "[cmd] register_local_model: {} (lazy, not loaded)",
+            filename
+        );
         let mut guard = state
             .local_model_filename
             .lock()
@@ -1223,8 +1329,10 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
     let state_ptr = Box::leak(Box::new(state_ptr));
 
     unsafe {
-        let objc_get_class: unsafe extern "C" fn(*const u8) -> *const c_void = fnkey_ffi::objc_getClass;
-        let sel_register: unsafe extern "C" fn(*const u8) -> *const c_void = fnkey_ffi::sel_registerName;
+        let objc_get_class: unsafe extern "C" fn(*const u8) -> *const c_void =
+            fnkey_ffi::objc_getClass;
+        let sel_register: unsafe extern "C" fn(*const u8) -> *const c_void =
+            fnkey_ffi::sel_registerName;
 
         // Get [NSWorkspace sharedWorkspace]
         let ws_class = objc_get_class(b"NSWorkspace\0".as_ptr());
@@ -1242,9 +1350,16 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
         // Build the notification name: NSWorkspaceDidWakeNotification
         let ns_string_class = objc_get_class(b"NSString\0".as_ptr());
         let str_sel = sel_register(b"stringWithUTF8String:\0".as_ptr());
-        let send_str: unsafe extern "C" fn(*const c_void, *const c_void, *const u8) -> *const c_void =
-            std::mem::transmute(fnkey_ffi::objc_msgSend as *const c_void);
-        let wake_name = send_str(ns_string_class, str_sel, b"NSWorkspaceDidWakeNotification\0".as_ptr());
+        let send_str: unsafe extern "C" fn(
+            *const c_void,
+            *const c_void,
+            *const u8,
+        ) -> *const c_void = std::mem::transmute(fnkey_ffi::objc_msgSend as *const c_void);
+        let wake_name = send_str(
+            ns_string_class,
+            str_sel,
+            b"NSWorkspaceDidWakeNotification\0".as_ptr(),
+        );
 
         // Build the ObjC block for the observer callback
         // Block signature: void (^)(NSNotification *)
@@ -1294,10 +1409,13 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
             // 5. Reset recording state (prevents desync if recording was active during sleep)
             if let Ok(mut rec) = state.recording.lock() {
                 rec.is_recording = false;
-                rec.samples = Vec::new();
+                rec.samples = Default::default();
+                rec.history_audio = None;
+                rec.audio_consent = None;
             }
 
             // 6. Emit system-wake event to frontend
+            history::on_wake(app.clone());
             let _ = app.emit("system-wake", ());
         }
 
@@ -1320,16 +1438,20 @@ fn register_wake_observer(app: &tauri::AppHandle, app_state: &AppState) {
         // [notificationCenter addObserverForName:object:queue:usingBlock:]
         let add_sel = sel_register(b"addObserverForName:object:queue:usingBlock:\0".as_ptr());
         let send_add: unsafe extern "C" fn(
-            *const c_void, *const c_void,
-            *const c_void, *const c_void, *const c_void, *const WakeBlock,
+            *const c_void,
+            *const c_void,
+            *const c_void,
+            *const c_void,
+            *const c_void,
+            *const WakeBlock,
         ) -> *const c_void = std::mem::transmute(fnkey_ffi::objc_msgSend as *const c_void);
 
         let _observer = send_add(
             notification_center,
             add_sel,
             wake_name,
-            std::ptr::null(),   // object: nil (any sender)
-            std::ptr::null(),   // queue: nil (posting thread)
+            std::ptr::null(), // object: nil (any sender)
+            std::ptr::null(), // queue: nil (posting thread)
             block_ptr,
         );
 
@@ -1402,13 +1524,38 @@ pub fn run() {
         .menu(|app| {
             let about = PredefinedMenuItem::about(app, Some("About Linty"), None)?;
             let sep = PredefinedMenuItem::separator(app)?;
-            let reset = MenuItem::with_id(app, "reset-all-data", "Reset All Data...", true, None::<&str>)?;
+            let reset = MenuItem::with_id(
+                app,
+                "reset-all-data",
+                "Reset All Data...",
+                true,
+                None::<&str>,
+            )?;
             let sep2_app = PredefinedMenuItem::separator(app)?;
             let quit = PredefinedMenuItem::quit(app, Some("Quit Linty"))?;
-            let check_updates = MenuItem::with_id(app, "check-for-updates", "Check for Updates...", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
-            let app_submenu =
-                Submenu::with_items(app, "Linty", true, &[&about, &check_updates, &sep, &settings, &reset, &sep2_app, &quit])?;
+            let check_updates = MenuItem::with_id(
+                app,
+                "check-for-updates",
+                "Check for Updates...",
+                true,
+                None::<&str>,
+            )?;
+            let settings =
+                MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+            let app_submenu = Submenu::with_items(
+                app,
+                "Linty",
+                true,
+                &[
+                    &about,
+                    &check_updates,
+                    &sep,
+                    &settings,
+                    &reset,
+                    &sep2_app,
+                    &quit,
+                ],
+            )?;
 
             let undo = PredefinedMenuItem::undo(app, None)?;
             let redo = PredefinedMenuItem::redo(app, None)?;
@@ -1426,24 +1573,28 @@ pub fn run() {
 
             Menu::with_items(app, &[&app_submenu, &edit_submenu])
         })
-        .on_menu_event(|app, event| {
-            match event.id.as_ref() {
-                "settings" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                    let _ = app.emit("menu-settings", ());
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "settings" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
                 }
-                "reset-all-data" => { let _ = app.emit("menu-reset-all-data", ()); }
-                "check-for-updates" => { let _ = app.emit("menu-check-for-updates", ()); }
-                _ => {}
+                let _ = app.emit("menu-settings", ());
             }
+            "reset-all-data" => {
+                let _ = app.emit("menu-reset-all-data", ());
+            }
+            "check-for-updates" => {
+                let _ = app.emit("menu-check-for-updates", ());
+            }
+            _ => {}
         })
         .setup(|app| {
             // Version banner, crash marker path and panic hook, before
             // anything else in setup can fail or panic.
             logging::init(app.handle());
+            #[cfg(target_os = "macos")]
+            corrections::start(app.handle().clone());
 
             audio_input::init(app.handle())?;
             // Tray icon (menu, engine selector, status)
@@ -1474,6 +1625,7 @@ pub fn run() {
             }
 
             // Start resource watchdog (auto-recovery from CPU overload)
+            history::initialize(app.handle().clone());
             watchdog::start(app.handle().clone());
 
             Ok(())
@@ -1508,6 +1660,11 @@ pub fn run() {
             history::history_corrections,
             history::history_add_correction,
             history::history_export,
+            history::history_set_save_audio,
+            history::history_audio,
+            history::history_delete_audio,
+            history::history_export_audio,
+            history::history_discard_pending_audio,
             start_recording,
             credentials::get_groq_api_key,
             credentials::set_groq_api_key,
@@ -1519,6 +1676,7 @@ pub fn run() {
             transcribe_buffer,
             transcribe_buffer_cloud,
             paste_text,
+            stop_correction_watch,
             snapshot_clipboard,
             restore_clipboard,
             write_transient_text,
@@ -1547,6 +1705,7 @@ pub fn run() {
             capsule::show_capsule,
             capsule::hide_capsule,
             capsule::emit_capsule_state,
+            capsule::show_correction_feedback,
             capsule::play_capsule_sound,
         ])
         .run(tauri::generate_context!())

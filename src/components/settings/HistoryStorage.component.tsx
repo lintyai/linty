@@ -86,7 +86,7 @@ export function HistoryStorage() {
         <HistoryStatus />
         <SettingRow
           label="History retention"
-          description="Keep transcriptions on this Mac until you delete them, or choose automatic deletion."
+          description="Keep history until you delete it, or choose a retention period. Automatic cleanup runs at most once every 24 hours while Linty is running, and catches up on next launch. Manual deletion is immediate."
           right={
             <Select<HistoryRetention>
               label="History retention"
@@ -109,7 +109,7 @@ export function HistoryStorage() {
         />
         <SettingRow
           label="Storage location"
-          description="Your searchable archive and corrections are stored only on this Mac."
+          description="Your archive, corrections, and saved recordings are stored on this Mac. History export includes text and metadata; export audio separately from each dictation."
           right={<ValueBadge>On this Mac</ValueBadge>}
         />
         <div className="history-storage-actions">
@@ -141,8 +141,8 @@ export function HistoryStorage() {
         }
         description={
           pending === "clear"
-            ? "This permanently deletes all saved transcriptions, their corrections, and history-based statistics. Your dictionary and settings are kept. Export your history first if you want a copy."
-            : `${pending?.count.toLocaleString() ?? 0} existing transcriptions will be permanently deleted. Transcriptions will also be deleted automatically once they are older than ${pending?.days ?? 0} days. Their corrections and statistics will be removed too.`
+            ? "This permanently deletes all saved transcriptions, recordings, corrections, and history-based statistics. Your dictionary and settings are kept. Export anything you want to keep first."
+            : `${pending?.count.toLocaleString() ?? 0} existing transcriptions will be permanently deleted now. After that, a daily cleanup deletes history older than ${pending?.days ?? 0} days, including recordings, corrections, and statistics. Expired history may remain until the next cleanup or launch.`
         }
         confirmLabel={pending === "clear" ? "Clear history" : "Apply retention"}
       />

@@ -145,7 +145,7 @@ export const SETTINGS_SECTIONS = [
     description: "Understand and control what Linty saves.",
     icon: Shield,
     keywords:
-      "history retention storage location attribution dictionary learning corrections",
+      "history retention storage location attribution dictionary learning corrections audio recording voice save consent privacy",
   },
 ] as const;
 

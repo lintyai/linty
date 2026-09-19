@@ -20,8 +20,8 @@ export function StatusBar() {
   const detail = status === "error" ? error || "Transcription failed"
     : preparation === "error" ? "Preparation failed. Try dictating again."
     : !ready && !recording && !busy ? sttMode === "cloud"
-      ? groqApiKey.trim() ? "Dictation will prepare before recording" : "Add an API key in Speech engine settings"
-      : loadedModelFilename ? "Dictation will prepare before recording" : "Choose or load a model in Speech engine settings"
+      ? groqApiKey.trim() ? "Dictation will prepare while you speak" : "Add an API key in Speech engine settings"
+      : loadedModelFilename ? "Dictation will prepare while you speak" : "Choose or load a model in Speech engine settings"
     : activity;
   return (
     <footer className="status-bar">

@@ -15,6 +15,8 @@ function setupWarmup({ enabled = false, installed = true, mode = 'local' } = {})
   if (mode === 'cloud') qa.secureGroqKey = 'synthetic-test-key';
   qa.warmups = [];
   qa.preparations = [];
+  qa.capsule = [];
+  qa.stopResult = { sample_count: 16000, duration_secs: 1 };
   let warm = false;
   let pending;
   const original = window.__TAURI_INTERNALS__.invoke;
@@ -30,6 +32,7 @@ function setupWarmup({ enabled = false, installed = true, mode = 'local' } = {})
   };
   qa.cooldown = () => { warm = false; qa.emit('model-idle-unloaded'); };
   window.__TAURI_INTERNALS__.invoke = (command, args) => {
+    if (command === 'emit_capsule_state') qa.capsule.push(args);
     if (command === 'prepare_s1_model') { qa.calls.push(command); return prepare(); }
     if (command === 'prepare_dictation') {
       qa.calls.push(command); qa.preparations.push(args);
@@ -37,7 +40,7 @@ function setupWarmup({ enabled = false, installed = true, mode = 'local' } = {})
     }
     if (command === 'stop_recording') {
       qa.calls.push(command);
-      return Promise.resolve({ sample_count: 16000, duration_secs: 1 });
+      return Promise.resolve(qa.stopResult);
     }
     if (command === 'transcribe_buffer') {
       qa.calls.push(command);
@@ -64,6 +67,7 @@ try {
       document.hasFocus = () => false;
       window.__QA__.appStore = (await import('/src/store/app.store.ts')).useAppStore;
       window.__QA__.isRecoveringDictation = (await import('/src/services/dictation-recovery.service.ts')).isRecoveringDictation;
+      window.__QA__.readiness = (await import('/src/services/dictation-preparation.service.ts')).dictationPreparation;
     });
     return page;
   };
@@ -78,22 +82,26 @@ try {
   const release = page => page.evaluate(() => window.__QA__.emit('fnkey-released'));
   const micCalls = page => page.evaluate(() => window.__QA__.calls.filter(c => c === 'start_recording').length);
 
-  // Installed cleanup warms on startup even while disabled; readiness waits.
+  // Startup and recording share warm-up, but the microphone opens immediately.
   let page = await open();
   await page.waitForFunction(() => window.__QA__.warmups.length === 1 && window.__QA__.preparations.length === 1);
   await page.getByRole('button', { name: 'On-device: Preparing. Configure speech engine' }).waitFor();
   assert.equal(await enabled(page), false);
   assert.equal(await page.evaluate(() => window.__QA__.calls.includes('download_s1_model')), false);
   await press(page);
-  await waitStatus(page, 'preparing');
-  assert.equal(await micCalls(page), 0);
+  await waitStatus(page, 'recording');
+  assert.equal(await micCalls(page), 1);
   assert.equal(await page.evaluate(() => window.__QA__.preparations.length), 1, 'Startup and dictation share preparation');
+  await page.waitForFunction(() => window.__QA__.appStore.getState().recordingDuration > 0);
   await release(page);
-  await waitStatus(page, 'idle');
+  await waitStatus(page, 'preparing');
+  assert.equal(await page.evaluate(() => window.__QA__.appStore.getState().isRecording), false, 'Release closes the microphone while warm-up continues');
+  assert.equal(await page.evaluate(() => window.__QA__.capsule.at(-1).state), 'preparing');
+  assert.equal(await page.evaluate(() => window.__QA__.calls.includes('transcribe_buffer')), false, 'Audio waits for preparation');
   await page.evaluate(() => window.__QA__.warmups[0].resolve());
-  await page.getByRole('button', { name: 'On-device: Ready. Configure speech engine' }).waitFor();
-  assert.equal(await micCalls(page), 0, 'Late readiness must never start a released recording');
-  assert.equal(await page.evaluate(() => window.__QA__.calls.includes('paste_text')), false);
+  await waitStatus(page, 'done');
+  assert.equal(await micCalls(page), 1, 'Preparation completion never reopens the microphone');
+  assert.equal(await page.evaluate(() => window.__QA__.calls.filter(c => c === 'paste_text').length), 1);
 
   // Both the first and second actual dictations use the already warm instance.
   for (let i = 0; i < 2; i++) {
@@ -101,21 +109,23 @@ try {
     await release(page); await waitStatus(page, 'done');
   }
   assert.equal(await page.evaluate(() => window.__QA__.warmups.length), 1);
-  assert.equal(await page.evaluate(() => window.__QA__.calls.filter(c => c === 'paste_text').length), 2);
+  assert.equal(await page.evaluate(() => window.__QA__.calls.filter(c => c === 'paste_text').length), 3);
 
-  // An idle reload waits before capture. Failure is visible and retryable.
+  // After idle, capture overlaps loading. A failed post-stop wait is retryable.
   await page.evaluate(() => window.__QA__.cooldown());
-  await press(page); await waitStatus(page, 'preparing');
+  await press(page); await waitStatus(page, 'recording');
   await page.waitForFunction(() => window.__QA__.warmups.length === 2);
-  assert.equal(await micCalls(page), 2);
+  assert.equal(await micCalls(page), 4);
+  await release(page); await waitStatus(page, 'preparing');
   await page.evaluate(() => window.__QA__.warmups[1].reject(new Error('Synthetic preparation failure')));
   await waitStatus(page, 'error');
   await page.waitForFunction(() => !window.__QA__.isRecoveringDictation());
   await release(page);
-  await press(page); await waitStatus(page, 'preparing');
+  await press(page); await waitStatus(page, 'recording');
   await page.waitForFunction(() => window.__QA__.warmups.length === 3);
   await page.evaluate(() => window.__QA__.warmups[2].resolve());
-  await waitStatus(page, 'recording');
+  await page.waitForFunction(() => window.__QA__.readiness.getSnapshot() === 'ready');
+  assert.equal(await page.evaluate(() => window.__QA__.appStore.getState().status), 'recording', 'Background completion keeps listening');
   await release(page); await waitStatus(page, 'done');
 
   // Enabling cleanup still waits for preparation and preserves mode on failure.
@@ -169,23 +179,82 @@ try {
   await page.getByRole('button', { name: 'Cloud: Ready. Configure speech engine' }).waitFor();
   await page.close();
 
-  // A model switch finishing during preparation cannot leave capture using
+  // A model switch finishing during preparation cannot leave transcription using
   // the old prepared selection.
   page = await open();
   await page.waitForFunction(() => window.__QA__.preparations.length === 1);
-  await press(page); await waitStatus(page, 'preparing');
+  await press(page); await waitStatus(page, 'recording');
+  await release(page); await waitStatus(page, 'preparing');
   await page.evaluate(async () => {
     (await import('/src/store/app.store.ts')).useAppStore.getState().setLoadedModelFilename('parakeet-tdt-0.6b-v3');
     window.__QA__.warmups[0].resolve();
   });
-  await waitStatus(page, 'recording');
+  await waitStatus(page, 'done');
   assert.equal(await page.evaluate(() => window.__QA__.preparations.at(-1).filename), 'parakeet-tdt-0.6b-v3');
   assert.equal(await micCalls(page), 1);
+  await page.close();
+
+  // Empty audio closes capture without waiting or pasting after a late warm-up.
+  page = await open();
+  await page.waitForFunction(() => window.__QA__.warmups.length === 1);
+  await page.evaluate(() => { window.__QA__.stopResult = { sample_count: 0, duration_secs: 0 }; });
+  await press(page); await waitStatus(page, 'recording');
+  await release(page); await waitStatus(page, 'idle');
+  await page.evaluate(() => window.__QA__.warmups[0].resolve());
+  await page.getByRole('button', { name: 'On-device: Ready. Configure speech engine' }).waitFor();
+  assert.equal(await micCalls(page), 1);
+  assert.equal(await page.evaluate(() => window.__QA__.calls.includes('transcribe_buffer')), false);
+  assert.equal(await page.evaluate(() => window.__QA__.calls.includes('paste_text')), false);
+  assert.equal(await page.evaluate(() => window.__QA__.appStore.getState().status), 'idle');
+  await page.close();
+
+  // A background failure leaves the microphone running; stop retries readiness.
+  page = await open();
+  await press(page); await waitStatus(page, 'recording');
+  await page.waitForFunction(() => window.__QA__.warmups.length === 1);
+  await page.evaluate(() => window.__QA__.warmups[0].reject(new Error('Background warm-up failed')));
+  await page.waitForFunction(() => window.__QA__.readiness.getSnapshot() === 'error');
+  assert.equal(await page.evaluate(() => window.__QA__.appStore.getState().isRecording), true);
+  await release(page); await waitStatus(page, 'preparing');
+  await page.waitForFunction(() => window.__QA__.warmups.length === 2);
+  await page.evaluate(() => window.__QA__.warmups[1].resolve());
+  await waitStatus(page, 'done');
+  assert.equal(await micCalls(page), 1);
+  await page.close();
+
+  // Recovery during the post-stop wait suppresses its late result. The next
+  // recording can still use the shared preparation and paste exactly once.
+  page = await open();
+  await press(page); await waitStatus(page, 'recording');
+  await release(page); await waitStatus(page, 'preparing');
+  await page.evaluate(() => window.__QA__.emit('system-wake'));
+  await waitStatus(page, 'error');
+  await page.waitForFunction(() => !window.__QA__.isRecoveringDictation());
+  await press(page); await waitStatus(page, 'recording');
+  await page.evaluate(() => window.__QA__.warmups[0].resolve());
+  assert.equal(await page.evaluate(() => window.__QA__.calls.includes('paste_text')), false);
   await release(page); await waitStatus(page, 'done');
+  assert.equal(await micCalls(page), 2);
+  assert.equal(await page.evaluate(() => window.__QA__.calls.filter(c => c === 'paste_text').length), 1);
+  await page.close();
+
+  // A hung preparation times out after stop, and cannot resume the old session.
+  page = await open();
+  await page.clock.install();
+  await press(page); await waitStatus(page, 'recording');
+  await release(page); await page.clock.runFor(401); await waitStatus(page, 'preparing');
+  await page.clock.runFor(180_001);
+  await waitStatus(page, 'error');
+  await page.waitForFunction(() => !window.__QA__.isRecoveringDictation());
+  assert.match(await page.evaluate(() => window.__QA__.appStore.getState().error), /preparation timed out/);
+  await page.evaluate(() => window.__QA__.warmups[0].resolve());
+  await page.clock.runFor(1);
+  assert.equal(await page.evaluate(() => window.__QA__.calls.includes('transcribe_buffer')), false);
+  assert.equal(await page.evaluate(() => window.__QA__.appStore.getState().isRecording), false);
   await page.close();
 
   assert.deepEqual(errors, []);
-  console.log('Preparation checks passed: installed/absent cleanup, startup readiness, first/second dictation, shared preparation, early release, idle reload, failure/retry and mode changes.');
+  console.log('Preparation checks passed: immediate capture, overlapping warm-up, release before readiness, idle reload, empty audio, failure/retry, cancellation, timeout and mode changes.');
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

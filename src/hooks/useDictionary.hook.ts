@@ -24,7 +24,7 @@ export function useDictionary() {
 
   return {
     entries,
-    /** Suggestions worth showing: seen twice, or a proper noun seen once. */
+    /** Suggestions with native spelling evidence, repeated sightings, or a proper noun. */
     readySuggestions: suggestions.filter(isSuggestionReady),
     /** Everything seen once that is still waiting for a second sighting. */
     pendingSuggestions: suggestions.filter((s) => !isSuggestionReady(s)),

@@ -260,7 +260,8 @@ try {
   await capsule.waitForFunction(() => window.__QA__.calls.includes('plugin:event|listen'));
   await capsule.clock.install();
   await capsule.evaluate(() => window.__QA__.emit('capsule-state', { state: 'preparing' }));
-  await capsule.getByRole('status').getByText('Preparing dictation', { exact: true }).waitFor();
+  await capsule.getByRole('status').getByText('Getting ready', { exact: true }).waitFor();
+  await capsule.locator('.capsule-message').getByText('Getting ready…', { exact: true }).waitFor();
   assert.equal(await capsule.locator('.capsule-recording').count(), 0, 'Preparation must not look like active microphone capture');
   await capsule.screenshot({ path: '/tmp/linty-preparing-capsule.png', animations: 'disabled' });
   await capsule.evaluate(() => window.__QA__.emit('capsule-state',{state:'error',error:'Add a Groq API key in Settings → Speech engine.'}));

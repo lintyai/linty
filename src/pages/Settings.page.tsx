@@ -45,6 +45,7 @@ import { ProcessingDetails } from "@/components/settings/ProcessingDetails.compo
 import { ThemePreview } from "@/components/settings/ThemePreview.component";
 import { BrandMark } from "@/components/shared/BrandMark.component";
 import { HistoryStorage } from "@/components/settings/HistoryStorage.component";
+import { AudioStorage } from "@/components/settings/AudioStorage.component";
 import { modelLabel } from "@/lib/model-labels.util";
 import { Reformatting } from "@/components/settings/Reformatting.component";
 import type { SttMode, ThemePreference } from "@/store/slices/settings.slice";
@@ -678,7 +679,7 @@ function PrivacySection() {
             enabled={autoLearnWords}
             onChange={(enabled) => savePreference(saveAutoLearnWords(enabled))}
             label="Learn new words automatically"
-            description="Add a correction to the dictionary without asking once it has been seen twice, or once for names."
+            description="Save reusable spelling corrections automatically. Verified spelling fixes in other apps can be learned after one edit; History corrections need two sightings, or one for names."
           />
         </div>
         <Toggle
@@ -687,7 +688,7 @@ function PrivacySection() {
             savePreference(saveObserveCorrections(enabled))
           }
           label="Learn from corrections in other apps"
-          description="For a minute after each paste, notice words you fix in the field you dictated into. Uses the Accessibility permission Linty already has; the field’s text is compared in memory and never saved. Works in most apps, not all."
+          description="Watch edits in supported text fields for up to two minutes after dictation. Uses Accessibility permission and compares text in memory; the full field is never saved. Verified corrections are collected when you finish editing. Some apps and terminal fields are unsupported."
         />
         <div className="pb-4">
           <button
@@ -698,6 +699,7 @@ function PrivacySection() {
           </button>
         </div>
       </SectionCard>
+      <AudioStorage />
       <HistoryStorage />
       <div className="rounded-xl border border-border-subtle bg-bg-elevated px-4 py-3 text-[12px] leading-relaxed text-text-secondary">
         App attribution records only the app name and identifier, once per

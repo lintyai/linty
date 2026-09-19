@@ -1,57 +1,22 @@
-//! Learn from corrections made in other apps.
-//!
-//! After Linty pastes a dictation, watch the focused text field through the
-//! Accessibility API and report the word-level changes the person makes inside
-//! the pasted span. The frontend stores them exactly like an edit made in
-//! History (`correction-observed` event).
-//!
-//! Reads only. The field's text is compared in memory and dropped; only the
-//! changed words leave this module. Off unless "Learn from corrections in other
-//! apps" is on in Settings → Privacy & storage. Coverage is best-effort: native
-//! AppKit fields and most browsers expose their text, some editors do not.
+//! Native correction capture: one retained field, one editing session, one final
+//! batch. Unsupported or uncertain captures are discarded without prompting.
+mod accessibility;
+mod diff;
+mod session;
 
-use std::ffi::{c_void, CStr};
-use std::ops::Range;
-use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
-
-use cocoa::base::{id, nil};
-use cocoa::foundation::NSString;
-use objc::runtime::Object;
-use objc::{class, msg_send, sel, sel_impl};
+use accessibility::{InputMonitor, Observer, Target};
 use serde::Serialize;
-use tauri::{Emitter, Manager};
+use session::{EditingSession, InputState, Outcome, Snapshot};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    mpsc, OnceLock,
+};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tauri::Emitter;
 
-use crate::state::AppState;
-
-#[link(name = "ApplicationServices", kind = "framework")]
-extern "C" {
-    fn AXUIElementCreateSystemWide() -> *mut c_void;
-    fn AXUIElementCopyAttributeValue(
-        element: *mut c_void,
-        attribute: *const c_void,
-        value: *mut *const c_void,
-    ) -> i32;
-    fn AXUIElementGetPid(element: *mut c_void, pid: *mut i32) -> i32;
-}
-
-#[link(name = "CoreFoundation", kind = "framework")]
-extern "C" {
-    fn CFRelease(cf: *const c_void);
-    fn CFGetTypeID(cf: *const c_void) -> usize;
-    fn CFStringGetTypeID() -> usize;
-}
-
-/// How long after a paste the field is watched.
-const WATCH_SECS: u64 = 60;
-const POLL: Duration = Duration::from_millis(1000);
-/// Let the target app apply the Cmd+V before the first read, and retry a few times.
-const SETTLE_MS: u64 = 400;
-const FIRST_READ_ATTEMPTS: u32 = 4;
-/// Skip whole documents (a long note or an editor buffer).
-const MAX_DIFF_CHARS: usize = 20_000;
-const MAX_MISSES: u8 = 3;
-const LINTY_BUNDLE_ID: &str = "ai.linty.desktop";
+const POLL: Duration = Duration::from_millis(120);
+static SENDER: OnceLock<mpsc::Sender<Command>> = OnceLock::new();
+static NEXT_PASTE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -59,412 +24,266 @@ pub struct ObservedApplication {
     pub name: String,
     pub bundle_id: Option<String>,
 }
-
-/// One word-level change, in the shape the frontend's `CorrectionPair` expects.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct ObservedPair {
     pub kind: &'static str,
     pub from: String,
     pub to: String,
 }
-
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ObservedCorrection {
     pub transcript_id: String,
-    pub pasted: String,
-    /// Words in the pasted text; the denominator for corrections per 100 words.
     pub word_count: usize,
     pub application: ObservedApplication,
     pub pairs: Vec<ObservedPair>,
-    /// Seconds between the paste and the last change seen.
     pub seconds_after_paste: u64,
 }
-
-/// What the Accessibility API tells us about the element with keyboard focus.
-struct FocusSnapshot {
-    pid: i32,
-    app: String,
-    bundle: Option<String>,
-    /// Text value, when the element exposes one as a string.
-    value: Option<String>,
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ObservedBatch {
+    batch_id: String,
+    corrections: Vec<ObservedCorrection>,
 }
 
-/// Owned CFType that releases itself.
-struct Cf(*const c_void);
-impl Drop for Cf {
-    fn drop(&mut self) {
-        if !self.0.is_null() {
-            // SAFETY: the pointer came from a Copy* call, which hands us +1.
-            unsafe { CFRelease(self.0) };
-        }
+enum Command {
+    Begin(u64, Option<Target>, mpsc::SyncSender<()>),
+    Pasted(u64, Option<(String, String)>),
+    Stop,
+}
+
+pub fn start(app: tauri::AppHandle) {
+    let (send, receive) = mpsc::channel();
+    if SENDER.set(send).is_err() {
+        return;
+    }
+    if let Err(error) = std::thread::Builder::new()
+        .name("correction-session".into())
+        .spawn(move || run(app, receive))
+    {
+        log::warn!("[corrections] controller unavailable: {error}");
     }
 }
 
-/// SAFETY for the FFI helpers below: AXUIElement copy calls are documented as
-/// thread-safe reads; every CF object received is released via `Cf`, and the
-/// NSString attribute names are owned (+1) and released explicitly.
-unsafe fn attr(element: *mut c_void, name: &str) -> Option<Cf> {
-    let key: id = NSString::alloc(nil).init_str(name);
-    let mut out: *const c_void = std::ptr::null();
-    let err = AXUIElementCopyAttributeValue(element, key as *const c_void, &mut out);
-    let _: () = msg_send![key, release];
-    if err != 0 || out.is_null() {
-        None
-    } else {
-        Some(Cf(out))
-    }
-}
-
-unsafe fn cf_string(cf: &Cf) -> Option<String> {
-    if CFGetTypeID(cf.0) != CFStringGetTypeID() {
+/// Pause observation BEFORE posting Cmd+V. The controller never interprets
+/// Linty's next insertion as a user correction, even when AX reads are slow.
+pub fn prepare_paste(app: &tauri::AppHandle, observe: bool) -> Option<u64> {
+    let target = observe.then(|| Target::focused(app)).flatten();
+    let id = NEXT_PASTE.fetch_add(1, Ordering::Relaxed);
+    let (send, receive) = mpsc::sync_channel(1);
+    SENDER.get()?.send(Command::Begin(id, target, send)).ok()?;
+    if receive.recv_timeout(Duration::from_secs(2)).is_err() {
+        stop();
         return None;
     }
-    // CFString is toll-free bridged to NSString.
-    let utf8: *const std::os::raw::c_char = msg_send![cf.0 as id, UTF8String];
-    if utf8.is_null() {
-        return None;
-    }
-    Some(CStr::from_ptr(utf8).to_string_lossy().into_owned())
+    Some(id)
 }
-
-unsafe fn app_identity(pid: i32) -> (String, Option<String>) {
-    let app: *mut Object =
-        msg_send![class!(NSRunningApplication), runningApplicationWithProcessIdentifier: pid];
-    if app.is_null() {
-        return (format!("pid {}", pid), None);
+pub fn complete_paste(id: Option<u64>, insertion: Option<(String, String)>) {
+    if let (Some(send), Some(id)) = (SENDER.get(), id) {
+        let _ = send.send(Command::Pasted(id, insertion));
     }
-    let name: *mut Object = msg_send![app, localizedName];
-    let bundle: *mut Object = msg_send![app, bundleIdentifier];
-    let to_string = |s: *mut Object| -> Option<String> {
-        if s.is_null() {
-            return None;
-        }
-        let utf8: *const std::os::raw::c_char = msg_send![s, UTF8String];
-        (!utf8.is_null()).then(|| CStr::from_ptr(utf8).to_string_lossy().into_owned())
-    };
-    (
-        to_string(name).unwrap_or_else(|| format!("pid {}", pid)),
-        to_string(bundle),
-    )
 }
-
-fn snapshot_focus() -> Option<FocusSnapshot> {
-    // SAFETY: see the note above `attr`. Runs on a background thread inside its
-    // own autorelease pool; the objects touched are copied out before the drain.
-    unsafe {
-        let pool: *mut Object = msg_send![class!(NSAutoreleasePool), new];
-        let result = (|| {
-            let system = Cf(AXUIElementCreateSystemWide() as *const c_void);
-            let focused = attr(system.0 as *mut c_void, "AXFocusedUIElement")?;
-            let element = focused.0 as *mut c_void;
-            let mut pid: i32 = 0;
-            if AXUIElementGetPid(element, &mut pid) != 0 {
-                return None;
-            }
-            let (app, bundle) = app_identity(pid);
-            let value = attr(element, "AXValue").and_then(|v| cf_string(&v));
-            Some(FocusSnapshot {
-                pid,
-                app,
-                bundle,
-                value,
-            })
-        })();
-        let _: () = msg_send![pool, drain];
-        result
+pub fn stop() {
+    if let Some(send) = SENDER.get() {
+        let _ = send.send(Command::Stop);
     }
 }
 
-/// Start watching the focused field after a paste. `generation` is the value the
-/// caller bumped in `AppState`; a later paste bumps it again, which ends this
-/// watch while still reporting whatever it saw.
-pub fn watch_after_paste(app: tauri::AppHandle, generation: u64, transcript_id: String, pasted: String) {
-    let spawned = std::thread::Builder::new()
-        .name("correction-watch".into())
-        .spawn(move || watch(app, generation, transcript_id, pasted));
-    if let Err(e) = spawned {
-        log::warn!("[corrections] could not start the watch: {}", e);
-    }
+struct Active {
+    target: Target,
+    observer: Option<Observer>,
+    input: Option<InputMonitor>,
+    session: EditingSession,
 }
-
-fn is_current(app: &tauri::AppHandle, generation: u64) -> bool {
-    app.state::<AppState>()
-        .correction_watch_generation
-        .load(Ordering::SeqCst)
-        == generation
-}
-
-/// Read the focused field and find the pasted words in it.
-fn locate_paste(pasted_words: &[String]) -> Result<(FocusSnapshot, String, Vec<String>, usize), &'static str> {
-    let snap = snapshot_focus().ok_or("no focused element")?;
-    if snap.bundle.as_deref() == Some(LINTY_BUNDLE_ID) {
-        return Err("focus is on Linty itself");
+impl Active {
+    fn input(&self) -> InputState {
+        self.input
+            .as_ref()
+            .map(InputMonitor::snapshot)
+            .unwrap_or_default()
     }
-    let Some(value) = snap.value.clone() else {
-        return Err("the field does not expose its text");
-    };
-    if value.chars().count() > MAX_DIFF_CHARS {
-        return Err("the field is too long to diff");
-    }
-    let base = words(&value);
-    let start = find_span(&base, pasted_words).ok_or("pasted text not found in the field")?;
-    Ok((snap, value, base, start))
-}
-
-fn watch(app: tauri::AppHandle, generation: u64, transcript_id: String, pasted: String) {
-    let pasted_words = words(&pasted);
-    if pasted_words.is_empty() {
-        return;
-    }
-    // The target app may take a moment to apply the Cmd+V: retry the first read briefly.
-    let mut located = None;
-    let mut reason = "no focused element";
-    for _ in 0..FIRST_READ_ATTEMPTS {
-        std::thread::sleep(Duration::from_millis(SETTLE_MS));
-        if !is_current(&app, generation) {
-            return;
-        }
-        match locate_paste(&pasted_words) {
-            Ok(found) => {
-                located = Some(found);
-                break;
-            }
-            Err(why) => reason = why,
-        }
-    }
-    let Some((first, value0, base, start)) = located else {
-        log::debug!("[corrections] nothing to learn from this paste: {}", reason);
-        return;
-    };
-    let span = start..start + pasted_words.len();
-
-    let started = Instant::now();
-    let mut latest = value0;
-    let mut changed_at: Option<Instant> = None;
-    let mut misses = 0u8;
-    while started.elapsed() < Duration::from_secs(WATCH_SECS) {
-        std::thread::sleep(POLL);
-        if !is_current(&app, generation) {
-            break;
-        }
-        let Some(snap) = snapshot_focus() else {
-            misses += 1;
-            if misses >= MAX_MISSES {
-                break;
-            }
-            continue;
-        };
-        misses = 0;
-        if snap.pid != first.pid {
-            break;
-        }
-        let Some(current) = snap.value else {
-            continue;
-        };
-        if current == latest {
-            continue;
-        }
-        // A field that empties was submitted; keep what was seen before it.
-        if current.trim().is_empty() || current.chars().count() > MAX_DIFF_CHARS {
-            break;
-        }
-        latest = current;
-        changed_at = Some(Instant::now());
-    }
-    let Some(changed_at) = changed_at else {
-        return;
-    };
-    let pairs = span_edits(&base, &words(&latest), &span);
-    if pairs.is_empty() {
-        return;
-    }
-    log::info!("[corrections] {} change(s) observed", pairs.len());
-    let correction = ObservedCorrection {
-        transcript_id,
-        word_count: pasted_words.len(),
-        pasted,
-        application: ObservedApplication {
-            name: first.app,
-            bundle_id: first.bundle,
-        },
-        pairs,
-        seconds_after_paste: changed_at.duration_since(started).as_secs(),
-    };
-    if let Err(e) = app.emit("correction-observed", &correction) {
-        log::warn!("[corrections] could not report the correction: {}", e);
-    }
-}
-
-fn words(text: &str) -> Vec<String> {
-    text.split_whitespace().map(String::from).collect()
-}
-
-/// Lower-case, punctuation-stripped form used when an app reformats the paste
-/// (smart quotes, auto-capitalisation) so the exact words no longer match.
-fn loose(word: &str) -> String {
-    word.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()
-}
-
-/// Index of the pasted words inside the field's words, searching from the end
-/// because the paste is usually the newest text in the field.
-fn find_span(field: &[String], pasted: &[String]) -> Option<usize> {
-    if pasted.is_empty() || field.len() < pasted.len() {
-        return None;
-    }
-    let mut candidates = (0..=field.len() - pasted.len()).rev();
-    if let Some(i) = candidates.clone().find(|&i| field[i..i + pasted.len()] == *pasted) {
-        return Some(i);
-    }
-    let pasted_loose: Vec<String> = pasted.iter().map(|w| loose(w)).collect();
-    candidates.find(|&i| {
-        field[i..i + pasted.len()]
-            .iter()
-            .zip(&pasted_loose)
-            .all(|(a, b)| loose(a) == *b)
-    })
-}
-
-#[derive(Debug, PartialEq)]
-struct Edit {
-    /// Index in the original words where the change starts (insertions: before this word).
-    at: usize,
-    kind: &'static str,
-    from: String,
-    to: String,
-}
-
-/// Changes inside the pasted span only: typing before or after the paste is not a correction.
-fn span_edits(before: &[String], after: &[String], span: &Range<usize>) -> Vec<ObservedPair> {
-    word_diff(before, after)
-        .into_iter()
-        .filter(|e| match e.kind {
-            "insertion" => e.at > span.start && e.at < span.end,
-            _ => span.contains(&e.at),
-        })
-        .map(|e| ObservedPair {
-            kind: e.kind,
-            from: e.from,
-            to: e.to,
-        })
-        .collect()
-}
-
-/// Word-level diff (longest common subsequence). Adjacent runs of deletions and
-/// insertions of equal length are paired one to one, because they are almost
-/// always word-for-word fixes; unequal runs become one substitution.
-fn word_diff(a: &[String], b: &[String]) -> Vec<Edit> {
-    let (n, m) = (a.len(), b.len());
-    if n > 2000 || m > 2000 {
-        return Vec::new();
-    }
-    let mut lcs = vec![vec![0u16; m + 1]; n + 1];
-    for i in (0..n).rev() {
-        for j in (0..m).rev() {
-            lcs[i][j] = if a[i] == b[j] {
-                lcs[i + 1][j + 1] + 1
-            } else {
-                lcs[i + 1][j].max(lcs[i][j + 1])
-            };
-        }
-    }
-    let mut edits = Vec::new();
-    let mut dels: Vec<String> = Vec::new();
-    let mut ins: Vec<String> = Vec::new();
-    let mut run_at = 0usize;
-    let flush = |at: usize, dels: &mut Vec<String>, ins: &mut Vec<String>, edits: &mut Vec<Edit>| {
-        if !dels.is_empty() && !ins.is_empty() {
-            if dels.len() == ins.len() {
-                for (k, (from, to)) in dels.drain(..).zip(ins.drain(..)).enumerate() {
-                    edits.push(Edit { at: at + k, kind: "substitution", from, to });
-                }
-            } else {
-                edits.push(Edit { at, kind: "substitution", from: dels.join(" "), to: ins.join(" ") });
-            }
-        } else if !dels.is_empty() {
-            edits.push(Edit { at, kind: "deletion", from: dels.join(" "), to: String::new() });
-        } else if !ins.is_empty() {
-            edits.push(Edit { at, kind: "insertion", from: String::new(), to: ins.join(" ") });
-        }
-        dels.clear();
-        ins.clear();
-    };
-    let (mut i, mut j) = (0, 0);
-    while i < n && j < m {
-        if a[i] == b[j] {
-            flush(run_at, &mut dels, &mut ins, &mut edits);
-            i += 1;
-            j += 1;
+    fn wait(&self) {
+        if let Some(observer) = &self.observer {
+            observer.wait();
         } else {
-            if dels.is_empty() && ins.is_empty() {
-                run_at = i;
-            }
-            if lcs[i + 1][j] >= lcs[i][j + 1] {
-                dels.push(a[i].clone());
-                i += 1;
-            } else {
-                ins.push(b[j].clone());
-                j += 1;
-            }
+            std::thread::sleep(POLL);
         }
     }
-    if i < n || j < m {
-        if dels.is_empty() && ins.is_empty() {
-            run_at = i;
+    fn sample(&mut self) -> Outcome {
+        let focused = self.target.is_focused();
+        let composing = self.target.is_composing();
+        let before = self.input();
+        let read_started = Instant::now();
+        let value = if composing { None } else { self.target.read() };
+        // NSEvent delivery is asynchronous. Settle queued input before deciding
+        // whether a changed value is editing or the host's response to Return.
+        if value
+            .as_ref()
+            .is_some_and(|v| v != &self.session.pending.latest)
+        {
+            std::thread::sleep(POLL);
         }
-        dels.extend(a[i..].iter().cloned());
-        ins.extend(b[j..].iter().cloned());
+        let after = self.input();
+        self.session.observe(Snapshot {
+            value,
+            focused,
+            composing,
+            before,
+            after,
+            read_started,
+            now: Instant::now(),
+            can_submit: self.input.is_some(),
+        })
     }
-    flush(run_at, &mut dels, &mut ins, &mut edits);
-    edits
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{find_span, span_edits, word_diff, words, Edit, ObservedPair};
-
-    fn sub(at: usize, from: &str, to: &str) -> Edit {
-        Edit { at, kind: "substitution", from: from.into(), to: to.into() }
+fn emit(app: &tauri::AppHandle, active: Active) {
+    let corrections = active.session.finish(active.target.application.clone());
+    if corrections.is_empty() {
+        return;
     }
-
-    #[test]
-    fn pairs_adjacent_delete_and_insert_as_substitutions() {
-        let edits = word_diff(
-            &words("names like Tari, Zustan and Groke are spelled"),
-            &words("names like Tauri, Zustand and Groq are spelled"),
-        );
-        assert_eq!(edits, vec![sub(2, "Tari,", "Tauri,"), sub(3, "Zustan", "Zustand"), sub(5, "Groke", "Groq")]);
+    log::info!(
+        "[corrections] verified editing session: {} dictation(s)",
+        corrections.len()
+    );
+    let batch_id = format!(
+        "native-{}-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+        NEXT_PASTE.fetch_add(1, Ordering::Relaxed)
+    );
+    if let Err(error) = app.emit(
+        "correction-observed",
+        ObservedBatch {
+            batch_id,
+            corrections,
+        },
+    ) {
+        log::warn!("[corrections] could not report saved candidate batch: {error}");
     }
+}
 
-    #[test]
-    fn reports_insertions_and_deletions_with_positions() {
-        assert_eq!(
-            word_diff(&words("a b c"), &words("a b c d")),
-            vec![Edit { at: 3, kind: "insertion", from: "".into(), to: "d".into() }]
-        );
-        assert_eq!(
-            word_diff(&words("a b c"), &words("a c")),
-            vec![Edit { at: 1, kind: "deletion", from: "b".into(), to: "".into() }]
-        );
-        assert!(word_diff(&words("same text"), &words("same text")).is_empty());
-    }
-
-    #[test]
-    fn finds_the_pasted_span_even_when_the_app_reformats_it() {
-        let field = words("Earlier text. Let's meet at tauri hq tomorrow.");
-        assert_eq!(find_span(&field, &words("Let's meet at tauri hq tomorrow.")), Some(2));
-        assert_eq!(find_span(&field, &words("let's meet at Tauri HQ tomorrow")), Some(2));
-        assert_eq!(find_span(&field, &words("something else")), None);
-    }
-
-    #[test]
-    fn keeps_only_changes_inside_the_pasted_span() {
-        let before = words("Hi team, ship the parakeet build today please");
-        let after = words("Hello team, ship the Parakeet build today please and thanks");
-        let span = 2..8; // "ship the parakeet build today please"
-        assert_eq!(
-            span_edits(&before, &after, &span),
-            vec![ObservedPair { kind: "substitution", from: "parakeet".into(), to: "Parakeet".into() }]
-        );
+fn run(app: tauri::AppHandle, receive: mpsc::Receiver<Command>) {
+    let mut active: Option<Active> = None;
+    let mut preparing: Option<(u64, Option<Target>, Instant)> = None;
+    let mut queued = None;
+    loop {
+        let command = if queued.is_some() {
+            queued.take()
+        } else if active.is_some() && preparing.is_none() {
+            match receive.try_recv() {
+                Ok(command) => Some(command),
+                Err(mpsc::TryRecvError::Disconnected) => break,
+                Err(mpsc::TryRecvError::Empty) => None,
+            }
+        } else {
+            match receive.recv_timeout(POLL) {
+                Ok(command) => Some(command),
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => None,
+            }
+        };
+        match command {
+            Some(Command::Stop) => {
+                active = None;
+                preparing = None;
+            }
+            Some(Command::Begin(id, target, reply)) => {
+                let same = active
+                    .as_ref()
+                    .zip(target.as_ref())
+                    .is_some_and(|(a, t)| a.target.same_field(t));
+                if !same {
+                    // A different field is a boundary only when the retained
+                    // field is readable and a settled focus departure is proven.
+                    if let Some(mut old) = active.take() {
+                        if old.sample() == Outcome::Finish {
+                            emit(&app, old);
+                        }
+                    }
+                }
+                preparing = Some((id, target, Instant::now()));
+                let _ = reply.send(());
+            }
+            Some(Command::Pasted(id, insertion)) => {
+                if preparing.as_ref().is_none_or(|p| p.0 != id) {
+                    continue;
+                }
+                let (_, target, _) = preparing.take().unwrap();
+                let Some((target, (transcript_id, pasted))) = target.zip(insertion) else {
+                    active = None;
+                    continue;
+                };
+                // Target includes the bounded pre-paste text and UTF-16 selection.
+                let mut attached = false;
+                for _ in 0..8 {
+                    std::thread::sleep(POLL);
+                    if target.is_focused() != Some(true) || target.is_composing() {
+                        break;
+                    }
+                    let Some(value) = target.read() else {
+                        continue;
+                    };
+                    if active.is_none() {
+                        let Some(input) = InputMonitor::new(&app, target.pid) else {
+                            break;
+                        };
+                        active = Some(Active {
+                            observer: Observer::new(&target),
+                            input: Some(input),
+                            target: target.retained(),
+                            session: EditingSession::new(value.clone()),
+                        });
+                    }
+                    let session = &mut active.as_mut().unwrap().session;
+                    if session.insert(
+                        transcript_id.clone(),
+                        pasted.clone(),
+                        &target.before,
+                        target.selection.clone(),
+                        value,
+                    ) {
+                        attached = true;
+                        break;
+                    }
+                }
+                if !attached {
+                    log::info!(
+                        "[corrections] capture unavailable: insertion could not be verified"
+                    );
+                    active = None;
+                }
+            }
+            None if preparing.is_some() => {
+                if preparing
+                    .as_ref()
+                    .is_some_and(|p| p.2.elapsed() >= Duration::from_secs(5))
+                {
+                    preparing = None;
+                    active = None;
+                }
+            }
+            None => {
+                if let Some(current) = &mut active {
+                    current.wait();
+                    // Process queued paste/stop before reading another value.
+                    if let Ok(command) = receive.try_recv() {
+                        queued = Some(command);
+                        continue;
+                    }
+                    match current.sample() {
+                        Outcome::Continue => {}
+                        Outcome::Finish => {
+                            emit(&app, active.take().unwrap());
+                        }
+                        Outcome::Discard => {
+                            active = None;
+                        }
+                    }
+                }
+            }
+        }
     }
 }

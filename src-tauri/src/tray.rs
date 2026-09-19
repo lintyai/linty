@@ -209,18 +209,32 @@ fn build_menu(app: &tauri::AppHandle, state: &TrayState) -> Result<Menu<tauri::W
     let cloud = CheckMenuItem::with_id(
         app,
         "tray-engine-cloud",
-        engine_label(if state.cloud_ready { "Groq · Cloud".into() } else { "Groq · Cloud (API key required)".into() }, !local_selected, state.cloud_ready),
+        engine_label(
+            if state.cloud_ready {
+                "Groq · Cloud".into()
+            } else {
+                "Groq · Cloud (API key required)".into()
+            },
+            !local_selected,
+            state.cloud_ready,
+        ),
         !busy(state) && state.cloud_ready,
         !local_selected,
         None::<&str>,
     )?;
     let microphone = microphone_menu(app, state.status == "recording")?;
-    let selected_language = state.languages.iter()
+    let selected_language = state
+        .languages
+        .iter()
         .find(|language| language.code == state.transcription_language);
     let language_title = selected_language
         .map(|language| format!("Language · {}", language.label.replace('&', "&&")))
         .unwrap_or_else(|| "Language".into());
-    let language_menu = Submenu::new(app, language_title, !busy(state) && !state.languages.is_empty())?;
+    let language_menu = Submenu::new(
+        app,
+        language_title,
+        !busy(state) && !state.languages.is_empty(),
+    )?;
     for language in &state.languages {
         language_menu.append(&CheckMenuItem::with_id(
             app,
@@ -346,12 +360,7 @@ fn copy_transcript(app: &tauri::AppHandle, id: String) {
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         // Resolve by ID from storage, so deleted/edited records are never copied from a stale menu.
-        let result = crate::history::history_get(
-            app.clone(),
-            app.state::<crate::history::HistoryState>(),
-            id,
-        )
-        .and_then(|record| {
+        let result = crate::history::read_transcript(&app, &id).and_then(|record| {
             let text = record
                 .as_ref()
                 .and_then(|r| r.get("finalText"))
@@ -423,6 +432,19 @@ pub fn init_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
                 copy_transcript(app, id.to_owned());
             }
         }
+    });
+    let handle = app.handle().clone();
+    app.listen("history-invalidated", move |_| {
+        // The webview may be suspended while Linty is in the menu bar. Release
+        // its native transcript previews as soon as storage removes history.
+        handle
+            .state::<TrayMenuState>()
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .recent_transcripts
+            .clear();
+        refresh_menu(&handle);
     });
     let handle = app.handle().clone();
     app.listen("tray-state-changed", move |event| {

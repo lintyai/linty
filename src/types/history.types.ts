@@ -16,6 +16,9 @@ export interface HistorySnapshot {
   correctionCount: number;
   correctionRate: number | null;
   retentionDays: HistoryRetention;
+  saveAudio: boolean;
+  audioCount: number;
+  audioBytes: number;
   revision: number;
 }
 export interface HistoryPageResult {

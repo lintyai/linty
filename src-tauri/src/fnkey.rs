@@ -116,14 +116,14 @@ static TRIGGER_KEYCODE: AtomicU32 = AtomicU32::new(63);
 fn modifier_target(name: &str) -> Option<(u64, u16)> {
     Some(match name {
         "fn" => (NS_EVENT_MODIFIER_FLAG_FUNCTION, 63), // kVK_Function
-        "left-control" => (0x0000_0001, 59),  // NX_DEVICELCTLKEYMASK
-        "left-shift" => (0x0000_0002, 56),    // NX_DEVICELSHIFTKEYMASK
-        "right-shift" => (0x0000_0004, 60),   // NX_DEVICERSHIFTKEYMASK
-        "left-command" => (0x0000_0008, 55),  // NX_DEVICELCMDKEYMASK
-        "right-command" => (0x0000_0010, 54), // NX_DEVICERCMDKEYMASK
-        "left-option" => (0x0000_0020, 58),   // NX_DEVICELALTKEYMASK
-        "right-option" => (0x0000_0040, 61),  // NX_DEVICERALTKEYMASK
-        "right-control" => (0x0000_2000, 62), // NX_DEVICERCTLKEYMASK
+        "left-control" => (0x0000_0001, 59),           // NX_DEVICELCTLKEYMASK
+        "left-shift" => (0x0000_0002, 56),             // NX_DEVICELSHIFTKEYMASK
+        "right-shift" => (0x0000_0004, 60),            // NX_DEVICERSHIFTKEYMASK
+        "left-command" => (0x0000_0008, 55),           // NX_DEVICELCMDKEYMASK
+        "right-command" => (0x0000_0010, 54),          // NX_DEVICERCMDKEYMASK
+        "left-option" => (0x0000_0020, 58),            // NX_DEVICELALTKEYMASK
+        "right-option" => (0x0000_0040, 61),           // NX_DEVICERALTKEYMASK
+        "right-control" => (0x0000_2000, 62),          // NX_DEVICERCTLKEYMASK
         _ => return None,
     })
 }
@@ -131,14 +131,16 @@ fn modifier_target(name: &str) -> Option<(u64, u16)> {
 /// Point the monitor at a different trigger modifier. Called from the
 /// frontend when the user picks a modifier-hold trigger key.
 pub fn set_trigger_modifier(name: &str) -> Result<(), String> {
-    let (mask, keycode) = modifier_target(name)
-        .ok_or_else(|| format!("Unknown trigger modifier: {}", name))?;
+    let (mask, keycode) =
+        modifier_target(name).ok_or_else(|| format!("Unknown trigger modifier: {}", name))?;
     let previous = TRIGGER_MASK.swap(mask, Ordering::SeqCst);
     TRIGGER_KEYCODE.store(keycode as u32, Ordering::SeqCst);
     if previous != mask {
         log::info!(
             "[fnkey] trigger modifier -> {} (mask 0x{:X}, keycode {})",
-            name, mask, keycode
+            name,
+            mask,
+            keycode
         );
     }
     Ok(())
@@ -209,7 +211,9 @@ unsafe extern "C" fn block_invoke(block: *mut FnKeyBlock, event: *const c_void) 
     if count <= 5 {
         log::debug!(
             "[fnkey] event #{} flags=0x{:X} fn={}",
-            count, modifier_flags, fn_pressed
+            count,
+            modifier_flags,
+            fn_pressed
         );
     }
 
@@ -242,7 +246,10 @@ unsafe extern "C" fn block_copy_helper(dst: *mut c_void, src: *const c_void) {
 
 unsafe extern "C" fn block_dispose_helper(_block: *mut c_void) {}
 
-unsafe extern "C" fn local_block_invoke(block: *mut LocalFnKeyBlock, event: *const c_void) -> *const c_void {
+unsafe extern "C" fn local_block_invoke(
+    block: *mut LocalFnKeyBlock,
+    event: *const c_void,
+) -> *const c_void {
     let state = &*(*block).state;
 
     let sel = sel_registerName(b"modifierFlags\0".as_ptr());
@@ -297,16 +304,9 @@ pub fn request_accessibility_permission() -> bool {
 pub fn fn_usage_type() -> Option<i64> {
     const UTF8: u32 = 0x08000100; // kCFStringEncodingUTF8
     unsafe {
-        let key = CFStringCreateWithCString(
-            std::ptr::null(),
-            b"AppleFnUsageType\0".as_ptr(),
-            UTF8,
-        );
-        let app_id = CFStringCreateWithCString(
-            std::ptr::null(),
-            b"com.apple.HIToolbox\0".as_ptr(),
-            UTF8,
-        );
+        let key = CFStringCreateWithCString(std::ptr::null(), b"AppleFnUsageType\0".as_ptr(), UTF8);
+        let app_id =
+            CFStringCreateWithCString(std::ptr::null(), b"com.apple.HIToolbox\0".as_ptr(), UTF8);
         // CFRelease(NULL) crashes — guard before releasing anything.
         if key.is_null() || app_id.is_null() {
             if !key.is_null() {
@@ -327,7 +327,11 @@ pub fn fn_usage_type() -> Option<i64> {
         let mut result = None;
         if CFGetTypeID(value) == CFNumberGetTypeID() {
             let mut n: i64 = 0;
-            if CFNumberGetValue(value, 4 /* kCFNumberSInt64Type */, &mut n as *mut i64 as *mut c_void) {
+            if CFNumberGetValue(
+                value,
+                4, /* kCFNumberSInt64Type */
+                &mut n as *mut i64 as *mut c_void,
+            ) {
                 result = Some(n);
             }
         }
@@ -371,7 +375,9 @@ pub fn reinit_monitor_if_needed(app: AppHandle) {
 
     if !ax_trusted {
         if !NOT_TRUSTED_LOGGED.swap(true, Ordering::SeqCst) {
-            log::debug!("[fnkey] reinit: accessibility not granted — monitor deferred (retrying silently)");
+            log::debug!(
+                "[fnkey] reinit: accessibility not granted — monitor deferred (retrying silently)"
+            );
         }
         return;
     }
@@ -504,9 +510,7 @@ fn init_monitor(app: AppHandle) {
         });
         let block_ptr = Box::into_raw(block);
 
-        let sel = sel_registerName(
-            b"addGlobalMonitorForEventsMatchingMask:handler:\0".as_ptr(),
-        );
+        let sel = sel_registerName(b"addGlobalMonitorForEventsMatchingMask:handler:\0".as_ptr());
         let send: unsafe extern "C" fn(
             *const c_void,
             *const c_void,
@@ -520,11 +524,15 @@ fn init_monitor(app: AppHandle) {
             log::error!("[fnkey] NSEvent global monitor FAILED");
         } else {
             log::info!("[fnkey] NSEvent global monitor active");
-            if let Ok(mut g) = GLOBAL_MONITOR.lock() { *g = Some(SendPtr(monitor)); }
+            if let Ok(mut g) = GLOBAL_MONITOR.lock() {
+                *g = Some(SendPtr(monitor));
+            }
         }
 
         // Store state pointer for teardown
-        if let Ok(mut g) = GLOBAL_STATE_PTR.lock() { *g = Some(SendStatePtr(state_ptr_global)); }
+        if let Ok(mut g) = GLOBAL_STATE_PTR.lock() {
+            *g = Some(SendStatePtr(state_ptr_global));
+        }
 
         // ── Local monitor (events when app IS focused) ──
 
@@ -545,9 +553,8 @@ fn init_monitor(app: AppHandle) {
         });
         let local_block_ptr = Box::into_raw(local_block);
 
-        let local_sel = sel_registerName(
-            b"addLocalMonitorForEventsMatchingMask:handler:\0".as_ptr(),
-        );
+        let local_sel =
+            sel_registerName(b"addLocalMonitorForEventsMatchingMask:handler:\0".as_ptr());
         let local_send: unsafe extern "C" fn(
             *const c_void,
             *const c_void,
@@ -566,11 +573,15 @@ fn init_monitor(app: AppHandle) {
             log::error!("[fnkey] NSEvent local monitor FAILED");
         } else {
             log::info!("[fnkey] NSEvent local monitor active");
-            if let Ok(mut g) = LOCAL_MONITOR.lock() { *g = Some(SendPtr(local_monitor)); }
+            if let Ok(mut g) = LOCAL_MONITOR.lock() {
+                *g = Some(SendPtr(local_monitor));
+            }
         }
 
         // Store state pointer for teardown
-        if let Ok(mut g) = LOCAL_STATE_PTR.lock() { *g = Some(SendStatePtr(state_ptr_local)); }
+        if let Ok(mut g) = LOCAL_STATE_PTR.lock() {
+            *g = Some(SendStatePtr(state_ptr_local));
+        }
 
         if !monitor.is_null() || !local_monitor.is_null() {
             MONITOR_ACTIVE.store(true, Ordering::SeqCst);

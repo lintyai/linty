@@ -18,6 +18,8 @@ export interface TranscriptRecord {
   transcriptionLanguage?: string;
   speechModelId?: string;
   audioSampleCount?: number;
+  /** Present only when this dictation has an opt-in, locally saved recording. */
+  audio?: { format: "wav"; sampleRate: number; channels: number; bitsPerSample: number; bytes: number };
   deliveryStatus?: "pasted" | "failed";
   cloudRefinementStatus?: "disabled" | "applied" | "unchanged" | "fallback" | "superseded-by-s1";
   originalWordCount?: number;

@@ -237,7 +237,10 @@ impl Engine {
         let started = Instant::now();
         let check = || -> anyhow::Result<()> {
             anyhow::ensure!(!check_cancelled(), "cancelled");
-            anyhow::ensure!(started.elapsed() < Duration::from_secs(60), "warmup_timeout");
+            anyhow::ensure!(
+                started.elapsed() < Duration::from_secs(60),
+                "warmup_timeout"
+            );
             Ok(())
         };
         self.model.clear_kv_cache();
@@ -270,7 +273,10 @@ impl Engine {
         self.model.clear_kv_cache();
         if result.is_ok() {
             self.warmed_up = true;
-            log::info!("[s1] Inference warm-up complete in {}ms", started.elapsed().as_millis());
+            log::info!(
+                "[s1] Inference warm-up complete in {}ms",
+                started.elapsed().as_millis()
+            );
         }
         result
     }
@@ -550,14 +556,18 @@ pub async fn prepare_s1_model(
         .store(crate::now_epoch_ms(), Ordering::Relaxed);
     let result = tokio::task::spawn_blocking(move || {
         let mut slot = engine.lock().map_err(|e| e.to_string())?;
-        prepare(&mut slot, &dir, || generation.load(Ordering::SeqCst) != expected)
-            .map_err(|e| e.to_string())
+        prepare(&mut slot, &dir, || {
+            generation.load(Ordering::SeqCst) != expected
+        })
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?;
     // Start the idle interval after preparation, even when a slow first load
     // takes a significant part of that interval.
-    state.last_used.store(crate::now_epoch_ms(), Ordering::Relaxed);
+    state
+        .last_used
+        .store(crate::now_epoch_ms(), Ordering::Relaxed);
     result
 }
 
@@ -801,14 +811,18 @@ mod tests {
         assert!(engine.warmed_up);
         let mut slot = Some(engine);
         prepare(&mut slot, &dir, || false).unwrap();
-        let text = "um please send the report on monday and include the budget the timeline and the risks";
+        let text =
+            "um please send the report on monday and include the budget the timeline and the risks";
         let warmed = run(&mut slot, &dir, text, "en", options(), || false);
         assert_ne!(warmed.metrics.status, "fallback");
         assert_eq!(warmed.metrics.model_load_ms, 0.);
         let fresh = run(&mut None, &dir, text, "en", options(), || false);
         assert_ne!(fresh.metrics.status, "fallback");
         assert_eq!(warmed.text, fresh.text);
-        assert_eq!(warmed.metrics.generated_tokens, fresh.metrics.generated_tokens);
+        assert_eq!(
+            warmed.metrics.generated_tokens,
+            fresh.metrics.generated_tokens
+        );
     }
     #[test]
     fn chunking_preserves_unicode_and_bounds() {

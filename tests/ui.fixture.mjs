@@ -96,7 +96,7 @@ export const fixture = ({
     4: dictionary,
   };
   let s1Downloaded = false;
-  const history = { retentionDays: 0, generation: 0, revision: 1 };
+  const history = { retentionDays: 0, generation: 0, revision: 1, saveAudio: false, lastCleanupAt: null };
   const sorted = (records) =>
     [...records].sort(
       (a, b) =>
@@ -186,7 +186,12 @@ export const fixture = ({
     return null;
   };
   const historyCommand = (command, args) => {
-    prune(history.retentionDays);
+    if (history.retentionDays && (history.lastCleanupAt == null || Date.now() - history.lastCleanupAt >= 86400000)) {
+      const revision = history.revision;
+      prune(history.retentionDays);
+      history.lastCleanupAt = Date.now();
+      if (history.revision !== revision) queueMicrotask(() => window.__QA__.emit('history-invalidated'));
+    }
     const records = sorted(stores[2].transcripts);
     const related = stores[3].corrections.filter((c) =>
       records.some((t) => t.transcriptId === c.transcriptId),
@@ -202,6 +207,8 @@ export const fixture = ({
           milestone: milestoneFor(records),
           correctionCount: related.length,
           correctionRate: rate(related, words),
+          audioCount: records.filter((t) => t.audio).length,
+          audioBytes: records.reduce((sum, t) => sum + (t.audio?.bytes ?? 0), 0),
           ...history,
         };
       case "history_query": {
@@ -218,6 +225,31 @@ export const fixture = ({
       }
       case "history_get":
         return records.find((t) => t.transcriptId === args.id) ?? null;
+      case "history_set_save_audio":
+        history.saveAudio = args.enabled;
+        history.revision++;
+        return;
+      case "history_delete_audio":
+        for (const record of records) if (args.id == null || record.transcriptId === args.id) delete record.audio;
+        history.revision++;
+        return;
+      case "history_discard_pending_audio":
+        return;
+      case "history_export_audio":
+        return !window.__QA__.cancelExport;
+      case "history_audio": {
+        if (!records.find((t) => t.transcriptId === args.id)?.audio) throw new Error("No saved audio");
+        // A half-second synthetic tone, never microphone data.
+        const wav = new ArrayBuffer(44 + 16000);
+        const view = new DataView(wav);
+        const text = (offset, value) => [...value].forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)));
+        text(0, "RIFF"); view.setUint32(4, wav.byteLength - 8, true); text(8, "WAVEfmt ");
+        view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+        view.setUint32(24, 16000, true); view.setUint32(28, 32000, true);
+        view.setUint16(32, 2, true); view.setUint16(34, 16, true); text(36, "data"); view.setUint32(40, 16000, true);
+        for (let i = 0; i < 8000; i++) view.setInt16(44 + i * 2, Math.sin(i * Math.PI * 2 * 440 / 16000) * 1000, true);
+        return wav.slice(args.offset, args.offset + args.length);
+      }
       case "history_save": {
         if (args.record.timestamp < threshold(history.retentionDays))
           throw new Error(
@@ -258,7 +290,7 @@ export const fixture = ({
         )
           throw new Error("This deletion can no longer be undone");
         if (!records.some((t) => t.transcriptId === transcript.transcriptId))
-          stores[2].transcripts.push(transcript);
+          stores[2].transcripts.push({ ...transcript, audio: undefined });
         for (const correction of corrections)
           if (
             !stores[3].corrections.some(
@@ -280,6 +312,7 @@ export const fixture = ({
       case "history_set_retention":
         prune(args.days);
         history.retentionDays = args.days;
+        history.lastCleanupAt = Date.now();
         history.generation++;
         history.revision++;
         return;
@@ -403,6 +436,7 @@ export const fixture = ({
     history,
     calls: [],
     emittedEvents: [],
+    correctionFeedback: [],
     clipboard: "",
     audioInputs: { selected: null, defaultDevice: "Built-in Microphone", devices: [
       { name: "Built-in Microphone", selectable: true },
@@ -436,7 +470,11 @@ export const fixture = ({
       window.__QA__.calls.push(command);
       if (window.__QA__.failures[command])
         throw new Error(window.__QA__.failures[command]);
-      if (command === "plugin:event|emit") {
+      if (command === "show_correction_feedback") {
+        window.__QA__.correctionFeedback.push(structuredClone(args.feedback));
+        return;
+      }
+      if (command === "plugin:event|emit" || command === "plugin:event|emit_to") {
         window.__QA__.emittedEvents.push(structuredClone(args));
         return;
       }

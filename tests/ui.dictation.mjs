@@ -27,12 +27,13 @@ try {
       if(command==='plugin:global-shortcut|register') for(const shortcut of args.shortcuts) window.__QA__.handlers[shortcut]=args.handler.onmessage;
       if(command==='plugin:global-shortcut|unregister') for(const shortcut of args.shortcuts) delete window.__QA__.handlers[shortcut];
       if(command==='emit_capsule_state') window.__QA__.capsule.push(args);
+      if(command==='history_save') window.__QA__.savedAudioGeneration=args.recordingGeneration;
       if(command==='start_recording') {
         window.__QA__.calls.push(command);
         if(window.__QA__.delayStart) return new Promise(resolve=>{window.__QA__.resolveStart=()=>resolve(++window.__QA__.generation);});
         return Promise.resolve(++window.__QA__.generation);
       }
-      if(command==='stop_recording' && window.__QA__.hasAudio) {window.__QA__.calls.push(command);return Promise.resolve({sample_count:32000,duration_secs:2});}
+      if(command==='stop_recording' && window.__QA__.hasAudio) {window.__QA__.calls.push(command);return Promise.resolve({sample_count:32000,duration_secs:2,recording_generation:window.__QA__.generation});}
       if(command==='transcribe_buffer') {window.__QA__.calls.push(command);return Promise.resolve({text:'Private words stay out of the pill.',vocabulary_applied:[]});}
       if(command==='paste_text' && window.__QA__.failPaste) {window.__QA__.calls.push(command);return Promise.reject(new Error('Synthetic paste failure'));}
       return original(command,args);
@@ -120,6 +121,8 @@ try {
   await status('done');
   assert.equal(await count('transcribe_buffer'),inferences+1,'Input is transcribed once on auto-stop');
   assert.equal(await count('paste_text'),1);
+  assert.equal(await page.evaluate(()=>window.__QA__.savedAudioGeneration),newer,'History receives the exact native recording generation');
+  assert.ok(await count('history_discard_pending_audio')>0,'Completed processing releases pending audio');
   const done=await page.evaluate(()=>window.__QA__.capsule.findLast(s=>s.state==='done'));
   assert.deepEqual(done,{state:'done'},'The success payload never contains transcript text');
   await page.evaluate(()=>{window.__QA__.hasAudio=false;});
@@ -385,13 +388,17 @@ try {
     await pill.clock.runFor(1200); await settle();
     assert.equal((await pill.locator('.capsule-pill').boundingBox()).width,geometry.width,'A new recording expands and survives the old success deadline');
     await send({state:'preparing'}); await pill.locator('.capsule-preparing').waitFor(); await settle();
-    assert.equal((await pill.locator('.capsule-pill').boundingBox()).width,40,'Preparation uses the same compact feedback');
+    assert.equal((await pill.locator('.capsule-pill').boundingBox()).width,geometry.width,'Preparation leaves room for a visible explanation');
+    assert.equal(await pill.locator('.capsule-message').innerText(),'Getting ready…');
+    assert.equal(await pill.getByRole('button',{name:'Finish dictation'}).count(),0,'Preparation has no recording controls');
+    assert.equal(await pill.locator('.capsule-spinner').evaluate(el=>getComputedStyle(el).opacity),'1');
+    await pill.screenshot({path:`artifacts/dictation-pill/preparing-${theme}-${reducedMotion}.png`});
     await send({state:'error',error:'Microphone disconnected. Choose another input.'});
     await pill.locator('.capsule-error').waitFor(); await settle();
     assert.equal((await pill.locator('.capsule-pill').boundingBox()).width,352,'A processing error expands to a readable single line');
     assert.deepEqual((await new AxeBuilder({page:pill}).withTags(['wcag2a','wcag2aa']).analyze()).violations,[]);
     await send({state:'preparing'}); await pill.locator('.capsule-preparing').waitFor();
-    assert.equal(await pill.locator('.capsule-error-message span').textContent(),'Microphone disconnected. Choose another input.','An outgoing error retains its text while fading into a retry');
+    assert.equal(await pill.locator('.capsule-message').innerText(),'Getting ready…','Retry replaces the error with preparation feedback');
     await context.close();
   }
   assert.deepEqual(errors,[]);

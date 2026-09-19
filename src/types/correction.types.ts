@@ -56,6 +56,8 @@ export interface DictionarySuggestion {
   right: string;
   wrong: string;
   seenCount: number;
+  /** Verified native session plus a conservative local spelling classification. */
+  spellingEvidence?: boolean;
   firstSeenAt: number;
   lastSeenAt: number;
   correctionIds: string[];

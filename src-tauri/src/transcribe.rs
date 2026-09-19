@@ -280,7 +280,9 @@ where
         return Ok(String::new());
     }
 
-    let mut state = ctx.create_state().map_err(|e| format!("Failed to create state: {}", e))?;
+    let mut state = ctx
+        .create_state()
+        .map_err(|e| format!("Failed to create state: {}", e))?;
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
 
@@ -442,7 +444,10 @@ pub struct Transcription {
 
 impl From<String> for Transcription {
     fn from(text: String) -> Self {
-        Self { text, vocabulary_applied: Vec::new() }
+        Self {
+            text,
+            vocabulary_applied: Vec::new(),
+        }
     }
 }
 
@@ -559,7 +564,9 @@ pub fn available_models(parakeet_supported: bool) -> Vec<ModelInfo> {
     models.push(ModelInfo {
         name: "Whisper Large Turbo Q5 (574 MB)".into(),
         filename: "ggml-large-v3-turbo-q5_0.bin".into(),
-        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin".into(),
+        url:
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"
+                .into(),
         size_mb: 574,
         description: "Runs on the GPU · same languages · supports the vocabulary prompt".into(),
         backend: ModelBackend::Whisper,
@@ -631,8 +638,11 @@ pub async fn download_model(
     drop(file);
     std::fs::rename(&partial, dest).map_err(|e| format!("Failed to save model file: {}", e))?;
 
-    let _ = app.emit("model-download-complete", serde_json::json!({
-        "filename": dest.file_name().and_then(|name| name.to_str()),
-    }));
+    let _ = app.emit(
+        "model-download-complete",
+        serde_json::json!({
+            "filename": dest.file_name().and_then(|name| name.to_str()),
+        }),
+    );
     Ok(())
 }

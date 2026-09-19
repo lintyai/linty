@@ -3,17 +3,28 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
+use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 pub const DATABASE: &str = "linty-history.sqlite3";
+pub const AUDIO_READ_LIMIT: usize = 1024 * 1024;
+pub const CLEANUP_INTERVAL_MS: i64 = 24 * 60 * 60 * 1000;
 const LEGACY: [(&str, &str); 2] = [
     ("linty-history.json", "transcripts"),
     ("linty-corrections.json", "corrections"),
 ];
 pub struct HistoryDb {
     conn: Connection,
+}
+
+/// Audio is held in memory until its transcript is committed. The consent epoch
+/// prevents an in-flight dictation from saving after consent is revoked.
+pub struct PendingAudio {
+    pub generation: u64,
+    pub consent_epoch: i64,
+    pub samples: Arc<Vec<f32>>,
 }
 
 #[derive(Deserialize)]
@@ -80,6 +91,19 @@ fn put_transcript(conn: &Connection, original: &Value, replace: bool) -> Result<
     )
     .to_lowercase();
     let mut record = original.clone();
+    // Only native storage can claim that a recording exists. In particular,
+    // restoring deleted text must never resurrect an audio attachment.
+    record.as_object_mut().unwrap().remove("audio");
+    let bytes: Option<i64> = conn
+        .query_row(
+            "SELECT length(wav) FROM transcript_audio WHERE transcript_id=?1",
+            [id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(bytes) = bytes {
+        record["audio"] = audio_metadata(bytes);
+    }
     // Older versions omitted some metadata. Preserve original text and unknown fields.
     for (key, default) in [
         ("rawText", json!(text)),
@@ -123,6 +147,9 @@ fn bump(conn: &Connection) -> Result<()> {
     )?;
     Ok(())
 }
+fn audio_metadata(bytes: i64) -> Value {
+    json!({"format":"wav","sampleRate":16000,"channels":1,"bitsPerSample":16,"bytes":bytes})
+}
 fn valid_retention(days: i64) -> Result<()> {
     if [0, 30, 90, 365].contains(&days) {
         Ok(())
@@ -147,13 +174,39 @@ impl HistoryDb {
         fs::create_dir_all(dir)?;
         let mut conn = Connection::open(dir.join(DATABASE))?;
         conn.busy_timeout(std::time::Duration::from_secs(10))?;
-        conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA secure_delete=ON;
+        conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA secure_delete=ON; PRAGMA foreign_keys=ON;
             CREATE TABLE IF NOT EXISTS history_settings(id INTEGER PRIMARY KEY CHECK(id=1), retention_days INTEGER NOT NULL DEFAULT 0, generation INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0, migrated INTEGER NOT NULL DEFAULT 0);
             INSERT OR IGNORE INTO history_settings(id) VALUES(1);
+            CREATE TABLE IF NOT EXISTS history_maintenance(id INTEGER PRIMARY KEY CHECK(id=1),last_cleanup_at INTEGER);
+            INSERT OR IGNORE INTO history_maintenance(id) VALUES(1);
             CREATE TABLE IF NOT EXISTS transcripts(id TEXT PRIMARY KEY,timestamp INTEGER NOT NULL,words INTEGER NOT NULL,seconds REAL NOT NULL,processing_ms REAL NOT NULL,engine TEXT NOT NULL,app_name TEXT,app_bundle TEXT,search_text TEXT NOT NULL,payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS audio_preferences(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,epoch INTEGER NOT NULL DEFAULT 0,consented_at INTEGER,consent_version INTEGER);
+            INSERT OR IGNORE INTO audio_preferences(id) VALUES(1);
+            CREATE TABLE IF NOT EXISTS transcript_audio(transcript_id TEXT PRIMARY KEY REFERENCES transcripts(id) ON DELETE CASCADE,wav BLOB NOT NULL);
+            CREATE TABLE IF NOT EXISTS audio_storage_stats(id INTEGER PRIMARY KEY CHECK(id=1),recordings INTEGER NOT NULL,bytes INTEGER NOT NULL);
+            CREATE TRIGGER IF NOT EXISTS audio_stats_insert AFTER INSERT ON transcript_audio BEGIN
+                UPDATE audio_storage_stats SET recordings=recordings+1,bytes=bytes+length(NEW.wav) WHERE id=1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS audio_stats_delete AFTER DELETE ON transcript_audio BEGIN
+                UPDATE audio_storage_stats SET recordings=recordings-1,bytes=bytes-length(OLD.wav) WHERE id=1;
+            END;
+            CREATE TRIGGER IF NOT EXISTS audio_stats_update AFTER UPDATE OF wav ON transcript_audio BEGIN
+                UPDATE audio_storage_stats SET bytes=bytes+length(NEW.wav)-length(OLD.wav) WHERE id=1;
+            END;
             CREATE INDEX IF NOT EXISTS history_by_time ON transcripts(timestamp DESC,id DESC);
             CREATE TABLE IF NOT EXISTS corrections(id TEXT PRIMARY KEY,transcript_id TEXT NOT NULL,timestamp INTEGER NOT NULL,changes INTEGER NOT NULL,payload TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS corrections_by_transcript ON corrections(transcript_id);")?;
+        // Bootstrap an existing archive once. Incremental blob writes keep the
+        // allocated length, so the insert/delete triggers maintain these totals.
+        if conn
+            .query_row("SELECT id FROM audio_storage_stats WHERE id=1", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .optional()?
+            .is_none()
+        {
+            conn.execute("INSERT INTO audio_storage_stats SELECT 1,COUNT(*),COALESCE(SUM(length(wav)),0) FROM transcript_audio", [])?;
+        }
         let migrated: bool = conn.query_row(
             "SELECT migrated FROM history_settings WHERE id=1",
             [],
@@ -215,19 +268,39 @@ impl HistoryDb {
         }
         Ok(Self { conn })
     }
-    pub fn prune(&mut self, now: i64) -> Result<()> {
-        let days = self.retention()?;
-        if days == 0 {
-            return Ok(());
+    pub fn cleanup_due_at(&self) -> Result<Option<i64>> {
+        if self.retention()? == 0 {
+            return Ok(None);
         }
+        let last: Option<i64> = self.conn.query_row(
+            "SELECT last_cleanup_at FROM history_maintenance WHERE id=1",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(Some(last.map_or(0, |last| {
+            last.saturating_add(CLEANUP_INTERVAL_MS)
+        })))
+    }
+    pub fn prune(&mut self, now: i64) -> Result<bool> {
+        // Persist the gate with the deletion transaction: reopening the archive,
+        // focusing the window and repeated reads cannot run another daily sweep.
+        if self.cleanup_due_at()?.is_none_or(|due| now < due) {
+            return Ok(false);
+        }
+        let days = self.retention()?;
         let tx = self.conn.transaction()?;
         let before = tx.total_changes();
         erase_before(&tx, cutoff(now, days))?;
-        if tx.total_changes() > before {
+        let changed = tx.total_changes() > before;
+        if changed {
             bump(&tx)?;
         }
+        tx.execute(
+            "UPDATE history_maintenance SET last_cleanup_at=?1 WHERE id=1",
+            [now],
+        )?;
         tx.commit()?;
-        Ok(())
+        Ok(changed)
     }
     pub fn retention(&self) -> Result<i64> {
         Ok(self.conn.query_row(
@@ -248,9 +321,17 @@ impl HistoryDb {
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
-        Ok(
-            json!({"recent":payloads(&self.conn,"SELECT payload FROM transcripts ORDER BY timestamp DESC,id DESC LIMIT 20",[])?,"total":total,"oldestTimestamp":oldest,"totalWords":words,"milestone":self.word_milestone(words)?,"correctionCount":corrections,"correctionRate":rate(changes,words),"retentionDays":retention,"revision":revision}),
-        )
+        let (audio_count, audio_bytes): (i64, i64) = self.conn.query_row(
+            "SELECT recordings,bytes FROM audio_storage_stats WHERE id=1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok(json!({
+            "recent":payloads(&self.conn,"SELECT payload FROM transcripts ORDER BY timestamp DESC,id DESC LIMIT 20",[])?,
+            "total":total,"oldestTimestamp":oldest,"totalWords":words,"milestone":self.word_milestone(words)?,
+            "correctionCount":corrections,"correctionRate":rate(changes,words),"retentionDays":retention,"revision":revision,
+            "saveAudio":self.audio_consent()?.is_some(),"audioCount":audio_count,"audioBytes":audio_bytes,
+        }))
     }
     pub fn query(&self, query: &str, offset: i64, limit: i64) -> Result<Value> {
         let query = query.trim().to_lowercase();
@@ -275,11 +356,113 @@ impl HistoryDb {
         payloads(&self.conn,"SELECT payload FROM corrections WHERE transcript_id=?1 ORDER BY timestamp DESC,id DESC",[id])
     }
     pub fn save(&mut self, record: &Value, now: i64) -> Result<()> {
+        self.save_with_audio(record, now, None)
+    }
+    pub fn save_with_audio(
+        &mut self,
+        record: &Value,
+        now: i64,
+        audio: Option<&PendingAudio>,
+    ) -> Result<()> {
         if timestamp(record)? < cutoff(now, self.retention()?) {
             return Err("This transcription is outside your current retention period".into());
         }
+        let consent = self.audio_consent()?;
         let tx = self.conn.transaction()?;
         put_transcript(&tx, record, true)?;
+        if let Some(audio) =
+            audio.filter(|a| consent == Some(a.consent_epoch) && !a.samples.is_empty())
+        {
+            let id = required_str(record, "transcriptId")?;
+            let len = crate::pcm_wav::encoded_len(audio.samples.len())?;
+            let inserted = tx.execute("INSERT INTO transcript_audio(transcript_id,wav) VALUES(?1,zeroblob(?2)) ON CONFLICT(transcript_id) DO NOTHING", params![id, len])?;
+            if inserted > 0 {
+                let rowid = tx.last_insert_rowid();
+                let mut blob = tx.blob_open("main", "transcript_audio", "wav", rowid, false)?;
+                crate::pcm_wav::write(&audio.samples, &mut blob)?;
+                blob.close()?;
+            }
+            // Re-read attachment metadata inside the same transaction.
+            put_transcript(&tx, record, true)?;
+        }
+        bump(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn audio_consent(&self) -> Result<Option<i64>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT epoch FROM audio_preferences WHERE id=1 AND enabled=1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+    pub fn set_save_audio(&mut self, enabled: bool, now: i64) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("UPDATE audio_preferences SET enabled=?1,epoch=epoch+1,consented_at=CASE WHEN ?1 THEN ?2 ELSE NULL END,consent_version=CASE WHEN ?1 THEN 1 ELSE NULL END WHERE id=1", params![enabled,now])?;
+        bump(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+    fn audio_blob(&self, id: &str) -> Result<Option<rusqlite::blob::Blob<'_>>> {
+        let rowid: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT rowid FROM transcript_audio WHERE transcript_id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(rowid
+            .map(|rowid| {
+                self.conn
+                    .blob_open("main", "transcript_audio", "wav", rowid, true)
+            })
+            .transpose()?)
+    }
+    pub fn audio_chunk(&self, id: &str, offset: u64, length: usize) -> Result<Vec<u8>> {
+        if length == 0 || length > AUDIO_READ_LIMIT {
+            return Err("Invalid audio read size".into());
+        }
+        let mut blob = self
+            .audio_blob(id)?
+            .ok_or("No saved audio for this dictation")?;
+        let remaining = (blob.size() as u64)
+            .checked_sub(offset)
+            .ok_or("Invalid audio offset")?;
+        let mut bytes = vec![0; length.min(remaining as usize)];
+        blob.seek(SeekFrom::Start(offset))?;
+        blob.read_exact(&mut bytes)?;
+        Ok(bytes)
+    }
+    pub fn copy_audio(&self, id: &str, out: &mut impl Write) -> Result<u64> {
+        let mut blob = self
+            .audio_blob(id)?
+            .ok_or("No saved audio for this dictation")?;
+        Ok(std::io::copy(&mut blob, out)?)
+    }
+    #[cfg(test)]
+    fn audio(&self, id: &str) -> Result<Option<Vec<u8>>> {
+        let Some(mut blob) = self.audio_blob(id)? else {
+            return Ok(None);
+        };
+        let mut bytes = Vec::new();
+        blob.read_to_end(&mut bytes)?;
+        Ok(Some(bytes))
+    }
+    pub fn delete_audio(&mut self, id: Option<&str>) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "DELETE FROM transcript_audio WHERE ?1 IS NULL OR transcript_id=?1",
+            [id],
+        )?;
+        tx.execute("UPDATE transcripts SET payload=json_remove(payload,'$.audio') WHERE ?1 IS NULL OR id=?1", [id])?;
+        // Erasing all recordings also invalidates audio still being processed.
+        if id.is_none() {
+            tx.execute("UPDATE audio_preferences SET epoch=epoch+1 WHERE id=1", [])?;
+        }
         bump(&tx)?;
         tx.commit()?;
         Ok(())
@@ -350,6 +533,7 @@ impl HistoryDb {
         let tx = self.conn.transaction()?;
         tx.execute("DELETE FROM corrections", [])?;
         tx.execute("DELETE FROM transcripts", [])?;
+        tx.execute("UPDATE audio_preferences SET epoch=epoch+1 WHERE id=1", [])?;
         tx.execute(
             "UPDATE history_settings SET generation=generation+1,revision=revision+1 WHERE id=1",
             [],
@@ -369,6 +553,12 @@ impl HistoryDb {
         valid_retention(days)?;
         let tx = self.conn.transaction()?;
         erase_before(&tx, cutoff(now, days))?;
+        // Applying a policy is an explicit immediate cleanup and starts the next
+        // 24-hour interval. Re-enabling retention always cleans expired data now.
+        tx.execute(
+            "UPDATE history_maintenance SET last_cleanup_at=?1 WHERE id=1",
+            [now],
+        )?;
         tx.execute("UPDATE history_settings SET retention_days=?1,generation=generation+1,revision=revision+1 WHERE id=1",[days])?;
         tx.commit()?;
         Ok(())
@@ -544,6 +734,246 @@ mod tests {
             serde_json::to_vec(&json!({"corrections":corrections})).unwrap(),
         )
         .unwrap();
+    }
+    fn audio(epoch: i64) -> PendingAudio {
+        PendingAudio {
+            generation: 7,
+            consent_epoch: epoch,
+            samples: Arc::new(vec![0.0, 0.5, -0.5, 1.0]),
+        }
+    }
+    #[test]
+    fn streamed_reads_exports_and_stats_remain_correct_across_reopen() {
+        let dir = Temp::new();
+        let mut db = HistoryDb::open(&dir.0).unwrap();
+        db.set_save_audio(true, 1).unwrap();
+        let audio = PendingAudio {
+            generation: 1,
+            consent_epoch: db.audio_consent().unwrap().unwrap(),
+            samples: Arc::new(vec![0.25; AUDIO_READ_LIMIT + 13]),
+        };
+        let expected = crate::transcribe::encode_wav(&audio.samples);
+        db.save_with_audio(&record(1, 100), 200, Some(&audio))
+            .unwrap();
+        // Re-saving cannot replace an attachment or double-count its storage.
+        db.save_with_audio(&record(1, 100), 200, Some(&audio))
+            .unwrap();
+        assert_eq!(db.snapshot().unwrap()["audioCount"], 1);
+        assert_eq!(db.snapshot().unwrap()["audioBytes"], expected.len());
+        let mut actual = Vec::new();
+        while actual.len() < expected.len() {
+            actual.extend(
+                db.audio_chunk("t-00001", actual.len() as u64, AUDIO_READ_LIMIT)
+                    .unwrap(),
+            );
+        }
+        assert_eq!(actual, expected);
+        assert!(db.audio_chunk("t-00001", 0, AUDIO_READ_LIMIT + 1).is_err());
+        assert!(db.audio_chunk("t-00001", u64::MAX, 1).is_err());
+        assert!(db.audio_chunk("t-00001", 0, 0).is_err());
+        let mut exported = Vec::new();
+        assert_eq!(
+            db.copy_audio("t-00001", &mut exported).unwrap(),
+            expected.len() as u64
+        );
+        assert_eq!(exported, expected);
+        // Simulate an archive created before the aggregate cache was added.
+        db.conn
+            .execute("DELETE FROM audio_storage_stats", [])
+            .unwrap();
+        drop(db);
+        let mut db = HistoryDb::open(&dir.0).unwrap();
+        assert_eq!(db.snapshot().unwrap()["audioBytes"], expected.len());
+        db.delete("t-00001").unwrap();
+        assert_eq!(db.snapshot().unwrap()["audioBytes"], 0);
+        assert_eq!(db.snapshot().unwrap()["audioCount"], 0);
+        assert!(db.audio_chunk("t-00001", 0, 44).is_err());
+    }
+    #[test]
+    fn audio_requires_consent_and_old_consent_cannot_be_reused() {
+        let dir = Temp::new();
+        let mut db = HistoryDb::open(&dir.0).unwrap();
+        assert_eq!(db.audio_consent().unwrap(), None);
+        // A frontend request/metadata cannot opt the user in.
+        let mut forged = record(1, 100);
+        forged["audio"] = json!({"bytes":999});
+        db.save_with_audio(&forged, 200, Some(&audio(0))).unwrap();
+        assert!(db.audio("t-00001").unwrap().is_none());
+        assert!(db.get("t-00001").unwrap().unwrap()["audio"].is_null());
+        db.set_save_audio(true, 200).unwrap();
+        let consent = db.audio_consent().unwrap().unwrap();
+        let captured = audio(consent);
+        db.save_with_audio(&record(2, 201), 202, Some(&captured))
+            .unwrap();
+        assert_eq!(
+            db.audio("t-00002").unwrap(),
+            Some(crate::transcribe::encode_wav(&captured.samples))
+        );
+        db.set_save_audio(false, 203).unwrap();
+        db.save_with_audio(&record(3, 204), 205, Some(&captured))
+            .unwrap();
+        assert!(db.audio("t-00003").unwrap().is_none());
+        db.set_save_audio(true, 206).unwrap();
+        db.save_with_audio(&record(4, 207), 208, Some(&captured))
+            .unwrap();
+        assert!(db.audio("t-00004").unwrap().is_none());
+        drop(db);
+        let db = HistoryDb::open(&dir.0).unwrap();
+        assert!(db.audio_consent().unwrap().is_some());
+        assert!(
+            db.audio("t-00002").unwrap().is_some(),
+            "Turning off saving keeps existing audio"
+        );
+        assert_eq!(db.snapshot().unwrap()["audioCount"], 1);
+    }
+    #[test]
+    fn audio_and_transcript_are_atomic_and_metadata_survives_edits() {
+        let dir = Temp::new();
+        let mut db = HistoryDb::open(&dir.0).unwrap();
+        db.set_save_audio(true, 100).unwrap();
+        let audio = audio(db.audio_consent().unwrap().unwrap());
+        db.conn.execute_batch("CREATE TRIGGER fail_audio BEFORE INSERT ON transcript_audio BEGIN SELECT RAISE(ABORT,'Disk failure'); END;").unwrap();
+        assert!(db
+            .save_with_audio(&record(1, 100), 200, Some(&audio))
+            .is_err());
+        assert!(db.get("t-00001").unwrap().is_none());
+        db.conn.execute_batch("DROP TRIGGER fail_audio;").unwrap();
+        db.save_with_audio(&record(1, 100), 200, Some(&audio))
+            .unwrap();
+        db.patch("t-00001", &json!({"finalText":"Edited reference"}))
+            .unwrap();
+        let record = db.get("t-00001").unwrap().unwrap();
+        assert_eq!(record["audio"], audio_metadata(52));
+        assert_eq!(record["rawText"], "Original");
+        assert_eq!(record["finalText"], "Edited reference");
+        assert_eq!(db.snapshot().unwrap()["audioBytes"], 52);
+        // Playback/export receives a complete standard 16 kHz mono PCM16 WAV.
+        let wav = db.audio("t-00001").unwrap().unwrap();
+        assert_eq!(&wav[..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+        assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 16000);
+        assert_eq!(u16::from_le_bytes(wav[22..24].try_into().unwrap()), 1);
+        assert_eq!(u16::from_le_bytes(wav[34..36].try_into().unwrap()), 16);
+        assert_eq!(wav.len(), 52);
+    }
+    #[test]
+    fn audio_deletion_is_permanent_even_when_text_deletion_is_undone() {
+        let dir = Temp::new();
+        let mut db = HistoryDb::open(&dir.0).unwrap();
+        db.set_save_audio(true, 100).unwrap();
+        let audio = audio(db.audio_consent().unwrap().unwrap());
+        for i in 1..=3 {
+            db.save_with_audio(&record(i, 100), 200, Some(&audio))
+                .unwrap();
+        }
+        db.delete_audio(Some("t-00001")).unwrap();
+        assert!(db.audio("t-00001").unwrap().is_none());
+        assert!(db.get("t-00001").unwrap().unwrap()["audio"].is_null());
+        assert!(db.audio("t-00002").unwrap().is_some());
+        let deleted = db.delete("t-00002").unwrap().unwrap();
+        assert!(deleted.transcript["audio"].is_object());
+        assert!(db.audio("t-00002").unwrap().is_none());
+        db.restore(&deleted, 200).unwrap();
+        assert!(db.get("t-00002").unwrap().unwrap()["audio"].is_null());
+        db.delete_audio(None).unwrap();
+        assert_eq!(db.snapshot().unwrap()["audioCount"], 0);
+        assert_eq!(db.snapshot().unwrap()["total"], 3);
+        db.save_with_audio(&record(4, 100), 200, Some(&audio))
+            .unwrap();
+        assert!(
+            db.audio("t-00004").unwrap().is_none(),
+            "Erasing all audio invalidates in-flight captures"
+        );
+    }
+    #[test]
+    fn daily_cleanup_survives_reopen_and_removes_all_related_assets() {
+        let dir = Temp::new();
+        let now = 100 * CLEANUP_INTERVAL_MS;
+        let mut db = HistoryDb::open(&dir.0).unwrap();
+        assert_eq!(db.cleanup_due_at().unwrap(), None);
+        db.set_save_audio(true, now).unwrap();
+        let audio = audio(db.audio_consent().unwrap().unwrap());
+        let expiring = now - 30 * CLEANUP_INTERVAL_MS + 3_600_000;
+        db.save_with_audio(&record(1, expiring), now, Some(&audio))
+            .unwrap();
+        db.add_correction(&correction(1, expiring)).unwrap();
+        db.save_with_audio(&record(2, now), now, Some(&audio))
+            .unwrap();
+        db.set_retention(30, now).unwrap();
+        assert_eq!(
+            db.cleanup_due_at().unwrap(),
+            Some(now + CLEANUP_INTERVAL_MS)
+        );
+        assert!(!db.prune(now + 3_600_001).unwrap());
+        assert!(db.audio("t-00001").unwrap().is_some());
+        drop(db);
+
+        let mut db = HistoryDb::open(&dir.0).unwrap();
+        assert!(!db.prune(now + CLEANUP_INTERVAL_MS - 1).unwrap());
+        assert!(db.prune(now + CLEANUP_INTERVAL_MS).unwrap());
+        assert!(db.get("t-00001").unwrap().is_none());
+        assert!(db.corrections("t-00001").unwrap().is_empty());
+        assert!(db.audio_chunk("t-00001", 0, 44).is_err());
+        assert_eq!(db.snapshot().unwrap()["audioCount"], 1);
+        assert_eq!(db.snapshot().unwrap()["audioBytes"], 52);
+        assert_eq!(db.snapshot().unwrap()["correctionCount"], 0);
+        assert!(!db.prune(now + CLEANUP_INTERVAL_MS + 1).unwrap());
+        // Manual deletion still removes audio immediately during the daily gate.
+        db.delete("t-00002").unwrap();
+        assert_eq!(db.snapshot().unwrap()["audioBytes"], 0);
+    }
+
+    #[test]
+    fn failed_daily_cleanup_rolls_back_audio_text_and_schedule() {
+        let dir = Temp::new();
+        let now = 100 * CLEANUP_INTERVAL_MS;
+        let mut db = HistoryDb::open(&dir.0).unwrap();
+        db.set_save_audio(true, now).unwrap();
+        let audio = audio(db.audio_consent().unwrap().unwrap());
+        db.save_with_audio(&record(1, now), now, Some(&audio))
+            .unwrap();
+        db.add_correction(&correction(1, now)).unwrap();
+        db.set_retention(30, now).unwrap();
+        let due = db.cleanup_due_at().unwrap();
+        db.conn.execute_batch("CREATE TRIGGER fail_delete BEFORE DELETE ON transcript_audio BEGIN SELECT RAISE(ABORT,'Disk failure'); END;").unwrap();
+        assert!(db.prune(now + 31 * CLEANUP_INTERVAL_MS).is_err());
+        assert_eq!(db.cleanup_due_at().unwrap(), due);
+        assert!(db.get("t-00001").unwrap().is_some());
+        assert!(db.audio("t-00001").unwrap().is_some());
+        assert_eq!(db.corrections("t-00001").unwrap().len(), 1);
+        db.conn.execute_batch("DROP TRIGGER fail_delete;").unwrap();
+        assert!(db.prune(now + 31 * CLEANUP_INTERVAL_MS).unwrap());
+        assert_eq!(db.snapshot().unwrap()["audioBytes"], 0);
+    }
+
+    #[test]
+    fn retention_clear_and_reset_remove_audio_with_history() {
+        let dir = Temp::new();
+        let mut db = HistoryDb::open(&dir.0).unwrap();
+        let now = 100 * 86_400_000;
+        db.set_save_audio(true, now).unwrap();
+        let audio = audio(db.audio_consent().unwrap().unwrap());
+        db.save_with_audio(&record(1, 1), now, Some(&audio))
+            .unwrap();
+        db.save_with_audio(&record(2, now), now, Some(&audio))
+            .unwrap();
+        db.set_retention(30, now).unwrap();
+        assert!(db.audio("t-00001").unwrap().is_none());
+        assert!(db.audio("t-00002").unwrap().is_some());
+        db.prune(now + 31 * 86_400_000).unwrap();
+        assert!(db.audio("t-00002").unwrap().is_none());
+        db.save_with_audio(&record(3, now), now, Some(&audio))
+            .unwrap();
+        db.clear().unwrap();
+        assert_eq!(db.snapshot().unwrap()["audioCount"], 0);
+        db.save_with_audio(&record(4, now), now, Some(&audio))
+            .unwrap();
+        assert!(db.audio("t-00004").unwrap().is_none());
+        drop(db);
+        fs::remove_file(dir.0.join(DATABASE)).unwrap();
+        let db = HistoryDb::open(&dir.0).unwrap();
+        assert_eq!(db.audio_consent().unwrap(), None);
+        assert_eq!(db.snapshot().unwrap()["audioCount"], 0);
     }
     #[test]
     fn migration_preserves_more_than_500_and_is_idempotent() {

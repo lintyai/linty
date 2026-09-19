@@ -108,6 +108,7 @@ Download estimates describe disk transfer, not RAM requirements. Available memor
 - **Local speech recognition keeps audio on your Mac.** Once a model is downloaded, speech recognition works offline.
 - **Cloud features are optional and cross a clear boundary.** Groq transcription sends audio; cloud text refinement sends transcription text, even when speech recognition is local. Leave cloud features off for an entirely local dictation workflow.
 - **History stays local; credentials use macOS Keychain.** Read the [history storage](docs/HISTORY-STORAGE.md) and [credential storage](docs/CREDENTIAL-STORAGE.md) details.
+- **Saving recordings is opt-in.** Enable “Save dictation audio” in Privacy & storage for local History playback and WAV export. Recordings follow history retention and deletion. This does not authorize sharing, training, or automatic evaluations. See the [audio privacy policy](docs/AUDIO-PRIVACY.md).
 - **No app usage telemetry.** The download badge uses GitHub's total release-asset download counts across versions. Website downloads point to those same GitHub-hosted files. This includes installers, updater archives, and other release assets.
 
 ## Build from source

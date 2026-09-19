@@ -4,7 +4,9 @@ use std::path::Path;
 use std::time::Instant;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let dir = args.get(1).expect("usage: s1_bench MODEL_DIR [TRANSCRIPT] [--prepare]");
+    let dir = args
+        .get(1)
+        .expect("usage: s1_bench MODEL_DIR [TRANSCRIPT] [--prepare]");
     let text = args.get(2).filter(|arg| arg.as_str() != "--prepare").map(String::as_str).unwrap_or("um please send the report on friday no sorry monday and include the budget the timeline and the risks");
     let mut engine = None;
     if args.iter().any(|arg| arg == "--prepare") {
@@ -13,10 +15,13 @@ fn main() {
         let preparation_ms = started.elapsed().as_secs_f64() * 1000.;
         let repeated = Instant::now();
         prepare(&mut engine, Path::new(dir), || false).expect("repeated preparation failed");
-        println!("{}", serde_json::json!({
-            "preparationMs": preparation_ms,
-            "repeatedPreparationMs": repeated.elapsed().as_secs_f64() * 1000.,
-        }));
+        println!(
+            "{}",
+            serde_json::json!({
+                "preparationMs": preparation_ms,
+                "repeatedPreparationMs": repeated.elapsed().as_secs_f64() * 1000.,
+            })
+        );
     }
     for _ in 0..2 {
         let result = run(

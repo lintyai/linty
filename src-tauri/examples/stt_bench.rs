@@ -35,8 +35,7 @@ struct Args {
 fn parse_args() -> Args {
     let home = std::env::var("HOME").unwrap_or_default();
     let mut args = Args {
-        models_dir: PathBuf::from(home)
-            .join("Library/Application Support/ai.linty.desktop/models"),
+        models_dir: PathBuf::from(home).join("Library/Application Support/ai.linty.desktop/models"),
         whisper_file: "ggml-large-v3-turbo-q5_0.bin".to_string(),
         runs: 3,
         vocab: Vec::new(),
@@ -58,7 +57,12 @@ fn parse_args() -> Args {
                         let text = text.trim();
                         (!text.is_empty()).then(|| vocabulary::VocabTerm {
                             text: text.to_string(),
-                            aliases: aliases.split('|').map(str::trim).filter(|a| !a.is_empty()).map(String::from).collect(),
+                            aliases: aliases
+                                .split('|')
+                                .map(str::trim)
+                                .filter(|a| !a.is_empty())
+                                .map(String::from)
+                                .collect(),
                         })
                     })
                     .collect()
@@ -92,7 +96,10 @@ fn read_wav_16k_mono(path: &Path) -> Vec<f32> {
                 .map(|s| s.expect("sample") as f32 / max)
                 .collect()
         }
-        hound::SampleFormat::Float => reader.samples::<f32>().map(|s| s.expect("sample")).collect(),
+        hound::SampleFormat::Float => reader
+            .samples::<f32>()
+            .map(|s| s.expect("sample"))
+            .collect(),
     }
 }
 
@@ -121,7 +128,11 @@ fn bench<F: FnMut() -> Result<String, String>>(runs: usize, mut f: F) -> Timing 
         let _ = f();
         warm_ms.push(t.elapsed().as_secs_f64() * 1000.0);
     }
-    Timing { cold_ms, warm_ms, text }
+    Timing {
+        cold_ms,
+        warm_ms,
+        text,
+    }
 }
 
 fn main() {
@@ -129,7 +140,12 @@ fn main() {
     let clips: Vec<(String, Vec<f32>)> = args
         .wavs
         .iter()
-        .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), read_wav_16k_mono(p)))
+        .map(|p| {
+            (
+                p.file_name().unwrap().to_string_lossy().into_owned(),
+                read_wav_16k_mono(p),
+            )
+        })
         .collect();
 
     // ── Whisper ──
@@ -138,11 +154,9 @@ fn main() {
         let t = Instant::now();
         let mut params = whisper_rs::WhisperContextParameters::default();
         params.use_gpu(true);
-        let ctx = whisper_rs::WhisperContext::new_with_params(
-            whisper_path.to_str().unwrap(),
-            params,
-        )
-        .expect("load whisper");
+        let ctx =
+            whisper_rs::WhisperContext::new_with_params(whisper_path.to_str().unwrap(), params)
+                .expect("load whisper");
         println!(
             "whisper  : loaded {} in {:.0} ms",
             args.whisper_file,
@@ -157,14 +171,20 @@ fn main() {
     // ── Parakeet ──
     let parakeet_dir = args.models_dir.join(transcribe::PARAKEET_V3_ID);
     if !linty_lib::parakeet::models_exist(&parakeet_dir) {
-        println!("parakeet : downloading bundle into {} ...", parakeet_dir.display());
+        println!(
+            "parakeet : downloading bundle into {} ...",
+            parakeet_dir.display()
+        );
         let t = Instant::now();
         linty_lib::parakeet::download(&parakeet_dir, |f| {
             eprint!("\r  download+compile {:>3.0}%", f * 100.0);
         })
         .expect("download parakeet");
         eprintln!();
-        println!("parakeet : download took {:.1} s", t.elapsed().as_secs_f64());
+        println!(
+            "parakeet : download took {:.1} s",
+            t.elapsed().as_secs_f64()
+        );
     }
     let t = Instant::now();
     let parakeet = linty_lib::parakeet::ParakeetEngine::load(&parakeet_dir).expect("load parakeet");
@@ -213,7 +233,11 @@ fn main() {
         println!();
         println!(
             "vocabulary: {}",
-            args.vocab.iter().map(|t| t.text.as_str()).collect::<Vec<_>>().join(", ")
+            args.vocab
+                .iter()
+                .map(|t| t.text.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
         let rss_before = resident_mb();
         // FluidAudio keeps the "-coreml" suffix for this bundle (unlike the v3 TDT bundle).
@@ -237,8 +261,12 @@ fn main() {
             let mut rejected: Vec<String> = Vec::new();
             let timing = bench(args.runs, || {
                 let r = parakeet.transcribe_with_vocabulary(samples, Some("en"), &terms)?;
-                let (text, applied) = vocabulary::apply_replacements(&r.text, &r.replacements, &terms);
-                accepted = applied.iter().map(|a| format!("{} -> {}", a.from, a.to)).collect();
+                let (text, applied) =
+                    vocabulary::apply_replacements(&r.text, &r.replacements, &terms);
+                accepted = applied
+                    .iter()
+                    .map(|a| format!("{} -> {}", a.from, a.to))
+                    .collect();
                 rejected = r
                     .replacements
                     .iter()
@@ -257,10 +285,26 @@ fn main() {
                 timing.text
             );
             if !accepted.is_empty() {
-                println!("{:<28} {:>7} {:<9} {:>9} {:>9}  ↳ applied:  {}", "", "", "", "", "", accepted.join(", "));
+                println!(
+                    "{:<28} {:>7} {:<9} {:>9} {:>9}  ↳ applied:  {}",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    accepted.join(", ")
+                );
             }
             if !rejected.is_empty() {
-                println!("{:<28} {:>7} {:<9} {:>9} {:>9}  ↳ rejected: {}", "", "", "", "", "", rejected.join(", "));
+                println!(
+                    "{:<28} {:>7} {:<9} {:>9} {:>9}  ↳ rejected: {}",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    rejected.join(", ")
+                );
             }
         }
     }

@@ -14,6 +14,19 @@ permissions:
   contents: read
 
 jobs:
+  public-corpus-tests:
+    name: Public corpus scoring and loader
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: scripts/benchmarks/public-requirements.txt
+      - run: python -m pip install -r scripts/benchmarks/public-requirements.txt
+      - run: python -m unittest discover -s tests -p public_corpus_test.py -v
+
   rust-logging:
     name: Rust logging hygiene
     runs-on: ubuntu-latest

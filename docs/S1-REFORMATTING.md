@@ -36,8 +36,9 @@ Each history record retains these separate values:
 
 Existing correction records associate later edits with the same transcript ID.
 History edits preserve the original snapshots and measurements. Retention,
-deletion, undo, and JSON export apply to them together. No audio recordings or
-separate analytics upload were added.
+deletion, undo, and JSON export apply to them together. Optional audio retention
+is governed separately by the [audio privacy policy](AUDIO-PRIVACY.md); it is off
+by default. There is no separate analytics upload.
 
 `reformatting` records the selected options, outcome, skip/failure reason,
 language detection/confidence, model and tokenizer revisions, quantization,

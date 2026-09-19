@@ -15,6 +15,18 @@ export function tokenize(text: string): string[] {
   return text.split(/\s+/).filter(Boolean);
 }
 
+/** A name split or joined by the recognizer, e.g. Hari Shekhar → Harishekhar.
+ * Limit this to one word versus two or three, with the same letters, so an
+ * ordinary multi-word rewrite cannot become an automatic replacement. */
+export function isWordBoundaryCorrection(from: string, to: string): boolean {
+  const before = tokenize(normalizeWord(from));
+  const after = tokenize(normalizeWord(to));
+  if (before.length === after.length || Math.min(before.length, after.length) !== 1
+    || Math.max(before.length, after.length) > 3) return false;
+  return [...before, ...after].every((word) => /^[\p{L}\p{M}\p{N}]+$/u.test(word))
+    && before.join("") === after.join("");
+}
+
 /**
  * Word-level diff between two texts (longest common subsequence). Adjacent runs
  * of deletions and insertions of equal length are paired one to one, because
@@ -79,7 +91,8 @@ export interface CorrectionDiff {
 /** Judge a set of changes: how much of the pasted text moved, and whether that makes it a rewrite. */
 export function judgeCorrection(pairs: CorrectionPair[], wordCount: number): { changedRatio: number; rewrite: boolean } {
   const changedWords = pairs.reduce(
-    (sum, p) => sum + Math.max(tokenize(p.from).length, tokenize(p.to).length),
+    (sum, p) => sum + (p.kind === "substitution" && isWordBoundaryCorrection(p.from, p.to)
+      ? 1 : Math.max(tokenize(p.from).length, tokenize(p.to).length)),
     0,
   );
   const changedRatio = wordCount ? Math.min(1, changedWords / wordCount) : pairs.length ? 1 : 0;

@@ -39,7 +39,11 @@ pub fn check_microphone_permission() -> String {
             3 => "authorized",
             _ => "not_determined",
         };
-        log::debug!("[mic] check_microphone_permission: status={} ({})", status, result);
+        log::debug!(
+            "[mic] check_microphone_permission: status={} ({})",
+            status,
+            result
+        );
         result.to_string()
     }
 }
@@ -103,8 +107,7 @@ pub fn request_microphone_permission() -> bool {
         let block_ptr = Box::into_raw(block);
 
         let cls = objc_getClass(b"AVCaptureDevice\0".as_ptr());
-        let sel =
-            sel_registerName(b"requestAccessForMediaType:completionHandler:\0".as_ptr());
+        let sel = sel_registerName(b"requestAccessForMediaType:completionHandler:\0".as_ptr());
 
         let send: unsafe extern "C" fn(
             *const c_void,
